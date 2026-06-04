@@ -46,4 +46,17 @@
 
 ---
 
+## 累计来源:Task 0.2 review
+
+### B-0.2-001(Task 0.3 / 0.4 / 0.5:lockfile 一并 commit)
+- 引入新 deps 时,**包目录 + `pnpm-lock.yaml` 一起 commit**,plan 里 `git add packages/X` 是简写,实际要 `git add packages/X pnpm-lock.yaml`
+- 否则会留脏 lock 违反"working tree clean"
+
+### B-0.2-002(可选,任何时候):.gitattributes
+- Windows + LF→CRLF 警告,跨平台可能噪声
+- 建议加 `.gitattributes`:`* text=auto eol=lf`
+- 不阻塞,顺手做
+
+---
+
 <!-- BACKLOG-APPEND-HERE -->
