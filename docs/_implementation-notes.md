@@ -59,4 +59,19 @@
 
 ---
 
+## 累计来源:Task 0.3 review
+
+### B-0.3-001(Task 任何调 server build 时)
+- plan 中 server `tsconfig.json` 写的 `rootDir: "src"` + `include: ["tests/**/*"]` 是**自冲突**(已删 rootDir 修好)
+- 后续若需要严格 build(不把 tests 编进 dist),拆两 tsconfig:
+  - `tsconfig.json`(typecheck/vitest 用):include src+tests,无 rootDir
+  - `tsconfig.build.json`(build 用):只 include src,rootDir=src
+- 当前 B-MVP 不需要 build,Task 0.3 只删 rootDir 即可,后续若上 CI/产物分发再拆
+
+### B-0.3-002(信息):better-sqlite3 12 + Node 24 + Windows
+- prebuild-install 直接走预编译二进制成功,**无 build from source**
+- 即 B-0.1-005(node-linker=hoisted)暂时不用启用,先观察后续 Task
+
+---
+
 <!-- BACKLOG-APPEND-HERE -->
