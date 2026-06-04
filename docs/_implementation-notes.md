@@ -74,4 +74,21 @@
 
 ---
 
+## 累计来源:Task 0.4 review
+
+### B-0.4-001(信息):jest-dom/vitest 子路径
+- `@testing-library/jest-dom@6.5+` 的 `/vitest` 子路径正常工作
+- 若 lockfile 刷新到 6.4.x 切回主入口 `@testing-library/jest-dom`
+
+### B-0.4-002(Task 当真要 build 时):tsconfig 与 vite build 协同
+- 当前 `build: tsc -b && vite build`,但 client `tsconfig.json` 未设 `outDir`/无 references
+- 若启用 `tsc -b`(增量编译)需要拆 references 或显式 `outDir`
+- 当前 typecheck 用 `tsc --noEmit` 不依赖此
+
+### B-0.4-003(Task 8.1):i18n 全量补全
+- 当前只有 `app / library / common` 三个 namespace
+- Task 8.1 必须全量补齐:对话流文案、编辑器文案、所有面板、错误提示、空状态、tooltip 等
+
+---
+
 <!-- BACKLOG-APPEND-HERE -->
