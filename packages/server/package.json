@@ -1,0 +1,32 @@
+{
+  "name": "@scribe/server",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./src/main.ts",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "build": "tsc",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@scribe/shared": "workspace:*",
+    "hono": "^4.6.0",
+    "@hono/node-server": "^1.13.0",
+    "better-sqlite3": "^12.0.0",
+    "ai": "^4.0.0",
+    "@ai-sdk/openai-compatible": "^0.1.0",
+    "zod": "^3.23.0",
+    "pino": "^9.0.0",
+    "tar": "^7.0.0",
+    "gray-matter": "^4.0.3"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "vitest": "^2.1.0",
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/tar": "^6.1.13",
+    "typescript": "^5.6.0"
+  }
+}
