@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.scribe-data/
+*.log
+.env
+.env.local
+secrets.env
+.vite/
+playwright-report/
+test-results/
+.superpowers/brainstorm/*/state/

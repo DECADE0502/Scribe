@@ -1,0 +1,40 @@
+<h2>后端用什么语言/栈写?</h2>
+<p class="subtitle">前端不用纠结(Vite + React 或 Vue 都行,后面再决定)。这题只问 server 那一侧。</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>TypeScript / Node.js(推荐)</h3>
+      <p><b>核心理由</b>:Vercel AI SDK 是当今最成熟的 AI 抽象层,在 Node 生态里。CharacterArc 用的就是它</p>
+      <p><b>能直接吃到</b>:streamText / streamObject / tools / 自动 provider 兼容 / tool_use 降级 / Anthropic prompt cache</p>
+      <p><b>前后端同语言</b>:类型可以共享,IDE 体验最好</p>
+      <p><b>缺点</b>:依赖管理是 npm,要忍受 node_modules 巨大</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Python(FastAPI / Litestar)</h3>
+      <p><b>核心理由</b>:AI 生态最丰富(LangChain / LlamaIndex / instructor / litellm),想接 RAG / embedding / 本地模型最方便</p>
+      <p><b>对个人项目友好</b>:写脚本快,数据处理强</p>
+      <p><b>缺点</b>:Vercel AI SDK 的 Python 等价物没那么成熟,要自己拼 OpenAI SDK + Anthropic SDK,多 provider 抽象要手写</p>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Go(像 ainovel-cli)</h3>
+      <p><b>核心理由</b>:单二进制部署,性能好,你刚装过 Go</p>
+      <p><b>缺点</b>:LLM 生态最弱,几乎所有 SDK 都是社区维护质量参差。想用 Vercel AI SDK 那种工具级抽象,得自己写</p>
+      <p>对这种"少量并发 + 大量 LLM 调用"的工作负载,Go 的强项(并发)用不上,弱项(SDK 生态)很疼</p>
+    </div>
+  </div>
+  <div class="option" data-choice="d" onclick="toggleSelect(this)">
+    <div class="letter">D</div>
+    <div class="content">
+      <h3>我有强烈偏好,告诉你</h3>
+      <p>如果你已经精通某一门(Rust / Java / C# 等)且强烈想用,选这个并在终端里说</p>
+    </div>
+  </div>
+</div>

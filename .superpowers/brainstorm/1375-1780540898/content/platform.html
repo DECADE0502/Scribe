@@ -1,0 +1,44 @@
+<h2>你想在哪里写?</h2>
+<p class="subtitle">这决定了用什么技术栈、能不能离线用、能不能放在多设备同步。一旦选了很难改。</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>桌面 GUI 应用(像 CharacterArc)</h3>
+      <p><b>形态</b>:Electron / Tauri 打包的桌面应用,双击运行</p>
+      <p><b>编辑器</b>:富文本(TipTap / ProseMirror),所见即所得,中文排版自动正确</p>
+      <p><b>数据</b>:本地 SQLite</p>
+      <p><b>API key</b>:存本机配置,不出门</p>
+      <p><b>优点</b>:体验最好,富文本天然适合长文 / <b>缺点</b>:技术栈复杂(前端 + 主进程 + IPC),开发慢</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>本地 Web 应用(浏览器打开 localhost)</h3>
+      <p><b>形态</b>:跑一个本地 server,你用浏览器访问 localhost:xxxx</p>
+      <p><b>编辑器</b>:同样富文本,但跑在浏览器里</p>
+      <p><b>数据</b>:本地 SQLite 或 JSON 文件</p>
+      <p><b>优点</b>:同样的代码以后想部署到云上、想多端同步都简单很多 / 跨平台天然 / <b>缺点</b>:每次要先启 server,体验稍逊桌面应用</p>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>TUI(终端界面,像 ainovel-cli)</h3>
+      <p><b>形态</b>:命令行启动,在终端里跑全屏 TUI</p>
+      <p><b>编辑器</b>:有限富文本,基本是纯文本编辑</p>
+      <p><b>优点</b>:开发最快,可以 SSH 远程用,极客友好 / <b>缺点</b>:中文排版/段落感受/光标体验都比 GUI 差,长篇审稿不舒服</p>
+    </div>
+  </div>
+  <div class="option" data-choice="d" onclick="toggleSelect(this)">
+    <div class="letter">D</div>
+    <div class="content">
+      <h3>VS Code / Obsidian 插件</h3>
+      <p><b>形态</b>:把编辑器外包给已有工具,你只写"AI 大脑"那部分</p>
+      <p><b>数据</b>:Markdown 文件(在 VS Code / Obsidian 工作区)</p>
+      <p><b>优点</b>:省一半开发量,你已有的写作工作流不变 / <b>缺点</b>:UI 受限于宿主,做"双粒度"的内嵌交互比较别扭</p>
+    </div>
+  </div>
+</div>

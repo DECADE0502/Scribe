@@ -1,0 +1,43 @@
+<h2>你给 AI 的"指令"通常是多大一坨?</h2>
+<p class="subtitle">这决定了 UI 的核心形态、上下文怎么组装、AI 出错时回滚多少。点选你最常用的粒度。</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>段落级 / 场景级(指令几行,产出几百字)</h3>
+      <p><b>你说</b>:"这里写林尘进酒馆,看见师妹在喝酒,内心五味杂陈但表面装作没看见,大概 300 字"</p>
+      <p><b>AI 给</b>:几百字片段,你看完决定要不要,不要就重生成或自己改</p>
+      <p><b>UI 形态</b>:像 ChatGPT,但每条消息绑定文档里的一段。光标在哪,AI 就替哪写</p>
+      <p><b>优点</b>:控制最细,你随时能干预 / <b>缺点</b>:慢,要点很多次才写完一章</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>章节级(指令一段大纲,产出整章 3000-6000 字)</h3>
+      <p><b>你说</b>:"第 23 章:林尘进城调查,遇到师妹,两人产生误会,师妹拂袖而去,留下伏笔。基调压抑,3000 字"</p>
+      <p><b>AI 给</b>:整章草稿,你审 → 改 / 重写 / 接受</p>
+      <p><b>UI 形态</b>:大纲面板 + 章节工作台 + AI 侧边栏(类似 CharacterArc)</p>
+      <p><b>优点</b>:写作效率高,大纲是产出主线 / <b>缺点</b>:AI 跑偏时整章作废,粒度大</p>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>双粒度(常规章节级,但可以临时切到段落级)</h3>
+      <p>常规模式按 B 跑。但当你审完一章发现某段不行,可以选中那段说"重写这段,要更克制",AI 只重写选中的部分</p>
+      <p><b>UI 形态</b>:章节工作台为主,加上"选中文本 → AI 改写"的内嵌交互(像 Cursor 的 Cmd+K)</p>
+      <p><b>优点</b>:正常态高效,问题发生时能精修 / <b>缺点</b>:实现复杂度上一个台阶</p>
+    </div>
+  </div>
+  <div class="option" data-choice="d" onclick="toggleSelect(this)">
+    <div class="letter">D</div>
+    <div class="content">
+      <h3>"接力"模式(你写多少,AI 就接多少)</h3>
+      <p>你正常写,AI 在你光标后面给灰色续写建议(像 GitHub Copilot)。Tab 接受、Esc 拒绝。"代笔模式"就是把建议长度调成 1-3 段</p>
+      <p><b>UI 形态</b>:富文本编辑器 + 内联续写,极简</p>
+      <p><b>优点</b>:沉浸感最强,人机融合 / <b>缺点</b>:AI 拿不到"未来剧情走向",只能短程续写,容易没方向感</p>
+    </div>
+  </div>
+</div>

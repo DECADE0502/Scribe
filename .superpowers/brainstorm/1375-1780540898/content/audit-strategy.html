@@ -1,0 +1,42 @@
+<h2>"双重审查"还是"一次写完"?</h2>
+<p class="subtitle">CharacterArc 的核心保险机制是:章节生成完后,自动用另一个 LLM 调用做 chapter-audit(检查 OOC、伏笔失管、设定冲突),发现问题再触发 chapter-repair。</p>
+<p class="subtitle">这是质量上很重要的一道闸,但代价是每章 token 大约翻倍。你怎么看?</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>愿意,质量优先(推荐)</h3>
+      <p><b>策略</b>:写完一章 → 后台自动跑 audit → 有问题就显示警告 → 你点修复或忽略</p>
+      <p><b>代价</b>:每章 token ≈ 1.5-2x。但 audit 可以用便宜模型(比如 Haiku 审 Sonnet 写的)</p>
+      <p><b>你 A 痛点的核心解药</b>:OOC 和"AI 味重"基本就是靠这道闸抓的</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>愿意,但只在弧/卷边界审(像 ainovel-cli)</h3>
+      <p><b>策略</b>:每章不审,跑到一弧结束(5-10 章)做一次集中评审,问题章节进入 PendingRewrites</p>
+      <p><b>代价</b>:省 token,但问题晚发现,弧末重写多章很重</p>
+      <p><b>适合</b>:你写得快、不在意中间几章质量,等弧末统一打磨</p>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>不要自动审,我自己判断</h3>
+      <p><b>策略</b>:AI 只负责写,质量由你审稿。系统提供工具(选中段落问"这段有什么问题")让你按需调用</p>
+      <p><b>代价</b>:省 token 最多,但这会把你的"A 痛点"原样保留 —— 你说过"受不了写得质量一般",所以这选项跟你需求冲突</p>
+      <p><b>适合</b>:重度审稿型用户,有耐心精读每章</p>
+    </div>
+  </div>
+  <div class="option" data-choice="d" onclick="toggleSelect(this)">
+    <div class="letter">D</div>
+    <div class="content">
+      <h3>双轨:章末轻审 + 弧末重审</h3>
+      <p><b>策略</b>:每章后用便宜模型做轻量 OOC/AI 味检测(快,token 少);弧末再用强模型做完整 7 维评审</p>
+      <p><b>代价</b>:总 token 比 A 略高,但分摊到每章后台跑感知不到</p>
+      <p><b>这是从 ainovel-cli 和 CharacterArc 各取一半的混合方案</b></p>
+    </div>
+  </div>
+</div>
