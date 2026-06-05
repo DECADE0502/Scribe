@@ -51,35 +51,33 @@ export async function* writeChapterSimple(
     { role: "user" as const, content: userPrompt },
   ];
   let buffer = "";
-  for await (const ev of streamLlm({
-    model: deps.model,
-    messages,
-    abortSignal: input.abortSignal,
-  })) {
-    if (ev.type === "text_delta") {
-      buffer += ev.delta;
+  let success = false;
+  try {
+    for await (const ev of streamLlm({
+      model: deps.model,
+      messages,
+      abortSignal: input.abortSignal,
+    })) {
+      if (ev.type === "text_delta") buffer += ev.delta;
+      if (ev.type === "done") success = true;
       yield ev;
-      continue;
     }
-    if (ev.type === "done") {
-      // 在 yield done 之前落盘:消费者看到 done 后会终止,
-      // 此时若 generator 被早返,后续代码不会执行
-      if (buffer.trim()) {
-        const saved = deps.chaptersRepo.saveVersion({
-          chapterNo: input.chapterNo,
-          source: "ai_write",
-          contentMd: buffer,
-        });
-        deps.chapterFiles.save({
-          chapterNo: input.chapterNo,
-          title: `第${input.chapterNo}章`,
-          content: buffer,
-          versionNo: saved.versionNo,
-        });
-      }
-      yield ev;
-      return;
+  } finally {
+    // 仅在 done 之后落盘;error 路径或空内容不落盘(原子性)。
+    // 用 finally 是因为 SSE 消费者在收到 done 后会 break,触发
+    // generator 的 iterator.return(),正常 for-loop 之后的代码不会执行。
+    if (success && buffer.trim()) {
+      const saved = deps.chaptersRepo.saveVersion({
+        chapterNo: input.chapterNo,
+        source: "ai_write",
+        contentMd: buffer,
+      });
+      deps.chapterFiles.save({
+        chapterNo: input.chapterNo,
+        title: `第${input.chapterNo}章`,
+        content: buffer,
+        versionNo: saved.versionNo,
+      });
     }
-    yield ev;
   }
 }
