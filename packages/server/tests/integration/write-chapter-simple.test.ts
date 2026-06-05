@@ -121,6 +121,9 @@ describe("writeChapterSimple", () => {
       saveVersion() {
         throw new Error("disk full");
       },
+      deleteVersion() {
+        /* not reached */
+      },
     };
     const evs = await consume(
       writeChapterSimple(
@@ -142,6 +145,38 @@ describe("writeChapterSimple", () => {
       expect(errEv.message).toContain("disk full");
     }
     // 文件没写出来(saveVersion 在 .md 之前抛错)
+    expect(fs.existsSync(path.join(tmp, "chapters", "0001.md"))).toBe(false);
+  });
+
+  it("文件落盘失败:回滚 DB version 行,保持原子性", async () => {
+    // 让 chapterFiles.save 抛错(模拟磁盘满 / EPERM),DB 已写入的 version
+    // 行需要被回滚,避免留下"DB 有 version 1、磁盘无 0001.md"的半成品。
+    const brokenChapterFiles = {
+      save() {
+        throw new Error("EPERM: simulated disk failure");
+      },
+    };
+    const evs = await consume(
+      writeChapterSimple(
+        {
+          model: makeStubLanguageModel({ chunks: ["正常正文"] }),
+          chaptersRepo,
+          chapterFiles: brokenChapterFiles as any,
+        },
+        { chapterNo: 1, userIntent: "测试" },
+      ),
+    );
+    const hasDone = evs.some((e) => e.type === "done");
+    const errEv = evs.find((e) => e.type === "error");
+    expect(hasDone).toBe(false);
+    expect(errEv).toBeTruthy();
+    if (errEv && errEv.type === "error") {
+      expect(errEv.errorClass).toBe("save_failed");
+      expect(errEv.message).toContain("EPERM");
+    }
+    // DB 不应留下半成品 version 行
+    expect(chaptersRepo.listVersions(1)).toHaveLength(0);
+    // 文件也不存在
     expect(fs.existsSync(path.join(tmp, "chapters", "0001.md"))).toBe(false);
   });
 });

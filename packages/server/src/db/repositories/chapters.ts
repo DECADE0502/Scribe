@@ -107,6 +107,11 @@ export function createChaptersRepo(db: Database) {
         .all(chapterNo)
         .map(rowToVersion);
     },
+    deleteVersion(chapterNo: number, versionNo: number): void {
+      db.prepare(
+        "DELETE FROM chapter_versions WHERE chapter_no=? AND version_no=?"
+      ).run(chapterNo, versionNo);
+    },
     getLatestVersion(chapterNo: number): ChapterVersion | undefined {
       const r = db
         .prepare(

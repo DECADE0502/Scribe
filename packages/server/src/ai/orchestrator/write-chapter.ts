@@ -22,6 +22,7 @@ export interface ChaptersRepoLike {
     source: "ai_write" | "ai_rewrite" | "user_edit" | "segment_revise";
     contentMd: string;
   }): { versionNo: number };
+  deleteVersion(chapterNo: number, versionNo: number): void;
 }
 
 export interface WriteChapterDeps {
@@ -63,9 +64,13 @@ export async function* writeChapterSimple(
       // - 落盘失败:yield error 替代 done,避免 done 之后再追 error
       //   破坏"done 是终结事件"的协议;同时早 return 不再 yield 后续事件。
       // 错误路径(LLM 直接 yield error)天然不会进入此分支,buffer 不落盘。
+      // 原子性:DB 与文件双写,任意一侧失败都需要保持外部观察一致 ——
+      // saveVersion 失败不会写文件;chapterFiles.save 失败需回滚已写入的
+      // version 行,避免留下"DB 有 version、磁盘无 .md"的半成品。
       if (buffer.trim()) {
+        let saved: { versionNo: number } | undefined;
         try {
-          const saved = deps.chaptersRepo.saveVersion({
+          saved = deps.chaptersRepo.saveVersion({
             chapterNo: input.chapterNo,
             source: "ai_write",
             contentMd: buffer,
@@ -77,6 +82,17 @@ export async function* writeChapterSimple(
             versionNo: saved.versionNo,
           });
         } catch (e) {
+          // 文件侧失败时,回滚已插入的 version 行,保持 DB/FS 一致
+          if (saved) {
+            try {
+              deps.chaptersRepo.deleteVersion(
+                input.chapterNo,
+                saved.versionNo,
+              );
+            } catch {
+              // 回滚失败暂无 logger,先吞;后续接入日志后补充
+            }
+          }
           yield {
             type: "error",
             errorClass: "save_failed",
