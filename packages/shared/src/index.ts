@@ -13,3 +13,4 @@ export * from "./types/audit.js";
 export * from "./types/conversation.js";
 export * from "./types/token-usage.js";
 export * from "./types/provider.js";
+export * from "./types/sse-events.js";
