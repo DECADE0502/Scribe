@@ -51,33 +51,41 @@ export async function* writeChapterSimple(
     { role: "user" as const, content: userPrompt },
   ];
   let buffer = "";
-  let success = false;
-  try {
-    for await (const ev of streamLlm({
-      model: deps.model,
-      messages,
-      abortSignal: input.abortSignal,
-    })) {
-      if (ev.type === "text_delta") buffer += ev.delta;
-      if (ev.type === "done") success = true;
-      yield ev;
+  for await (const ev of streamLlm({
+    model: deps.model,
+    messages,
+    abortSignal: input.abortSignal,
+  })) {
+    if (ev.type === "text_delta") buffer += ev.delta;
+    if (ev.type === "done") {
+      // 在 yield done 之前落盘,确保 SSE 终结事件契约:
+      // - 落盘成功:正常 yield done(消费者据此 break)
+      // - 落盘失败:yield error 替代 done,避免 done 之后再追 error
+      //   破坏"done 是终结事件"的协议;同时早 return 不再 yield 后续事件。
+      // 错误路径(LLM 直接 yield error)天然不会进入此分支,buffer 不落盘。
+      if (buffer.trim()) {
+        try {
+          const saved = deps.chaptersRepo.saveVersion({
+            chapterNo: input.chapterNo,
+            source: "ai_write",
+            contentMd: buffer,
+          });
+          deps.chapterFiles.save({
+            chapterNo: input.chapterNo,
+            title: `第${input.chapterNo}章`,
+            content: buffer,
+            versionNo: saved.versionNo,
+          });
+        } catch (e) {
+          yield {
+            type: "error",
+            errorClass: "save_failed",
+            message: String((e as Error)?.message ?? e),
+          };
+          return;
+        }
+      }
     }
-  } finally {
-    // 仅在 done 之后落盘;error 路径或空内容不落盘(原子性)。
-    // 用 finally 是因为 SSE 消费者在收到 done 后会 break,触发
-    // generator 的 iterator.return(),正常 for-loop 之后的代码不会执行。
-    if (success && buffer.trim()) {
-      const saved = deps.chaptersRepo.saveVersion({
-        chapterNo: input.chapterNo,
-        source: "ai_write",
-        contentMd: buffer,
-      });
-      deps.chapterFiles.save({
-        chapterNo: input.chapterNo,
-        title: `第${input.chapterNo}章`,
-        content: buffer,
-        versionNo: saved.versionNo,
-      });
-    }
+    yield ev;
   }
 }

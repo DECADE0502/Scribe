@@ -114,4 +114,34 @@ describe("writeChapterSimple", () => {
     expect(fs.existsSync(path.join(tmp, "chapters", "0001.md"))).toBe(false);
     expect(chaptersRepo.listVersions(1)).toHaveLength(0);
   });
+
+  it("落盘失败:yield error 替代 done,不破坏 SSE 终结契约", async () => {
+    // saveVersion 抛错,模拟 DB 故障
+    const brokenRepo = {
+      saveVersion() {
+        throw new Error("disk full");
+      },
+    };
+    const evs = await consume(
+      writeChapterSimple(
+        {
+          model: makeStubLanguageModel({ chunks: ["正文"] }),
+          chaptersRepo: brokenRepo,
+          chapterFiles,
+        },
+        { chapterNo: 1, userIntent: "测试" },
+      ),
+    );
+    // 不能既出现 done 又出现 error;落盘失败应只出现 error
+    const hasDone = evs.some((e) => e.type === "done");
+    const errEv = evs.find((e) => e.type === "error");
+    expect(hasDone).toBe(false);
+    expect(errEv).toBeTruthy();
+    if (errEv && errEv.type === "error") {
+      expect(errEv.errorClass).toBe("save_failed");
+      expect(errEv.message).toContain("disk full");
+    }
+    // 文件没写出来(saveVersion 在 .md 之前抛错)
+    expect(fs.existsSync(path.join(tmp, "chapters", "0001.md"))).toBe(false);
+  });
 });

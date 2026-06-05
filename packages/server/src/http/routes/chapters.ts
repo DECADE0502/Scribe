@@ -24,7 +24,11 @@ export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
       return c.json({ error: "未配置模型,请先在设置中配置 API Key" }, 503);
     }
     return streamSseResponse(
-      writeChapterSimple(wcDeps, { chapterNo: no, userIntent }),
+      writeChapterSimple(wcDeps, {
+        chapterNo: no,
+        userIntent,
+        abortSignal: c.req.raw.signal,
+      }),
     );
   });
   return app;

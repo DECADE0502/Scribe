@@ -54,8 +54,13 @@ describe("章节写入 round-trip(HTTP 端到端)", () => {
     });
     expect(res.status).toBe(200);
     const text = await new Response(res.body).text();
-    const deltas = [...text.matchAll(/data: (\{"type":"text_delta"[^}]+\})/g)]
-      .map((m) => JSON.parse(m[1]!).delta)
+    // 按 SSE 行解析,与真实客户端行为一致;避免在 delta 含 `}` 时正则截断。
+    const deltas = text
+      .split("\n")
+      .filter((line) => line.startsWith("data: "))
+      .map((line) => JSON.parse(line.slice(6)) as { type: string; delta?: string })
+      .filter((ev) => ev.type === "text_delta")
+      .map((ev) => ev.delta ?? "")
       .join("");
     expect(deltas).toBe("雾气弥漫山道。");
     const md = fs.readFileSync(path.join(tmp, "chapters", "0001.md"), "utf-8");
