@@ -177,4 +177,40 @@
 
 ---
 
+## 累计来源:阶段 2 review
+
+### B-2-001(信息):enrichFromOpenRouter cache 毒化已修
+- 原 bug:5xx + JSON body 会让缓存写入空 Map,24h 不重试
+- 已修(commit `98bc9fd`):`if (!res.ok) return {};`
+- 测试覆盖 503 重试 + ok+缺 data 两路径
+
+### B-2-002(信息):classifyError 已扩展网络中断
+- ECONNRESET / socket hang up / EAI_AGAIN 现归 `stream_idle`(maxRetries=1)
+- 已修(commit `1ed3d3a`)
+
+### B-2-003(必读):reasoningTokens 不变量
+- DeepSeek V4 的 reasoning_tokens **已含在 completion_tokens 内**
+- usage-tracker.ts 顶部 docstring 已写明
+- **若后续接入 reasoning 单独计费的 provider**(eg 某些第三方代理),
+  需要给 `ModelInfo.pricing` 加 `reasoningOutput` 字段,并在 computeCost 里单独折算
+- Task 5.x / 9.3 用量明细 Task 时如果引入新 provider 注意
+
+### B-2-004(可选,minor):listModels 防御 undefined 字段
+- `(j.data ?? []).map(m => ({ id: m.id, ownedBy: m.owned_by }))` 会显式写入 `ownedBy: undefined`
+- 当前不影响(enrichFromOpenRouter 不返 ownedBy)
+- 将来 listModels 加可空字段(eg contextWindow)前需要补 `pickDefined({...})` 工具
+- 或在 Task 2.x 后期顺便清理
+
+### B-2-005(可选,minor):retry 测试不验 backoff 数值
+- 当前测试用 `sleepImpl: async () => {}` 吞 sleep
+- 改成 `sleeps.push(ms)` 后 `expect(sleeps).toEqual([1000, 2000])` 能锁定 backoff 公式
+- 不阻塞,Task 9.x 添加重试 UI 时若改 backoff 再补
+
+### B-2-006(可选,minor):interface.test.ts 仅 expectTypeOf
+- 该测试只在 `tsc --noEmit` 阶段拦错,vitest 运行时无意义
+- 文件名不暗示这点
+- 改进:挪到 `*.type-test.ts`,或加运行时 expect(eg `satisfies` 断言)
+
+---
+
 <!-- BACKLOG-APPEND-HERE -->
