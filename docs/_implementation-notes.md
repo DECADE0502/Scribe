@@ -91,4 +91,14 @@
 
 ---
 
+## 累计来源:Task 1.1 review
+
+### B-1.1-001(后续测试 spy `node:os` 等内置模块时)
+- Node 24 + Vitest 2.1.9 下,`vi.spyOn(os, "platform")` 直接抛 `Cannot redefine property: platform`
+- 必须先 `vi.mock("node:os", ...)` 把模块复制成可变命名空间
+- Task 1.1 已加这段 mock,后续 Task 写类似测试时直接复用其样板
+- 影响:任何 spy 内置模块(`os`/`fs`/`path`/`crypto`)的测试
+
+---
+
 <!-- BACKLOG-APPEND-HERE -->
