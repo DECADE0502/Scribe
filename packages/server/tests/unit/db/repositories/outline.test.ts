@@ -166,4 +166,17 @@ describe("outline repo", () => {
     repo.delete(n.id);
     expect(repo.get(n.id)).toBeUndefined();
   });
+
+  it("raw NULL/空串 metadata 读出落到 null", () => {
+    db.prepare(
+      `INSERT INTO outline_nodes(id,parent_id,level,title,summary,status,sort_order,metadata)
+       VALUES(?,?,?,?,?,?,?,?)`
+    ).run("raw-ol-1", null, "volume", "raw1", null, "planned", 0, null);
+    db.prepare(
+      `INSERT INTO outline_nodes(id,parent_id,level,title,summary,status,sort_order,metadata)
+       VALUES(?,?,?,?,?,?,?,?)`
+    ).run("raw-ol-2", null, "volume", "raw2", null, "planned", 1, "");
+    expect(repo.get("raw-ol-1")?.metadata).toBeNull();
+    expect(repo.get("raw-ol-2")?.metadata).toBeNull();
+  });
 });

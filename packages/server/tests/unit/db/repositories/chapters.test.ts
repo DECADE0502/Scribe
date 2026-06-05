@@ -156,4 +156,18 @@ describe("chapters repo - audits", () => {
   it("getAudit 不存在返回 undefined", () => {
     expect(repo.getAudit(999)).toBeUndefined();
   });
+
+  it("raw NULL summaries.key_events 与 audits.issues 落到空数组", () => {
+    db.prepare(
+      `INSERT INTO chapter_summaries(chapter_no,one_liner,paragraph,key_events,generated_at,reasoning_content)
+       VALUES(?,?,?,?,?,?)`
+    ).run(7, "raw", "p", null, 0, null);
+    expect(repo.getSummary(7)?.keyEvents).toEqual([]);
+
+    db.prepare(
+      `INSERT INTO chapter_audits(chapter_no,verdict,issues,audit_model,audited_at)
+       VALUES(?,?,?,?,?)`
+    ).run(7, "ok", null, "m", 0);
+    expect(repo.getAudit(7)?.issues).toEqual([]);
+  });
 });

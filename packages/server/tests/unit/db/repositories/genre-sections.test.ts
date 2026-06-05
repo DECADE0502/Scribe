@@ -83,4 +83,20 @@ describe("genre-sections repo", () => {
   it("getSection 不存在返回 undefined", () => {
     expect(repo.getSection("nope")).toBeUndefined();
   });
+
+  it("raw NULL section.schema 与空串 item.data 落到 fallback", () => {
+    db.prepare(
+      `INSERT INTO genre_sections(id,name,schema,created_by,created_at)
+       VALUES(?,?,?,?,?)`
+    ).run("raw-sec", "raw", null, "ai", Date.now());
+    const sec = repo.getSection("raw-sec");
+    expect(sec?.schema).toEqual([]);
+
+    db.prepare(
+      `INSERT INTO genre_section_items(id,section_id,data,updated_at)
+       VALUES(?,?,?,?)`
+    ).run("raw-item", "raw-sec", "", Date.now());
+    const item = repo.getItem("raw-item");
+    expect(item?.data).toEqual({});
+  });
 });

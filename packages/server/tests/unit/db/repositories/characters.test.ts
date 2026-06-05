@@ -66,4 +66,15 @@ describe("characters repo", () => {
     expect(repo.get(c.id)).toBeUndefined();
     expect(repo.list()).toHaveLength(0);
   });
+
+  it("raw NULL/空串 JSON 列读出落到 fallback(空对象/空数组)", () => {
+    db.prepare(
+      `INSERT INTO characters(id,name,role,base_data,current_state,appearances,updated_at)
+       VALUES(?,?,?,?,?,?,?)`
+    ).run("raw1", "Y", null, null, "", null, Date.now());
+    const c = repo.get("raw1");
+    expect(c?.baseData).toEqual({});
+    expect(c?.currentState).toEqual({});
+    expect(c?.appearances).toEqual([]);
+  });
 });

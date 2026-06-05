@@ -119,4 +119,13 @@ describe("foreshadowing repo", () => {
     repo.delete(f.id);
     expect(repo.list()).toHaveLength(0);
   });
+
+  it("raw NULL related_characters 读出落到空数组", () => {
+    db.prepare(
+      `INSERT INTO foreshadowing(id,label,description,planted_chapter,paid_chapter,status,related_characters)
+       VALUES(?,?,?,?,?,?,?)`
+    ).run("raw-fs", "Z", null, null, null, "active", null);
+    const f = repo.get("raw-fs");
+    expect(f?.relatedCharacters).toEqual([]);
+  });
 });

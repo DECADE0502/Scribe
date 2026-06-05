@@ -66,4 +66,19 @@ describe("conversations repo", () => {
   it("countAll 空表为 0", () => {
     expect(repo.countAll()).toBe(0);
   });
+
+  it("raw NULL/空串/JSON null 的 metadata 全部读出为 null", () => {
+    db.prepare(
+      `INSERT INTO conversations(role,content,metadata,created_at) VALUES(?,?,?,?)`
+    ).run("user", "a", null, 1);
+    db.prepare(
+      `INSERT INTO conversations(role,content,metadata,created_at) VALUES(?,?,?,?)`
+    ).run("user", "b", "", 2);
+    db.prepare(
+      `INSERT INTO conversations(role,content,metadata,created_at) VALUES(?,?,?,?)`
+    ).run("user", "c", "null", 3);
+    const list = repo.listSince(0);
+    expect(list).toHaveLength(3);
+    expect(list.every((m) => m.metadata === null)).toBe(true);
+  });
 });

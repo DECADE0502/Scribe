@@ -78,4 +78,13 @@ describe("timeline repo", () => {
     expect(repo.get(e1.id)?.participants).toEqual([]);
     expect(repo.get(e2.id)?.participants).toEqual(["c1", "c2", "c3"]);
   });
+
+  it("raw NULL participants 读出落到空数组", () => {
+    db.prepare(
+      `INSERT INTO timeline_events(id,chapter_no,story_time,event,participants)
+       VALUES(?,?,?,?,?)`
+    ).run("raw-tl", 1, "x", "E", null);
+    const e = repo.get("raw-tl");
+    expect(e?.participants).toEqual([]);
+  });
 });
