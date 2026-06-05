@@ -20,4 +20,12 @@ describe("DeepSeekProvider", () => {
     const p = new DeepSeekProvider({ apiKey: "sk-x" });
     expect(p.classifyError(Object.assign(new Error("auth"), { status: 401 }))).toBe("auth");
   });
+  it("classifyError 识别瞬时网络中断", () => {
+    const p = new DeepSeekProvider({ apiKey: "sk-x" });
+    expect(p.classifyError(new Error("read ECONNRESET"))).toBe("stream_idle");
+    expect(p.classifyError(new Error("socket hang up"))).toBe("stream_idle");
+    expect(p.classifyError(new Error("getaddrinfo EAI_AGAIN api.deepseek.com"))).toBe(
+      "stream_idle",
+    );
+  });
 });

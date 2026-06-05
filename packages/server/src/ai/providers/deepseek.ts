@@ -18,7 +18,7 @@ export class DeepSeekProvider extends OpenAICompatibleProvider {
     if (status === 429) return "rate_limit";
     if (status === 401 || status === 403) return "auth";
     if (/timeout|ETIMEDOUT/i.test(msg)) return "timeout";
-    if (/aborted|stream.*idle/i.test(msg)) return "stream_idle";
+    if (/aborted|stream.*idle|ECONNRESET|socket hang up|EAI_AGAIN/i.test(msg)) return "stream_idle";
     if (/context length|context_length|too long|maximum context/i.test(msg)) return "context_overflow";
     return "unknown";
   }
