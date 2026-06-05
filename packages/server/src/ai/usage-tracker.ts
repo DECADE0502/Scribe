@@ -1,5 +1,15 @@
 import type { ModelInfo, TaskType } from "@scribe/shared";
 
+/**
+ * Token 用量追踪 + 成本计算。
+ *
+ * 不变量(important):
+ * - `reasoningTokens` 是 `completionTokens` 的子集(DeepSeek V4 等 reasoning 模型 API 返回时,
+ *   completion_tokens 已包含 reasoning_tokens),仅用于审计/可视化,**不参与成本计算**。
+ * - 若将来接入"reasoning 单独计费"的 provider(eg 某些第三方代理),需要新增 reasoningOutput
+ *   字段到 ModelInfo.pricing,并在此处单独折算,届时本约束作废。
+ */
+
 interface RecordInput {
   bookId: string;
   taskType: TaskType;
