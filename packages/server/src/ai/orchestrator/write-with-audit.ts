@@ -2,7 +2,8 @@ import type { LanguageModel } from "ai";
 import type { SseEvent } from "@scribe/shared";
 import {
   writeChapterSimple,
-  type WriteChapterDeps,
+  type ChaptersRepoLike as ChaptersRepoWriteLike,
+  type ChapterFilesLike,
   type WriteChapterInput,
 } from "./write-chapter.js";
 import {
@@ -16,7 +17,15 @@ import {
 } from "./audit-persist.js";
 import { repairChapter, type RepairDeps } from "./repair-chapter.js";
 
-export interface WriteWithAuditDeps extends WriteChapterDeps {
+/**
+ * 端到端依赖。chaptersRepo 必须同时满足 write/repair 路径(saveVersion/
+ * deleteVersion)与 audit/summary 落盘(saveAudit/saveSummary),用交叉类型
+ * 在编译期强制调用方提供完整 repo,避免运行时 TypeError。
+ */
+export interface WriteWithAuditDeps {
+  model: LanguageModel;
+  chaptersRepo: ChaptersRepoWriteLike & ChaptersRepoAuditLike;
+  chapterFiles: ChapterFilesLike;
   /** 用于 audit 与 repair 后再审的非流式模型 */
   auditModel: LanguageModel;
   /** 落盘 audit 行时记录的模型 ID,便于后续追溯 */
@@ -67,13 +76,24 @@ export async function* writeWithAudit(
     }
     yield ev;
   }
-  if (!writeSucceeded || !writtenContent.trim()) return;
+  if (!writeSucceeded) return;
+  // 写阶段汇报 done 但实际未产出任何文本时,流必须以终结事件收尾。
+  // writeChapterSimple 在 buffer 为空时不会落盘,这里也不会产出任何下游
+  // 工件,直接以 error(empty_response) 结束,让客户端可观察终结状态。
+  if (!writtenContent.trim()) {
+    yield {
+      type: "error",
+      errorClass: "empty_response",
+      message: "LLM 未返回章节正文",
+    };
+    return;
+  }
 
   // ---- 阶段 2: audit + summarize(非流式) ----
   let auditResult: AuditResult;
   try {
     auditResult = await auditChapter(
-      { model: deps.auditModel },
+      { model: deps.auditModel, abortSignal: input.abortSignal },
       {
         chapterNo: input.chapterNo,
         chapterContent: writtenContent,
@@ -83,17 +103,15 @@ export async function* writeWithAudit(
   } catch (e) {
     yield {
       type: "error",
-      errorClass: "unknown",
+      errorClass: "audit_failed",
       message: `审查失败:${(e as Error).message}`,
     };
     return;
   }
 
   // ---- 阶段 3: 落盘 audit + summary ----
-  const chaptersRepoAudit =
-    deps.chaptersRepo as unknown as ChaptersRepoAuditLike;
   persistAuditResult(
-    chaptersRepoAudit,
+    deps.chaptersRepo,
     input.chapterNo,
     auditResult,
     deps.auditModelId,
@@ -123,6 +141,7 @@ export async function* writeWithAudit(
       model: deps.model,
       chaptersRepo: deps.chaptersRepo,
       chapterFiles: deps.chapterFiles,
+      abortSignal: input.abortSignal,
     };
     for await (const ev of repairChapter(repairDeps, {
       chapterNo: input.chapterNo,
@@ -146,7 +165,7 @@ export async function* writeWithAudit(
     if (repairOk && repairContent.trim()) {
       try {
         const reAudit = await auditChapter(
-          { model: deps.auditModel },
+          { model: deps.auditModel, abortSignal: input.abortSignal },
           {
             chapterNo: input.chapterNo,
             chapterContent: repairContent,
@@ -154,7 +173,7 @@ export async function* writeWithAudit(
           },
         );
         persistAuditResult(
-          chaptersRepoAudit,
+          deps.chaptersRepo,
           input.chapterNo,
           reAudit,
           deps.auditModelId,
@@ -170,7 +189,7 @@ export async function* writeWithAudit(
       } catch (e) {
         yield {
           type: "error",
-          errorClass: "unknown",
+          errorClass: "repair_audit_failed",
           message: `修复后再审失败:${(e as Error).message}`,
         };
         return;

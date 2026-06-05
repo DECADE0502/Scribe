@@ -264,12 +264,177 @@ describe("writeWithAudit", () => {
     expect(
       evs.some(
         (e: any) =>
-          e.type === "error" && (e as any).message?.includes("审查失败"),
+          e.type === "error" &&
+          e.errorClass === "audit_failed" &&
+          (e as any).message?.includes("审查失败"),
       ),
     ).toBe(true);
     // 写章节本身已成功落盘
     expect(chaptersRepo.listVersions(1)).toHaveLength(1);
     // audit 失败时不应有 audit 行
     expect(chaptersRepo.getAudit(1)).toBeUndefined();
+  });
+
+  it("LLM 返回空内容时:不发 done,而是 yield error empty_response 终结流", async () => {
+    const evs = await consume(
+      writeWithAudit(
+        {
+          model: makeStubLanguageModel({ chunks: ["", "  "] }),
+          chaptersRepo,
+          chapterFiles,
+          auditModel: makeAuditModel(JSON.stringify(okAudit)),
+          auditModelId: "deepseek-v4-flash",
+        },
+        { chapterNo: 1, userIntent: "测试" },
+      ),
+    );
+    // 流必须以终结事件收尾(error 或 done),不能静默结束
+    expect(evs.find((e: any) => e.type === "done")).toBeUndefined();
+    const err = evs.find(
+      (e: any) => e.type === "error" && e.errorClass === "empty_response",
+    );
+    expect(err).toBeDefined();
+    // 既不该进入 audit 阶段,也不该有任何落盘
+    expect(
+      evs.find(
+        (e: any) =>
+          e.type === "tool_call_end" && e.toolName === "chapter_audit",
+      ),
+    ).toBeUndefined();
+    expect(chaptersRepo.listVersions(1)).toHaveLength(0);
+    expect(chaptersRepo.getAudit(1)).toBeUndefined();
+    expect(fs.existsSync(path.join(tmp, "chapters", "0001.md"))).toBe(false);
+  });
+
+  it("用户在 write 阶段取消(abortSignal):不进入 audit / 不落盘", async () => {
+    const ac = new AbortController();
+    let auditCalled = false;
+    const auditModel: any = {
+      specificationVersion: "v1",
+      provider: "stub",
+      modelId: "stub-audit",
+      async doGenerate() {
+        auditCalled = true;
+        return {
+          text: JSON.stringify(okAudit),
+          finishReason: "stop",
+          usage: { promptTokens: 100, completionTokens: 200 },
+          rawCall: { rawPrompt: null, rawSettings: {} },
+        };
+      },
+      async doStream() {
+        throw new Error("not used");
+      },
+    };
+    // write 阶段直接抛错(模拟取消)
+    ac.abort();
+    const evs = await consume(
+      writeWithAudit(
+        {
+          model: makeStubLanguageModel({
+            chunks: ["x"],
+            throwOn: "stream",
+          }),
+          chaptersRepo,
+          chapterFiles,
+          auditModel,
+          auditModelId: "deepseek-v4-flash",
+        },
+        { chapterNo: 1, userIntent: "测试", abortSignal: ac.signal },
+      ),
+    );
+    expect(evs.some((e: any) => e.type === "error")).toBe(true);
+    expect(auditCalled).toBe(false);
+    expect(chaptersRepo.listVersions(1)).toHaveLength(0);
+  });
+
+  it("repair 后再审仍 critical:stillCritical=true,audit 行被覆盖", async () => {
+    const evs = await consume(
+      writeWithAudit(
+        {
+          model: makeStubLanguageModel({ chunks: ["原文", "段二"] }),
+          chaptersRepo,
+          chapterFiles,
+          auditModel: makeSequencedAuditModel([
+            JSON.stringify(criticalAudit),
+            JSON.stringify(criticalAudit),
+          ]),
+          auditModelId: "deepseek-v4-flash",
+        },
+        { chapterNo: 1, userIntent: "测试" },
+      ),
+    );
+    // 流仍然以 done 收尾(repair 后再审失败不算流错误)
+    expect(evs.find((e: any) => e.type === "done")).toBeDefined();
+    const reAudit = evs.find(
+      (e: any) =>
+        e.type === "tool_call_end" && e.toolName === "chapter_repair_audit",
+    );
+    expect(reAudit).toBeDefined();
+    expect((reAudit as any).result.verdict).toBe("critical");
+    expect((reAudit as any).result.stillCritical).toBe(true);
+    // 写 + 修复各 1 行 version,audit 行被再审覆盖,verdict 仍为 critical
+    expect(chaptersRepo.listVersions(1)).toHaveLength(2);
+    expect(chaptersRepo.getAudit(1)?.verdict).toBe("critical");
+  });
+
+  it("repair 阶段 LLM 抛错:初审落盘保留,流以 error 终结", async () => {
+    // write 用正常模型,repair 阶段(同一个 model)第二次 doStream 抛错。
+    // 用一个分阶段模型:第一次成功输出,第二次抛错。
+    let callCount = 0;
+    const flakyModel: any = {
+      specificationVersion: "v1",
+      provider: "stub",
+      modelId: "flaky",
+      async doGenerate() {
+        throw new Error("not used");
+      },
+      async doStream() {
+        callCount++;
+        if (callCount === 1) {
+          return {
+            stream: new ReadableStream({
+              start(ctrl) {
+                ctrl.enqueue({ type: "text-delta", textDelta: "原文段落" });
+                ctrl.enqueue({
+                  type: "finish",
+                  finishReason: "stop",
+                  usage: { promptTokens: 5, completionTokens: 4 },
+                });
+                ctrl.close();
+              },
+            }),
+            rawCall: { rawPrompt: null, rawSettings: {} },
+          };
+        }
+        return {
+          stream: new ReadableStream({
+            start(ctrl) {
+              ctrl.error(new Error("repair stream boom"));
+            },
+          }),
+          rawCall: { rawPrompt: null, rawSettings: {} },
+        };
+      },
+    };
+    const evs = await consume(
+      writeWithAudit(
+        {
+          model: flakyModel,
+          chaptersRepo,
+          chapterFiles,
+          auditModel: makeAuditModel(JSON.stringify(criticalAudit)),
+          auditModelId: "deepseek-v4-flash",
+        },
+        { chapterNo: 1, userIntent: "测试" },
+      ),
+    );
+    // 流以 error 终结(replace done,符合 B-3-002)
+    expect(evs.find((e: any) => e.type === "done")).toBeUndefined();
+    expect(evs.some((e: any) => e.type === "error")).toBe(true);
+    // 初审已落盘,且 audit 行保留
+    expect(chaptersRepo.listVersions(1)).toHaveLength(1);
+    expect(chaptersRepo.listVersions(1)[0].source).toBe("ai_write");
+    expect(chaptersRepo.getAudit(1)?.verdict).toBe("critical");
   });
 });
