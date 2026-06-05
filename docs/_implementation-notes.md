@@ -101,4 +101,42 @@
 
 ---
 
+## 累计来源:Task 1.2 review
+
+### B-1.2-001(Task 1.4 必读):workspace/001_init.sql 已删
+- Task 1.2 把原占位文件删了换成 `.gitkeep`
+- Task 1.4 plan 写的"修改 workspace/001_init.sql"要改成"**新建** `001_init.sql`"
+- 不要叫 002_init.sql 之类(避免 _migrations 表里出现奇怪空洞)
+
+### B-1.2-002(Task 1.3 顺便补):openLibraryDb 集成测试
+- quality reviewer 标了 important 但跳过了
+- 用 tmp 文件 DB 调 `openLibraryDb(tempDbPath)`,断言:
+  1. `SELECT name FROM sqlite_master WHERE name='books'` 非空(验证迁移真跑了)
+  2. `PRAGMA journal_mode` 返回 `wal`
+  3. `PRAGMA foreign_keys` 返回 `1`
+- 覆盖 fileURLToPath 真实路径解析 + PRAGMA 实际生效
+- Task 1.3 顺手补到 `tests/unit/db/library.test.ts`
+
+### B-1.2-003(信息):build 配置已就位
+- 新增 `scripts/copy-migrations.mjs`(Node 跨平台复制 *.sql 到 dist)
+- 新增 `tsconfig.build.json`(rootDir=src,排除 tests/scripts)
+- `package.json` build 现在是 `tsc -p tsconfig.build.json && node scripts/copy-migrations.mjs`
+- 后续若加新的 SQL 资源(prompts/.txt 等),要更新 copy-migrations.mjs 通配
+
+### B-1.2-004(可选,任何 Task):runner 边界覆盖
+- 当前 runner.test.ts 缺三组边界:空数组、同批重复 name、checksum 静默篡改告警
+- 都标 minor,不阻塞。先观察,真踩坑再补
+
+### B-1.2-005(可选,Task 9.3 之前):cost_usd CHECK 约束
+- `books.total_cost_usd REAL NOT NULL DEFAULT 0` 没加 `CHECK (total_cost_usd >= 0)`
+- 加上零代价,后续负数 bug 能在 DB 层挡
+- 留待 9.3 用量明细 Task 顺便加
+
+### B-1.2-006(架构,任何后续 Task):db/open.ts 抽象
+- Task 1.2 已抽出 `db/open.ts::openDbWithMigrations(dbPath, migrationsSubdir)`
+- library.ts / workspace.ts 现在是 10 行 facade,**不要**再回头复制粘贴
+- 后续有第三个 SQLite DB(eg 测试夹具),直接复用 openDbWithMigrations
+
+---
+
 <!-- BACKLOG-APPEND-HERE -->
