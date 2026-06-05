@@ -213,4 +213,48 @@
 
 ---
 
+## 累计来源:阶段 3 review
+
+### B-3-001(信息):writeChapterSimple 原子性
+- 落盘顺序:DB saveVersion → 文件 chapterFiles.save → yield done
+- 任一失败 yield `error` 替代 `done`,**绝不双终结**
+- chapter 文件失败时 `deleteVersion` 回滚 DB(`3a594f0` 引入)
+- 二次失败(deleteVersion 也抛)目前 swallow,等接 logger 后埋点
+
+### B-3-002(必读,Task 4.x):chapter 文件 / DB 顺序
+- 当前先 DB 后文件,文件失败回滚 DB
+- 之后 audit 落盘也要遵循"全部成功才 yield done,任一失败 yield error"模式
+- audit 涉及 chapter_audits + chapter_summaries 两表,plan 4.3 用 INSERT OR REPLACE 是正确的
+
+### B-3-003(Task 8.x 真接 stub LLM 之后):换 MockLanguageModelV1
+- 当前 mock-llm.ts 是手写 stub,不走 ai-sdk 类型
+- ai-sdk 升级到 v5/v6 时可能 break
+- 改成 `MockLanguageModelV1` from `ai/test`(若 import 路径在装的版本里能用)
+- 当前 MVP 阶段不阻塞
+
+### B-3-004(Task 4.x 之前):prompt builder 抽公共 fragments
+- write-chapter.ts / plan-chapter.ts 已有重复 `formatSection(title, body?)` 模式
+- 4.1 加 audit-summarize 后,4.4 加 repair-chapter,会有 4 处
+- 抽 `packages/server/src/ai/prompts/_shared.ts` 提供 `formatSection` + 用户意图 fallback
+- Task 4.x 任意时机做都行
+
+### B-3-005(Task 6.x SSE cancel):跨 runtime 兼容
+- 当前 SSE 通过 `c.req.raw.signal` 透传,只在 Node Hono adapter 工作
+- 跨 Bun/Workers/Edge 不可靠
+- 改成 ReadableStream.cancel(reason) → 内部 AbortController.abort,orchestrator 接它
+- 当前 MVP 只跑 Node,不阻塞
+
+### B-3-006(任何时候):测试类型推断
+- write-chapter-simple.test.ts / chapter-roundtrip.test.ts 用 `let db: any` 等
+- 改 `let db: Database.Database`、`let chaptersRepo: ReturnType<typeof createChaptersRepo>`
+- 让 typecheck 在测试 mock 字段写错时拦截
+
+### B-3-007(MVP 之后):AI 味反例扩展
+- system-prompt.ts 当前只列 "仿佛/似乎/无尽",防御面窄
+- 后期补"宛若/不禁/竟是/望着/眼神中带着/复杂的情感"等高频中文 AI 味
+- 同时在 write-chapter prompt 加 "self-check rubric"(写完前自检)
+- Task 4.x audit 的 aesthetic_quality 维度可作为补充防线
+
+---
+
 <!-- BACKLOG-APPEND-HERE -->
