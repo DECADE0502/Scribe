@@ -51,27 +51,35 @@ export async function* writeChapterSimple(
     { role: "user" as const, content: userPrompt },
   ];
   let buffer = "";
-  let success = false;
   for await (const ev of streamLlm({
     model: deps.model,
     messages,
     abortSignal: input.abortSignal,
   })) {
-    if (ev.type === "text_delta") buffer += ev.delta;
-    if (ev.type === "done") success = true;
+    if (ev.type === "text_delta") {
+      buffer += ev.delta;
+      yield ev;
+      continue;
+    }
+    if (ev.type === "done") {
+      // 在 yield done 之前落盘:消费者看到 done 后会终止,
+      // 此时若 generator 被早返,后续代码不会执行
+      if (buffer.trim()) {
+        const saved = deps.chaptersRepo.saveVersion({
+          chapterNo: input.chapterNo,
+          source: "ai_write",
+          contentMd: buffer,
+        });
+        deps.chapterFiles.save({
+          chapterNo: input.chapterNo,
+          title: `第${input.chapterNo}章`,
+          content: buffer,
+          versionNo: saved.versionNo,
+        });
+      }
+      yield ev;
+      return;
+    }
     yield ev;
   }
-  if (!success) return;
-  if (!buffer.trim()) return;
-  const saved = deps.chaptersRepo.saveVersion({
-    chapterNo: input.chapterNo,
-    source: "ai_write",
-    contentMd: buffer,
-  });
-  deps.chapterFiles.save({
-    chapterNo: input.chapterNo,
-    title: `第${input.chapterNo}章`,
-    content: buffer,
-    versionNo: saved.versionNo,
-  });
 }
