@@ -6,17 +6,7 @@ import {
   type NewForeshadowing,
   ForeshadowingSchema,
 } from "@scribe/shared";
-
-function parseStringArray(value: unknown): string[] {
-  if (value === null || value === undefined || value === "") return [];
-  if (typeof value !== "string") return [];
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? (parsed as string[]) : [];
-  } catch {
-    return [];
-  }
-}
+import { parseJsonArray } from "../json-utils.js";
 
 export function createForeshadowingRepo(db: Database) {
   const rowToForeshadowing = (r: any): Foreshadowing =>
@@ -27,7 +17,7 @@ export function createForeshadowingRepo(db: Database) {
       plantedChapter: r.planted_chapter,
       paidChapter: r.paid_chapter,
       status: r.status,
-      relatedCharacters: parseStringArray(r.related_characters),
+      relatedCharacters: parseJsonArray<string>(r.related_characters),
     });
 
   return {

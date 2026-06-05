@@ -4,17 +4,7 @@ import {
   type ConversationRole,
   ConversationMessageSchema,
 } from "@scribe/shared";
-
-function parseMetadata(value: unknown): Record<string, unknown> | null {
-  if (value === null || value === undefined || value === "") return null;
-  if (typeof value !== "string") return null;
-  try {
-    const parsed = JSON.parse(value);
-    return parsed === null ? null : (parsed as Record<string, unknown>);
-  } catch {
-    return null;
-  }
-}
+import { parseNullableObject } from "../json-utils.js";
 
 export interface AppendConversationInput {
   role: ConversationRole;
@@ -28,7 +18,7 @@ export function createConversationsRepo(db: Database) {
       id: r.id,
       role: r.role,
       content: r.content,
-      metadata: parseMetadata(r.metadata),
+      metadata: parseNullableObject(r.metadata),
       createdAt: r.created_at,
     });
 

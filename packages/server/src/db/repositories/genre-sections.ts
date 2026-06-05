@@ -7,16 +7,7 @@ import {
   GenreSectionSchema,
   GenreSectionItemSchema,
 } from "@scribe/shared";
-
-function parseJson<T>(value: unknown, fallback: T): T {
-  if (value === null || value === undefined || value === "") return fallback;
-  if (typeof value !== "string") return fallback;
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
-  }
-}
+import { parseJsonArray, parseJsonField } from "../json-utils.js";
 
 export interface NewGenreSectionInput {
   name: string;
@@ -29,7 +20,7 @@ export function createGenreSectionsRepo(db: Database) {
     GenreSectionSchema.parse({
       id: r.id,
       name: r.name,
-      schema: parseJson<GenreField[]>(r.schema, []),
+      schema: parseJsonArray<GenreField>(r.schema),
       createdBy: r.created_by,
       createdAt: r.created_at,
     });
@@ -37,7 +28,7 @@ export function createGenreSectionsRepo(db: Database) {
     GenreSectionItemSchema.parse({
       id: r.id,
       sectionId: r.section_id,
-      data: parseJson<Record<string, unknown>>(r.data, {}),
+      data: parseJsonField<Record<string, unknown>>(r.data, {}),
       updatedAt: r.updated_at,
     });
 

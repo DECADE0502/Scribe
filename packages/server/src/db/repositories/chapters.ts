@@ -10,16 +10,7 @@ import {
   ChapterSummarySchema,
   ChapterVersionSchema,
 } from "@scribe/shared";
-
-function parseJson<T>(value: unknown, fallback: T): T {
-  if (value === null || value === undefined || value === "") return fallback;
-  if (typeof value !== "string") return fallback;
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
-  }
-}
+import { parseJsonArray } from "../json-utils.js";
 
 export interface NewChapterVersionInput {
   chapterNo: number;
@@ -33,7 +24,7 @@ export function createChaptersRepo(db: Database) {
       chapterNo: r.chapter_no,
       oneLiner: r.one_liner,
       paragraph: r.paragraph,
-      keyEvents: parseJson<KeyEvent[]>(r.key_events, []),
+      keyEvents: parseJsonArray<KeyEvent>(r.key_events),
       generatedAt: r.generated_at,
       reasoningContent: r.reasoning_content,
     });
@@ -50,7 +41,7 @@ export function createChaptersRepo(db: Database) {
     ChapterAuditSchema.parse({
       chapterNo: r.chapter_no,
       verdict: r.verdict,
-      issues: parseJson<AuditIssue[]>(r.issues, []),
+      issues: parseJsonArray<AuditIssue>(r.issues),
       auditModel: r.audit_model,
       auditedAt: r.audited_at,
     });

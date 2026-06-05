@@ -5,17 +5,7 @@ import {
   type NewOutlineNode,
   OutlineNodeSchema,
 } from "@scribe/shared";
-
-function parseMetadata(value: unknown): Record<string, unknown> | null {
-  if (value === null || value === undefined || value === "") return null;
-  if (typeof value !== "string") return null;
-  try {
-    const parsed = JSON.parse(value);
-    return parsed === null ? null : (parsed as Record<string, unknown>);
-  } catch {
-    return null;
-  }
-}
+import { parseNullableObject } from "../json-utils.js";
 
 export function createOutlineRepo(db: Database) {
   const rowToNode = (r: any): OutlineNode =>
@@ -27,7 +17,7 @@ export function createOutlineRepo(db: Database) {
       summary: r.summary,
       status: r.status,
       sortOrder: r.sort_order,
-      metadata: parseMetadata(r.metadata),
+      metadata: parseNullableObject(r.metadata),
     });
 
   return {

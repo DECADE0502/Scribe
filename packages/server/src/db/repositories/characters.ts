@@ -6,16 +6,7 @@ import {
   type NewCharacterInput,
   CharacterSchema,
 } from "@scribe/shared";
-
-function parseJson<T>(value: unknown, fallback: T): T {
-  if (value === null || value === undefined || value === "") return fallback;
-  if (typeof value !== "string") return fallback;
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fallback;
-  }
-}
+import { parseJsonArray, parseJsonField } from "../json-utils.js";
 
 export function createCharactersRepo(db: Database) {
   const rowToCharacter = (r: any): Character =>
@@ -23,9 +14,9 @@ export function createCharactersRepo(db: Database) {
       id: r.id,
       name: r.name,
       role: r.role,
-      baseData: parseJson<Record<string, unknown>>(r.base_data, {}),
-      currentState: parseJson<Record<string, unknown>>(r.current_state, {}),
-      appearances: parseJson<CharacterAppearance[]>(r.appearances, []),
+      baseData: parseJsonField<Record<string, unknown>>(r.base_data, {}),
+      currentState: parseJsonField<Record<string, unknown>>(r.current_state, {}),
+      appearances: parseJsonArray<CharacterAppearance>(r.appearances),
       updatedAt: r.updated_at,
     });
 

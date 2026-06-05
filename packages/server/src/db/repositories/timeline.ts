@@ -5,17 +5,7 @@ import {
   type NewTimelineEvent,
   TimelineEventSchema,
 } from "@scribe/shared";
-
-function parseStringArray(value: unknown): string[] {
-  if (value === null || value === undefined || value === "") return [];
-  if (typeof value !== "string") return [];
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? (parsed as string[]) : [];
-  } catch {
-    return [];
-  }
-}
+import { parseJsonArray } from "../json-utils.js";
 
 export function createTimelineRepo(db: Database) {
   const rowToEvent = (r: any): TimelineEvent =>
@@ -24,7 +14,7 @@ export function createTimelineRepo(db: Database) {
       chapterNo: r.chapter_no,
       storyTime: r.story_time,
       event: r.event,
-      participants: parseStringArray(r.participants),
+      participants: parseJsonArray<string>(r.participants),
     });
 
   return {
