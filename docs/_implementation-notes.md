@@ -139,4 +139,42 @@
 
 ---
 
+## 累计来源:Task 1.4 review
+
+### B-1.4-001(强烈推荐:Task 1.5 之前补,或紧跟 1.4 的修复 commit)
+- **chapter_versions 缺 UNIQUE(chapter_no, version_no) 约束**
+- chapters.saveVersion 用 `SELECT MAX(version_no)+1`,better-sqlite3 单连接下安全,但**一旦引入 worker / 测试并发 / 第二连接,version_no 会撞重无报错**
+- 修法:加一个 `002_add_chapter_version_unique.sql` 迁移,内容 `CREATE UNIQUE INDEX uniq_chapter_versions_no ON chapter_versions(chapter_no, version_no);`
+- 时机:**Task 9.2 章节版本 UI** 之前必须修(那时高频读写版本)
+
+### B-1.4-002(Task 8.6 SidePanel 之前):枚举列加 CHECK
+- 8 个枚举字段 SQL 全裸 TEXT(role/level/status/verdict/source/created_by/task_type)
+- 当前 zod 在读路径防线,但**写错值会写入成功,后续 list/get 全表 ZodError 崩溃**
+- 修法:写一个新 migration,逐个 ALTER 加 CHECK,或在每个 repo 写路径加显式 enum 校验
+- Task 8.6 各 panel 编辑时是写路径风险面,在那之前修最稳
+
+### B-1.4-003(Task 8.2 三栏布局之前):outline.reorder 静默失败
+- `outline.reorder(parentId, ids)` 对 ids 中**不属于 parentId** 的成员会静默不更新
+- UI 拖拽 reorder 传错 parent,看到顺序没动但无错误,debug 噩梦
+- 修法:循环里 `if (stmt.run(...).changes === 0) throw new Error("reorder: outline node ${id} not under parentId ${parentId}")`
+- 时机:Task 8.2 真去渲染大纲树之前补
+
+### B-1.4-004(Task 9.2 之前):chapters.ts 拆分预警
+- 当前 144 行集成 summaries / versions / audits 三套 CRUD
+- 阈值监控:再添加 ChapterDraft / ChapterLock 等子表时立即拆
+- 不是当前阻塞
+
+### B-1.4-005(信息):json-utils 已抽出
+- `packages/server/src/db/json-utils.ts` 含 `parseJsonField` / `parseJsonArray` / `parseNullableObject`
+- 7 个 repo 使用统一,后续新 repo 不要再复制粘贴 JSON.parse + try/catch
+- 16 个单测 + 7 个 fallback 集成测覆盖 NULL / 空串 / 非 JSON / 非数组 4 类异常输入
+
+### B-1.4-006(测试稳定性,任何时候):setTimeout(5) 抖动
+- characters.test / genre-sections.test 用 5ms sleep 拉开 `Date.now()` 差
+- Windows 高负载下 Date.now() 解析度可能 ≥10ms
+- 修法:改 15ms,或换 `vi.useFakeTimers`
+- 不阻塞,观察 flaky 再修
+
+---
+
 <!-- BACKLOG-APPEND-HERE -->
