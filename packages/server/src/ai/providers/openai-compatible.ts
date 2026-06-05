@@ -2,6 +2,8 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModel } from "ai";
 import type { ProviderAdapter, ModelOpts } from "./_interface.js";
 import type { ModelInfo, ErrorClass } from "@scribe/shared";
+import { enrichFromOpenRouter } from "./enrich-from-openrouter.js";
+import { lookupLocal } from "./local-model-table.js";
 
 interface Cfg {
   id: string;
@@ -34,7 +36,25 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
   }
 
   async enrichModel(id: string): Promise<ModelInfo> {
-    return { id };
+    // 第一档:provider 自家 listModels
+    let merged: Partial<ModelInfo> = {};
+    try {
+      const list = await this.listModels();
+      const found = list.find((m) => m.id === id);
+      if (found) merged = { ...found };
+    } catch {
+      /* 忽略 */
+    }
+
+    // 第二档:OpenRouter(仅填补)
+    const or = await enrichFromOpenRouter(id, this.fetchImpl);
+    merged = { ...or, ...merged };
+
+    // 第三档:本地表(仅填补)
+    const local = lookupLocal(id);
+    if (local) merged = { ...local, ...merged };
+
+    return { ...merged, id };
   }
 
   async testToolUse(): Promise<boolean> {
