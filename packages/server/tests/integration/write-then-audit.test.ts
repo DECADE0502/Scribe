@@ -182,6 +182,13 @@ describe("writeWithAudit", () => {
           e.type === "tool_call_start" && e.toolName === "chapter_repair",
       ),
     ).toBeDefined();
+    // chapter_repair 的 start/end 必须严格成对
+    const repairEnds = evs.filter(
+      (e: any) =>
+        e.type === "tool_call_end" && e.toolName === "chapter_repair",
+    );
+    expect(repairEnds).toHaveLength(1);
+    expect((repairEnds[0] as any).result.success).toBe(true);
     const reAudit = evs.find(
       (e: any) =>
         e.type === "tool_call_end" && e.toolName === "chapter_repair_audit",
@@ -373,6 +380,13 @@ describe("writeWithAudit", () => {
     expect(reAudit).toBeDefined();
     expect((reAudit as any).result.verdict).toBe("critical");
     expect((reAudit as any).result.stillCritical).toBe(true);
+    // chapter_repair 的 start/end 必须严格成对
+    const repairEnds = evs.filter(
+      (e: any) =>
+        e.type === "tool_call_end" && e.toolName === "chapter_repair",
+    );
+    expect(repairEnds).toHaveLength(1);
+    expect((repairEnds[0] as any).result.success).toBe(true);
     // 写 + 修复各 1 行 version,audit 行被再审覆盖,verdict 仍为 critical
     expect(chaptersRepo.listVersions(1)).toHaveLength(2);
     expect(chaptersRepo.getAudit(1)?.verdict).toBe("critical");
@@ -432,9 +446,85 @@ describe("writeWithAudit", () => {
     // 流以 error 终结(replace done,符合 B-3-002)
     expect(evs.find((e: any) => e.type === "done")).toBeUndefined();
     expect(evs.some((e: any) => e.type === "error")).toBe(true);
+    // chapter_repair 的 start/end 必须严格成对(repair 流抛错路径)
+    expect(
+      evs.filter(
+        (e: any) =>
+          e.type === "tool_call_start" && e.toolName === "chapter_repair",
+      ),
+    ).toHaveLength(1);
+    const repairEnds = evs.filter(
+      (e: any) =>
+        e.type === "tool_call_end" && e.toolName === "chapter_repair",
+    );
+    expect(repairEnds).toHaveLength(1);
+    expect((repairEnds[0] as any).result.success).toBe(false);
+    expect((repairEnds[0] as any).result.reason).toBe("repair_stream_error");
     // 初审已落盘,且 audit 行保留
     expect(chaptersRepo.listVersions(1)).toHaveLength(1);
     expect(chaptersRepo.listVersions(1)[0].source).toBe("ai_write");
     expect(chaptersRepo.getAudit(1)?.verdict).toBe("critical");
+  });
+
+  it("repair 后再审失败 → SSE 含 error,初审 critical 保留在 audits 表", async () => {
+    const evs = await consume(
+      writeWithAudit(
+        {
+          model: makeStubLanguageModel({ chunks: ["原文", "段二"] }),
+          chaptersRepo,
+          chapterFiles,
+          auditModel: makeSequencedAuditModel([
+            JSON.stringify(criticalAudit), // 初审 critical
+            "非 JSON,二次 audit 必失败", // 再审 parse error
+          ]),
+          auditModelId: "deepseek-v4-flash",
+        },
+        { chapterNo: 1, userIntent: "测试" },
+      ),
+    );
+
+    // 流以 error 收尾
+    const errs = evs.filter((e: any) => e.type === "error");
+    expect(errs).toHaveLength(1);
+    expect((errs[0] as any).errorClass).toBe("repair_audit_failed");
+    expect((errs[0] as any).message).toContain("修复后再审失败");
+
+    // chapter_repair start/end 必须严格成对
+    const repairStarts = evs.filter(
+      (e: any) =>
+        e.type === "tool_call_start" && e.toolName === "chapter_repair",
+    );
+    expect(repairStarts).toHaveLength(1);
+    const repairEnds = evs.filter(
+      (e: any) =>
+        e.type === "tool_call_end" && e.toolName === "chapter_repair",
+    );
+    expect(repairEnds).toHaveLength(1);
+    // repair 流本身已成功(只是再审解析失败),success=true
+    expect((repairEnds[0] as any).result.success).toBe(true);
+    expect((repairEnds[0] as any).result.reason).toBe(
+      "repair_done_but_reaudit_failed",
+    );
+
+    // chapter_versions 应有 2 条:write + rewrite(后者来自 repair 本身落盘成功)
+    expect(chaptersRepo.listVersions(1)).toHaveLength(2);
+    expect(
+      chaptersRepo.listVersions(1).map((v: any) => v.source).sort(),
+    ).toEqual(["ai_rewrite", "ai_write"]);
+
+    // audit 表保留初审的 critical(再审失败前 persistAuditResult 没被调用)
+    expect(chaptersRepo.getAudit(1)?.verdict).toBe("critical");
+
+    // 不应有 chapter_repair_audit 的 end(因为再审抛错前没机会发)
+    expect(
+      evs.find(
+        (e: any) =>
+          e.type === "tool_call_end" &&
+          e.toolName === "chapter_repair_audit",
+      ),
+    ).toBeUndefined();
+
+    // 流不应 yield done
+    expect(evs.find((e: any) => e.type === "done")).toBeUndefined();
   });
 });

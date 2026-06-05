@@ -135,6 +135,21 @@ export async function* writeWithAudit(
       toolName: "chapter_repair",
       args: { chapterNo: input.chapterNo, reason: "critical issues found" },
     };
+
+    /**
+     * chapter_repair 的 tool_call_start 必须严格成对一个 tool_call_end,
+     * 否则前端的 toolCall 加载状态会卡死。所有可能的退出路径都通过这个
+     * 帮助函数广播 end,以 success 标记区分"修复有效完成"还是"修复中断/空跑"。
+     */
+    const repairEnd = (
+      success: boolean,
+      extra: Record<string, unknown> = {},
+    ): SseEvent => ({
+      type: "tool_call_end",
+      toolName: "chapter_repair",
+      result: { success, ...extra },
+    });
+
     let repairContent = "";
     let repairOk = false;
     const repairDeps: RepairDeps = {
@@ -143,6 +158,7 @@ export async function* writeWithAudit(
       chapterFiles: deps.chapterFiles,
       abortSignal: input.abortSignal,
     };
+    let repairStreamErrored = false;
     for await (const ev of repairChapter(repairDeps, {
       chapterNo: input.chapterNo,
       ctx: {
@@ -158,10 +174,18 @@ export async function* writeWithAudit(
       }
       if (ev.type === "error") {
         yield ev;
+        yield repairEnd(false, {
+          reason: "repair_stream_error",
+          message: ev.message,
+        });
+        repairStreamErrored = true;
         return;
       }
       yield ev;
     }
+    // 上面 return 不会走到这里;此处是为了让类型/控制流显式
+    if (repairStreamErrored) return;
+
     if (repairOk && repairContent.trim()) {
       try {
         const reAudit = await auditChapter(
@@ -178,6 +202,7 @@ export async function* writeWithAudit(
           reAudit,
           deps.auditModelId,
         );
+        yield repairEnd(true);
         yield {
           type: "tool_call_end",
           toolName: "chapter_repair_audit",
@@ -192,8 +217,15 @@ export async function* writeWithAudit(
           errorClass: "repair_audit_failed",
           message: `修复后再审失败:${(e as Error).message}`,
         };
+        // repair 流本身已经成功落盘,这里把 chapter_repair 标记为成功结束,
+        // 但通过 reason 传递再审失败的语义,避免 UI 误判 repair 没跑完
+        yield repairEnd(true, { reason: "repair_done_but_reaudit_failed" });
         return;
       }
+    } else {
+      // repair 内部 silent skip(buffer 为空或未收到 done):
+      // write+audit 已成功落盘,继续 yield done,但补齐 chapter_repair 的 end
+      yield repairEnd(false, { reason: "empty_or_silent" });
     }
   }
 
