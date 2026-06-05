@@ -257,4 +257,52 @@
 
 ---
 
+## 累计来源:阶段 4 review
+
+### B-4-001(信息):writeWithAudit 流终结契约
+- 4 阶段编排:写章节 → audit → 落盘 → 可选 repair → 二次 audit → 落盘
+- **每个 SSE 终结路径都唯一 yield done 或 error**(B-3-002 升级版)
+- `tool_call_start(chapter_repair)` 必有成对 `tool_call_end(success: bool, reason?: string)`
+- 已修(commit `2de7961`)
+
+### B-4-002(MVP 之后):persistAuditResult 事务化
+- 当前 `saveAudit` 和 `saveSummary` 是两次独立 DB 写
+- saveSummary 失败会留下 orphan audit 行
+- 修法:在 chapters repo 加 `saveAuditWithSummary` 用 db.transaction 包裹
+- minor 不阻塞,Task 6.x 题材板块 / Task 9.x 用量明细前补
+
+### B-4-003(MVP 之后):错误文案脱敏
+- audit_failed / repair_audit_failed 的 message 直接拼底层异常文本
+- 可能向 UI 暴露技术细节(eg "Unexpected token o in JSON")
+- 修法:扩 `SseEvent.error` 加 `details?: string` 字段(走日志,UI 只看 message),或 prompt 模板里注入"友好中文兜底句"
+- 不阻塞,Task 10.3 错误处理 + Toast 系统时统一处理
+
+### B-4-004(讨论项,Task 7+ UX 决策):enableRepair 默认值
+- 当前默认 true,critical 时自动 repair(2× token + 等待)
+- 但 Conversation-First 哲学下,**用户应当先看到 critical 报告再决定**是否 repair
+- 决策时机:Task 7.1 new-book onboard / Task 8.5 选段改写 / Task 9.1 自动模式时统一定
+- 暂时保留 true,后续根据 UI 体验调整
+
+### B-4-005(类型卫生,任何时候):auditCtx → RepairContext 适配
+- `write-with-audit.ts` 用 `... input.auditCtx` spread 把 auditCtx 当 RepairContext 子集
+- 字段差异(eg auditCtx 有 chapterPlan/tone,repair 不需要)在 spread 里被忽略
+- 安全但绕过类型差检
+- 修法:加 `fromAuditContext(auditCtx): RepairContext` 显式适配
+- 不阻塞,Task 5/6 加新字段时一起重构
+
+### B-4-006(测试卫生):done 唯一性 helper
+- 测试目前只 `expect(evs.find(done)).toBeDefined()`
+- 不能捕捉"提前 done 后又追加事件"这类回归
+- helper:`expectStreamTerminatesWith(evs, "done" | "error")` 同时验最后一个事件 + 总数
+- 后续测试(Task 5/6/9 的 orchestrator)可复用
+
+### B-4-007(协议细化):repairChapter 静默 no-op
+- `repairChapter` 在 buffer empty 或 success=false 时**不 yield 任何事件**
+- 上层依赖 `done` 来判定 repairOk → 协议性矛盾
+- 修法:加新 SseEvent type `done_empty` 或在 done 上加 reason 字段
+- 当前 writeWithAudit 通过监听 done flag + tool_call_end(success: false) 兜底,**已可用**
+- 后续若有 repair-only 路由再统一处理
+
+---
+
 <!-- BACKLOG-APPEND-HERE -->
