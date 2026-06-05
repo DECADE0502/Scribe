@@ -1,24 +1,10 @@
-import Database, { type Database as DatabaseType } from "better-sqlite3";
-import * as fs from "node:fs";
-import * as path from "node:path";
-import { fileURLToPath } from "node:url";
-import { runMigrations, type Migration } from "./migrations/runner.js";
+import { type Database as DatabaseType } from "better-sqlite3";
+import { openDbWithMigrations } from "./open.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-function loadMigrations(dir: string): Migration[] {
-  const files = fs.readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
-  return files.map((name) => ({
-    name,
-    sql: fs.readFileSync(path.join(dir, name), "utf8"),
-  }));
-}
-
+/**
+ * 打开 workspace(单本作品)数据库。每本作品一个独立 .db 文件,包含章节、角色、世界观等表。
+ * 调用方负责 db.close()。
+ */
 export function openWorkspaceDb(dbPath: string): DatabaseType {
-  const db = new Database(dbPath);
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
-  const migDir = path.join(__dirname, "migrations", "workspace");
-  runMigrations(db, loadMigrations(migDir));
-  return db;
+  return openDbWithMigrations(dbPath, "workspace");
 }
