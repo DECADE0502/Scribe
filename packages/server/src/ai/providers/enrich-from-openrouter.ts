@@ -19,6 +19,7 @@ export async function enrichFromOpenRouter(
   if (!cache || Date.now() - cache.fetchedAt > TTL) {
     try {
       const res = await fetchImpl("https://openrouter.ai/api/v1/models");
+      if (!res.ok) return {};
       const j: any = await res.json();
       const map = new Map<string, Partial<ModelInfo>>();
       for (const m of j.data ?? []) {
