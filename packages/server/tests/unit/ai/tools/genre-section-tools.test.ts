@@ -247,3 +247,86 @@ describe("update_genre_section_item / delete_genre_section_item", () => {
     ).rejects.toThrow(/不存在/);
   });
 });
+
+describe("加固:schema 演化与边界", () => {
+  it("改 schema 删字段后,旧 items 仍能加载(忽略多余字段)", async () => {
+    await exec("create_genre_section", {
+      name: "x",
+      schema: [
+        { name: "a", type: "string" },
+        { name: "b", type: "string" },
+      ],
+    });
+    const item = await exec("add_genre_section_item", {
+      sectionName: "x",
+      data: { a: "1", b: "2" },
+    });
+    // 删 b 字段
+    await exec("update_genre_section_schema", {
+      sectionName: "x",
+      schema: [{ name: "a", type: "string" }],
+    });
+    // 旧 item 仍能查到,b 字段仍在 data 里(不主动清理)
+    const after = repo.getItem(item.id);
+    expect(after?.data.a).toBe("1");
+    expect(after?.data.b).toBe("2"); // 多余字段保留,符合 validator "data 多余字段忽略" 规则
+  });
+
+  it("改 schema 加 required 字段:旧 items 不动(更新时才校验)", async () => {
+    await exec("create_genre_section", {
+      name: "x",
+      schema: [{ name: "a", type: "string", required: true }],
+    });
+    const item = await exec("add_genre_section_item", {
+      sectionName: "x",
+      data: { a: "v" },
+    });
+    await exec("update_genre_section_schema", {
+      sectionName: "x",
+      schema: [
+        { name: "a", type: "string", required: true },
+        { name: "b", type: "string", required: true },
+      ],
+    });
+    // 旧 item 仍存在,但更新它(merge 后 b 仍缺)会抛错
+    expect(repo.getItem(item.id)).toBeDefined();
+    await expect(
+      exec("update_genre_section_item", {
+        itemId: item.id,
+        data: { a: "v2" },
+      }),
+    ).rejects.toThrow(/必填/);
+    // 但补全 b 后可以更新
+    await exec("update_genre_section_item", {
+      itemId: item.id,
+      data: { b: "now-set" },
+    });
+  });
+
+  it("Zod 拦截非法 schema:type=magic 在工具入参就被拒", async () => {
+    await expect(
+      exec("create_genre_section", {
+        name: "x",
+        schema: [{ name: "x", type: "magic" }],
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("Zod 拦截非法 schema:enum 对象 values 长度 1", async () => {
+    await expect(
+      exec("create_genre_section", {
+        name: "x",
+        schema: [{ name: "x", type: { kind: "enum", values: ["仅一项"] } }],
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("Zod 拦截:schema 数组为空", async () => {
+    await expect(
+      exec("create_genre_section", {
+        name: "x",
+        schema: [],
+      }),
+    ).rejects.toThrow();
+  });
+});
