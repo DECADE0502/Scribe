@@ -31,14 +31,16 @@ describe("genre-sections repo", () => {
     expect(repo.getSection(s.id)?.schema).toHaveLength(1);
   });
 
+  const minimalSchema = [{ name: "name", type: "string" as const }];
+
   it("listSections 返回全部", () => {
-    repo.createSection({ name: "A", schema: [], createdBy: "ai" });
-    repo.createSection({ name: "B", schema: [], createdBy: "user" });
+    repo.createSection({ name: "A", schema: minimalSchema, createdBy: "ai" });
+    repo.createSection({ name: "B", schema: minimalSchema, createdBy: "user" });
     expect(repo.listSections()).toHaveLength(2);
   });
 
   it("updateSectionSchema 更新 schema", () => {
-    const s = repo.createSection({ name: "X", schema: [], createdBy: "ai" });
+    const s = repo.createSection({ name: "X", schema: minimalSchema, createdBy: "ai" });
     repo.updateSectionSchema(s.id, [
       { name: "f1", type: "number" },
       { name: "f2", type: "text" },
@@ -47,7 +49,7 @@ describe("genre-sections repo", () => {
   });
 
   it("addItem + getItem + listItems", () => {
-    const s = repo.createSection({ name: "X", schema: [], createdBy: "ai" });
+    const s = repo.createSection({ name: "X", schema: minimalSchema, createdBy: "ai" });
     const i1 = repo.addItem(s.id, { foo: "bar" });
     const i2 = repo.addItem(s.id, { foo: "baz" });
     expect(repo.getItem(i1.id)?.data).toEqual({ foo: "bar" });
@@ -56,7 +58,7 @@ describe("genre-sections repo", () => {
   });
 
   it("updateItem 修改 data 并刷新 updatedAt", async () => {
-    const s = repo.createSection({ name: "X", schema: [], createdBy: "ai" });
+    const s = repo.createSection({ name: "X", schema: minimalSchema, createdBy: "ai" });
     const i = repo.addItem(s.id, { v: 1 });
     await new Promise((r) => setTimeout(r, 5));
     const i2 = repo.updateItem(i.id, { v: 2 });
@@ -65,14 +67,14 @@ describe("genre-sections repo", () => {
   });
 
   it("deleteItem 移除单个 item", () => {
-    const s = repo.createSection({ name: "X", schema: [], createdBy: "ai" });
+    const s = repo.createSection({ name: "X", schema: minimalSchema, createdBy: "ai" });
     const i = repo.addItem(s.id, { v: 1 });
     repo.deleteItem(i.id);
     expect(repo.getItem(i.id)).toBeUndefined();
   });
 
   it("deleteSection 级联删除其 items", () => {
-    const s = repo.createSection({ name: "X", schema: [], createdBy: "ai" });
+    const s = repo.createSection({ name: "X", schema: minimalSchema, createdBy: "ai" });
     repo.addItem(s.id, { v: 1 });
     repo.addItem(s.id, { v: 2 });
     repo.deleteSection(s.id);
@@ -84,18 +86,12 @@ describe("genre-sections repo", () => {
     expect(repo.getSection("nope")).toBeUndefined();
   });
 
-  it("raw NULL section.schema 与空串 item.data 落到 fallback", () => {
-    db.prepare(
-      `INSERT INTO genre_sections(id,name,schema,created_by,created_at)
-       VALUES(?,?,?,?,?)`
-    ).run("raw-sec", "raw", null, "ai", Date.now());
-    const sec = repo.getSection("raw-sec");
-    expect(sec?.schema).toEqual([]);
-
+  it("raw 空串 item.data 落到 fallback", () => {
+    const s = repo.createSection({ name: "raw", schema: minimalSchema, createdBy: "ai" });
     db.prepare(
       `INSERT INTO genre_section_items(id,section_id,data,updated_at)
        VALUES(?,?,?,?)`
-    ).run("raw-item", "raw-sec", "", Date.now());
+    ).run("raw-item", s.id, "", Date.now());
     const item = repo.getItem("raw-item");
     expect(item?.data).toEqual({});
   });
