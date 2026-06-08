@@ -6,6 +6,11 @@ export interface LlmCallInput {
   messages: CoreMessage[];
   tools?: Record<string, Tool>;
   abortSignal?: AbortSignal;
+  /**
+   * Vercel AI SDK 默认 maxSteps=1(只跑一次)。要让模型在 tool_call 之后自动续写,
+   * 需要让 streamText 多步执行。本字段控制最多续写多少轮,默认 5。
+   */
+  maxSteps?: number;
 }
 
 export async function* streamLlm(input: LlmCallInput): AsyncIterable<SseEvent> {
@@ -14,6 +19,7 @@ export async function* streamLlm(input: LlmCallInput): AsyncIterable<SseEvent> {
       model: input.model,
       messages: input.messages,
       tools: input.tools,
+      maxSteps: input.maxSteps ?? 5,
       abortSignal: input.abortSignal,
     });
     for await (const rawPart of result.fullStream) {
