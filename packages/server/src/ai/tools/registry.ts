@@ -3,9 +3,14 @@ import {
   makeGenreSectionTools,
   type GenreToolsDeps,
 } from "./genre-section-tools.js";
+import {
+  makeBookMetaTools,
+  type BookMetaToolsDeps,
+} from "./book-meta-tools.js";
 
 export interface ToolRegistryDeps {
   genreToolsDeps?: GenreToolsDeps;
+  bookMetaToolsDeps?: BookMetaToolsDeps;
 }
 
 /**
@@ -18,6 +23,9 @@ export function buildToolRegistry(
   const tools: Record<string, Tool> = {};
   if (deps.genreToolsDeps) {
     Object.assign(tools, makeGenreSectionTools(deps.genreToolsDeps));
+  }
+  if (deps.bookMetaToolsDeps) {
+    Object.assign(tools, makeBookMetaTools(deps.bookMetaToolsDeps));
   }
   return tools;
 }
