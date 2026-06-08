@@ -335,4 +335,41 @@
 
 ---
 
+## 累计来源:阶段 6 review
+
+### B-6-001(信息):GenreSectionSchema.schema 现在 .min(1)
+- Task 6.1 收紧:板块至少 1 个字段
+- 影响:Task 1.4 旧测试 `schema: []` 用法已被替换;NULL schema 列会被 zod 拒
+- **生产数据若有 NULL/空 schema 行**(理论上不应有,createSection 时校验过),首次读取会抛 ZodError
+- 修法:启动时一次性扫描 `genre_sections` 表,有 NULL schema 的清理掉;或读取层加防御
+- 不阻塞,Task 9.x / 10.x 收尾时顺手补一个 startup health check
+
+### B-6-002(关键,后续修):LLM 工具调用错误恢复
+- 当前 `llm-call.ts` 收到 stream 的 `error` 事件直接 SSE error + return,**短路退出**
+- Vercel AI SDK 在工具 execute 抛错时也是发 `{type:"error", error}`,被同样路径吞掉
+- **结果**:plan 6.4 期望的"LLM 第二轮自我修复"路径不可达
+- 修法:在 `streamLlm` 里区分两类 error:
+  1. **tool execution error**(可恢复):转换成 tool-result(isError=true),让 model 继续生成 → 模型自己读到错误信息后改正
+  2. **stream/connection error**(不可恢复):保持现有短路行为
+- 当前测试已验证:工具抛错时 DB 状态保持正确(不存在的板块没建,存在的没误删),所以**有兜底,但不优雅**
+- 优先级:Task 9.x 自动模式之前必修(自动模式重度依赖工具调用,失败必须能自愈)
+
+### B-6-003(架构资产,任何后续):buildToolRegistry
+- `tools/registry.ts` 提供 `buildToolRegistry(deps)` 按需注入
+- 后续 Task 7+(new-book / chapter-tools / state-tools / book-meta-tools) 都要往里加
+- 模式:每个 tool 模块导出 `makeXxxTools(xxxDeps)`,registry 收集
+
+### B-6-004(MVP 之后):多步 tool 调用的 maxSteps 默认值
+- 当前 `streamLlm` 默认 `maxSteps: 5`
+- 阶段 7 新建书对话流程可能需要 ≥ 8(create_section × 4-5 + add_item × 2-3 + book_meta × 2)
+- Task 7.1 实现时根据具体场景调整,或让调用方显式传
+
+### B-6-005(信息):validator 容忍多余字段
+- `validateItemAgainstSchema` 对 data 中不在 schema 的字段不抛错
+- 故意:支持 schema 演化(改 schema 删字段不让旧 item 失效)
+- **副作用**:typo 字段名(eg `name` 写成 `naem`)无法被工具拦,会**静默存进 data**
+- 如果未来发现 typo 痛点,改 validator 加 strict 模式开关
+
+---
+
 <!-- BACKLOG-APPEND-HERE -->
