@@ -46,6 +46,12 @@ export function createGenreSectionsRepo(db: Database) {
       const r = db.prepare("SELECT * FROM genre_sections WHERE id=?").get(id);
       return r ? rowToSection(r) : undefined;
     },
+    getByName(name: string): GenreSection | undefined {
+      const r = db
+        .prepare("SELECT * FROM genre_sections WHERE name=?")
+        .get(name);
+      return r ? rowToSection(r) : undefined;
+    },
     listSections(): GenreSection[] {
       return db
         .prepare("SELECT * FROM genre_sections ORDER BY created_at ASC")
