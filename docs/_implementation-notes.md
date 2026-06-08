@@ -372,4 +372,38 @@
 
 ---
 
+## 累计来源:阶段 7 review
+
+### B-7-001(必修,Task 8.x 接前端时):server.ts 加路由
+- plan 7.1 步骤 4 / 7.3 步骤 3 提到的路由 推迟到 Task 8.x:
+  - `POST /api/books`(创建空书)
+  - `POST /api/books/:bookId/onboard`(新建书对话流式)
+  - `GET /api/books/:bookId/onboard-status`(返回 isOnboardComplete 结果)
+  - `POST /api/books/:bookId/onboard/skip`(跳过流程,仅初始化空 book_meta)
+- 当前 server.ts 还没有 `/api/books` 集合(只有 conversation/chapters)
+
+### B-7-002(信息):lengthTarget 字段未走 BookSnapshot
+- `set_book_meta(lengthTarget)` 工具支持
+- 但 `BookSnapshot.meta` 类型只列了 title/premise/tone/genre 四项
+- `isOnboardComplete` 暂时把 lengthTarget 视为缺失(不计入 extras 计数)
+- 修法:扩展 BookSnapshot 类型,或让 isOnboardComplete 直接读 bookMetaRepo
+- 不阻塞,Task 8.x 加 lengthTarget UI 时一起改
+
+### B-7-003(架构):completenessHint 注入策略
+- `NewBookInput.completenessHint` 字段已暴露,**调用方决定何时注入**
+- Task 8.x 接前端时,**HTTP 路由层应在每轮调用 onboard orchestrator 前调一次 isOnboardComplete + formatCompletenessHint** → 注入到下一轮 LLM
+- 这样 LLM 永远知道还差什么,不会跑偏
+
+### B-7-004(信息):book-meta-tools 不含 set/update foreshadowing
+- 阶段 7 工具集只覆盖 onboard 阶段需要的(meta + character + outline + rules.md)
+- 后续 Task 8.x 写作过程中创建/管理伏笔,需要新增 foreshadowing-tools(`add_foreshadowing` / `update_foreshadowing` / `pay_foreshadowing`)
+- 同样:`add_timeline_event` 也要加
+
+### B-7-005(简化的代价):MultiTurnStub fixture 重复
+- `genre-section-conversation.test.ts`(Task 6.4)和 `new-book-flow.test.ts`(Task 7.3)都内联写了 makeMultiTurnStub
+- 共享 fixture 应该抽到 `tests/fixtures/mock-llm.ts`(已有 makeStubLanguageModel,可加 makeMultiTurnStub)
+- 不阻塞,后续测试增多时一起重构
+
+---
+
 <!-- BACKLOG-APPEND-HERE -->
