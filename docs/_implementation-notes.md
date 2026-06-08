@@ -305,4 +305,34 @@
 
 ---
 
+## 累计来源:阶段 5 review
+
+### B-5-001(必做,Task 8.x):writeChapterSimple/auditChapter 改用 ContextBuilder
+- Plan 5.4 步骤 3 要求把现有 orchestrator 切到 ContextBuilder 的 messages
+- 阶段 5 **未做**(reviseSegment 等还不存在,集中到 8.x 完整 UI 集成时统一切)
+- 切换时复用 `loadBookSnapshot` + `buildWriteContext`,删除 `system-prompt + buildWriteChapterPrompt` 的重复拼装
+- 影响:writeChapterSimple、writeWithAudit、auditChapter、repairChapter 都要改
+
+### B-5-002(架构资产,任何后续):createSnapshotCache
+- 提供 `withSnapshot(bookId, build, fn)` 在单 LLM 调用周期内复用 snapshot
+- 后续 writeWithAudit 一次写章+审章应使用同一个 snapshot,避免重复 IO
+- HTTP 路由层应在 request scope 内构建 cache 实例,避免跨请求污染
+
+### B-5-003(信息):token 估算公式
+- estimateTokens(text):汉字 × 1.5 + 英文按字符 / 4 + 其它字符 × 0.3
+- 经验估算,与真实 tokenizer 偏差 ±10-15%
+- 用于 budget 决策,不要用于精确成本计算(成本看 usage 字段实测)
+
+### B-5-004(可选,Task 9.x):budgetTokens 默认值
+- 当前 default 32_000(留给 32K window 模型的一半)
+- DS V4 pro 是 128K window,可调到 80_000
+- 应根据 ModelInfo.contextWindow 自动派生:`budget = contextWindow * 0.7`(留 30% 给输出 + reasoning)
+- 接入 Task 9.4 单次预算上限校验时一起处理
+
+### B-5-005(已采纳,信息):noUncheckedIndexedAccess
+- snapshot.test 三处用 `[0]!` 非空断言通过 strict
+- 后续测试若访问数组下标后立即解构,统一用 `!` 或先 `expect(arr).toHaveLength(...)` 再访问
+
+---
+
 <!-- BACKLOG-APPEND-HERE -->
