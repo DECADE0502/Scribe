@@ -1,0 +1,46 @@
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "Source Han Sans CN",
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  color: #222;
+  background: #fafafa;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  padding: 6px 14px;
+  border: 1px solid #d0d0d0;
+  background: #fff;
+  border-radius: 4px;
+  color: #222;
+}
+
+button:hover {
+  background: #f0f0f0;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  color: #aaa;
+}
+
+input, textarea {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+a { color: #1a73e8; text-decoration: none; }
+a:hover { text-decoration: underline; }

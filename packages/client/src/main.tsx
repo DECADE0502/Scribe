@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { App } from "./App.js";
+import "./styles/global.css";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("根元素 #root 未找到");
