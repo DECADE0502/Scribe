@@ -1,4 +1,11 @@
 import { z } from "zod";
+
+export const AutoStateSchema = z.enum([
+  "idle", "planning", "writing", "auditing",
+  "paused_by_critical", "paused_by_user", "done", "error",
+]);
+export type AutoState = z.infer<typeof AutoStateSchema>;
+
 export const SseEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("text_delta"), delta: z.string() }),
   z.object({ type: z.literal("reasoning_delta"), delta: z.string() }),
@@ -10,6 +17,13 @@ export const SseEventSchema = z.discriminatedUnion("type", [
     completionTokens: z.number(),
     cachedTokens: z.number().optional(),
     reasoningTokens: z.number().optional(),
+  }),
+  z.object({
+    type: z.literal("auto_status"),
+    state: AutoStateSchema,
+    remaining: z.number().int(),
+    doneChapters: z.array(z.number().int()),
+    currentChapter: z.number().int().optional(),
   }),
   z.object({ type: z.literal("done") }),
   z.object({ type: z.literal("error"), errorClass: z.string(), message: z.string() }),

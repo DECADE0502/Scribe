@@ -68,5 +68,64 @@ export function createTokenUsageRepo(db: Database) {
         .get() as { total: number } | undefined;
       return r?.total ?? 0;
     },
+    /** 按模型聚合(用量明细页) */
+    sumByModel(): Array<{ model: string; costUsd: number; promptTokens: number; completionTokens: number }> {
+      const rows = db
+        .prepare(
+          `SELECT model,
+                  COALESCE(SUM(cost_usd), 0)          AS cost_usd,
+                  COALESCE(SUM(prompt_tokens), 0)     AS prompt_tokens,
+                  COALESCE(SUM(completion_tokens), 0) AS completion_tokens
+             FROM token_usage
+            GROUP BY model`
+        )
+        .all() as Array<{ model: string; cost_usd: number; prompt_tokens: number; completion_tokens: number }>;
+      return rows.map(r => ({
+        model: r.model, costUsd: r.cost_usd,
+        promptTokens: r.prompt_tokens, completionTokens: r.completion_tokens,
+      }));
+    },
+    /** 按章节聚合(含 NULL 章节,即对话等无章任务) */
+    sumAllChapters(): Array<{ chapterNo: number | null; costUsd: number }> {
+      const rows = db
+        .prepare(
+          `SELECT chapter_no, COALESCE(SUM(cost_usd), 0) AS cost_usd
+             FROM token_usage
+            GROUP BY chapter_no
+            ORDER BY chapter_no`
+        )
+        .all() as Array<{ chapter_no: number | null; cost_usd: number }>;
+      return rows.map(r => ({ chapterNo: r.chapter_no, costUsd: r.cost_usd }));
+    },
+    /** 最近 N 条明细 */
+    listRecent(limit: number): TokenUsageRecord[] {
+      const rows = db
+        .prepare("SELECT * FROM token_usage ORDER BY created_at DESC, id DESC LIMIT ?")
+        .all(limit) as Array<Record<string, unknown>>;
+      return rows.map(r => ({
+        id: Number(r.id),
+        taskType: r.task_type as TaskType,
+        model: String(r.model),
+        promptTokens: Number(r.prompt_tokens),
+        completionTokens: Number(r.completion_tokens),
+        cachedTokens: Number(r.cached_tokens),
+        reasoningTokens: Number(r.reasoning_tokens),
+        costUsd: Number(r.cost_usd),
+        chapterNo: r.chapter_no == null ? null : Number(r.chapter_no),
+        createdAt: Number(r.created_at),
+      }));
+    },
+    /** 最近 N 条 write 任务的平均 token(预算估算用) */
+    recentWriteAverage(limit = 5): { promptTokens: number; completionTokens: number } | undefined {
+      const r = db
+        .prepare(
+          `SELECT AVG(prompt_tokens) AS p, AVG(completion_tokens) AS c, COUNT(*) AS n
+             FROM (SELECT prompt_tokens, completion_tokens FROM token_usage
+                    WHERE task_type='write' ORDER BY created_at DESC LIMIT ?)`
+        )
+        .get(limit) as { p: number | null; c: number | null; n: number } | undefined;
+      if (!r || r.n === 0) return undefined;
+      return { promptTokens: Math.round(r.p ?? 0), completionTokens: Math.round(r.c ?? 0) };
+    },
   };
 }

@@ -107,6 +107,13 @@ export function createChaptersRepo(db: Database) {
         .all(chapterNo)
         .map(rowToVersion);
     },
+    /** 当前最大章节号(无章节时 0),自动模式用 */
+    maxChapterNo(): number {
+      const r = db
+        .prepare("SELECT MAX(chapter_no) AS max_no FROM chapter_versions")
+        .get() as { max_no: number | null } | undefined;
+      return r?.max_no ?? 0;
+    },
     deleteVersion(chapterNo: number, versionNo: number): void {
       db.prepare(
         "DELETE FROM chapter_versions WHERE chapter_no=? AND version_no=?"
