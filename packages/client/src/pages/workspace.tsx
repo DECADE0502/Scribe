@@ -3,6 +3,7 @@ import { t } from "../i18n/zh-CN.js";
 import { ThreePaneLayout, EmptyPane } from "../components/workspace/three-pane-layout.js";
 import { ConversationPane } from "../components/conversation/conversation-pane.js";
 import { SidePanel } from "../components/sidebar/side-panel.js";
+import { UsageMeter } from "../components/usage-meter.js";
 
 export function WorkspacePage() {
   const { bookId } = useParams<{ bookId: string }>();
@@ -21,6 +22,9 @@ export function WorkspacePage() {
         <button onClick={() => navigate("/library")}>{t.workspace.backToLibrary}</button>
         <span style={{ color: "#666" }} data-testid="book-id-label">
           {bookId}
+        </span>
+        <span style={{ marginLeft: "auto" }}>
+          {bookId && <UsageMeter bookId={bookId} />}
         </span>
       </header>
       <div style={{ flex: 1, minHeight: 0 }}>

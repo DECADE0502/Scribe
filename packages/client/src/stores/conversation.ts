@@ -22,10 +22,18 @@ export interface StreamingState {
   toolEvents: ToolEvent[];
 }
 
+export interface AutoStatus {
+  state: string;
+  doneCount: number;
+  total: number;
+  currentChapter?: number;
+}
+
 interface ConversationStore {
   messages: ChatMessage[];
   streaming: StreamingState | null;
   error: { message: string; errorClass: string } | null;
+  autoStatus: AutoStatus | null;
   appendUserMessage(content: string): void;
   appendSystemMessage(content: string): void;
   beginStream(id: string): void;
@@ -35,6 +43,7 @@ interface ConversationStore {
   finishStream(): void;
   setError(message: string, errorClass: string): void;
   clearError(): void;
+  setAutoStatus(status: AutoStatus | null): void;
   reset(): void;
 }
 
@@ -45,6 +54,7 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
   messages: [],
   streaming: null,
   error: null,
+  autoStatus: null,
 
   appendUserMessage(content) {
     set(s => ({ messages: [...s.messages, { id: nextId(), role: "user", content }] }));
@@ -109,7 +119,11 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
     set({ error: null });
   },
 
+  setAutoStatus(status) {
+    set({ autoStatus: status });
+  },
+
   reset() {
-    set({ messages: [], streaming: null, error: null });
+    set({ messages: [], streaming: null, error: null, autoStatus: null });
   },
 }));

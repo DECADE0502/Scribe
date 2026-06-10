@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { parseSlashCommand } from "@scribe/shared";
 import { t } from "../../i18n/zh-CN.js";
 import { useConversationStore } from "../../stores/conversation.js";
 import { startSseStream, type SseStreamHandle, type StartStreamOptions } from "../../api/streaming.js";
@@ -22,9 +23,9 @@ export function ConversationPane(props: ConversationPaneProps) {
   const endpoint = props.endpoint ?? ((id: string) => `/api/books/${encodeURIComponent(id)}/conversation?mode=chat`);
   const streamFn = props.streamFn ?? startSseStream;
   const {
-    messages, streaming, error,
-    appendUserMessage, beginStream, appendDelta, appendReasoning,
-    pushToolEvent, finishStream, setError, clearError,
+    messages, streaming, error, autoStatus,
+    appendUserMessage, appendSystemMessage, beginStream, appendDelta, appendReasoning,
+    pushToolEvent, finishStream, setError, clearError, setAutoStatus,
   } = useConversationStore();
   const handleRef = useRef<SseStreamHandle | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -42,10 +43,21 @@ export function ConversationPane(props: ConversationPaneProps) {
     clearError();
     setLastSent(content);
     appendUserMessage(content);
+
+    // /auto N → 自动模式端点
+    const parsed = parseSlashCommand(content);
+    const isAuto = parsed.kind === "command" && parsed.id === "auto";
+    const autoTotal = isAuto ? Math.max(1, Number(parsed.kind === "command" ? parsed.args : "") || 1) : 0;
+    const url = isAuto
+      ? `/api/books/${encodeURIComponent(props.bookId)}/auto`
+      : endpoint(props.bookId);
+    const body = isAuto ? { n: autoTotal } : { message: content };
+    if (isAuto) setAutoStatus({ state: "planning", doneCount: 0, total: autoTotal });
+
     beginStream(`s${++streamSeq}`);
     handleRef.current = streamFn({
-      url: endpoint(props.bookId),
-      body: { message: content },
+      url,
+      body,
       onEvent: (ev) => {
         switch (ev.type) {
           case "text_delta":
@@ -60,12 +72,26 @@ export function ConversationPane(props: ConversationPaneProps) {
           case "tool_call_end":
             pushToolEvent({ kind: "end", toolName: String(ev.toolName ?? ""), payload: ev.result });
             break;
+          case "auto_status": {
+            const done = Array.isArray(ev.doneChapters) ? ev.doneChapters.length : 0;
+            const state = String(ev.state ?? "");
+            setAutoStatus({
+              state, doneCount: done, total: autoTotal,
+              currentChapter: typeof ev.currentChapter === "number" ? ev.currentChapter : undefined,
+            });
+            if (["paused_by_critical", "paused_by_user", "done", "error"].includes(state)) {
+              appendSystemMessage(`自动写作结束(${state === "done" ? "全部完成" : state === "paused_by_critical" ? "发现严重问题已暂停" : state === "paused_by_user" ? "已被手动停止" : "出错"}),完成 ${done} 章。`);
+            }
+            break;
+          }
           case "done":
             finishStream();
+            setAutoStatus(null);
             handleRef.current = null;
             break;
           case "error":
             setError(String(ev.message ?? t.errors.unknown), String(ev.errorClass ?? "unknown"));
+            setAutoStatus(null);
             handleRef.current = null;
             break;
           default:
@@ -73,13 +99,18 @@ export function ConversationPane(props: ConversationPaneProps) {
         }
       },
     });
-  }, [props.bookId, endpoint, streamFn, streaming, appendUserMessage, beginStream, appendDelta, appendReasoning, pushToolEvent, finishStream, setError, clearError]);
+  }, [props.bookId, endpoint, streamFn, streaming, appendUserMessage, appendSystemMessage, beginStream, appendDelta, appendReasoning, pushToolEvent, finishStream, setError, clearError, setAutoStatus]);
 
   const cancel = useCallback(() => {
+    if (autoStatus) {
+      // 自动模式:通知 server abort(完成当前章后停)
+      void fetch(`/api/books/${encodeURIComponent(props.bookId)}/auto/cancel`, { method: "POST" });
+      return;
+    }
     handleRef.current?.cancel();
     handleRef.current = null;
     finishStream(); // 已收到的部分固化
-  }, [finishStream]);
+  }, [finishStream, autoStatus, props.bookId]);
 
   const retry = useCallback(() => {
     clearError();
@@ -88,6 +119,24 @@ export function ConversationPane(props: ConversationPaneProps) {
 
   return (
     <div data-testid="conversation-pane" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {autoStatus && (
+        <div
+          data-testid="auto-mode-bar"
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "6px 12px", background: "#fff7e6", borderBottom: "1px solid #ffe7ba",
+            fontSize: 13,
+          }}
+        >
+          <span>
+            {t.workspace.autoMode}:{autoStatus.doneCount}/{autoStatus.total} 章
+            {autoStatus.currentChapter != null ? ` · 正在写第 ${autoStatus.currentChapter} 章` : ""}
+          </span>
+          <button data-testid="auto-stop" style={{ fontSize: 12 }} onClick={cancel}>
+            {t.workspace.stopAuto}
+          </button>
+        </div>
+      )}
       <div ref={scrollRef} style={{ flex: 1, overflow: "auto", padding: 12 }}>
         {messages.map(m => <Message key={m.id} m={m} />)}
         {streaming && <StreamingMessage state={streaming} />}
