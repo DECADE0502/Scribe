@@ -4,6 +4,7 @@ import { conversationRoutes } from "./routes/conversation.js";
 import { chapterRoutes, type ChapterRoutesDeps } from "./routes/chapters.js";
 import { bookRoutes, type BookRoutesDeps } from "./routes/books.js";
 import { reviseRoutes } from "./routes/revise.js";
+import { sidebarRoutes } from "./routes/sidebar.js";
 
 export interface AppDeps {
   getModel?: () => LanguageModel | undefined;
@@ -19,6 +20,7 @@ export function createApp(deps: AppDeps = {}) {
   if (deps.bookRegistry) {
     app.route("/", bookRoutes({ registry: deps.bookRegistry, getModel: deps.getModel }));
     app.route("/", reviseRoutes({ registry: deps.bookRegistry, getModel: deps.getModel }));
+    app.route("/", sidebarRoutes({ registry: deps.bookRegistry }));
   }
   return app;
 }
