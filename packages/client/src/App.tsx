@@ -2,10 +2,12 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { LibraryPage } from "./pages/library.js";
 import { WorkspacePage } from "./pages/workspace.js";
 import { UsageDetailPage } from "./pages/usage-detail.js";
+import { ToastContainer } from "./components/toast.js";
 
 export function App() {
   return (
     <BrowserRouter>
+      <ToastContainer />
       <Routes>
         <Route path="/" element={<Navigate to="/library" replace />} />
         <Route path="/library" element={<LibraryPage />} />

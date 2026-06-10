@@ -1,4 +1,19 @@
 /** Scribe 客户端 API。封装 fetch + JSON + 错误归类,以及 SSE 流式消费。 */
+import { useToastStore } from "../stores/toast.js";
+
+const ERROR_TEXTS: Record<string, string> = {
+  auth: "API key 无效或过期,请到设置中更新",
+  rate_limit: "请求过于频繁,请稍后重试",
+  not_found: "资源不存在",
+  service_unavailable: "服务未就绪,请先在设置中配置模型",
+  network: "网络不可用,请检查连接",
+  budget_exceeded: "超过单次预算上限",
+};
+
+function toastError(errorClass: string, message: string) {
+  const text = ERROR_TEXTS[errorClass] ?? `操作失败:${message}`;
+  useToastStore.getState().push({ level: "error", text });
+}
 
 export interface BookSummary {
   id: string;
@@ -36,6 +51,7 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
       headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     });
   } catch (e) {
+    toastError("network", "网络断开");
     throw new ApiError(`网络断开,请检查连接`, 0, "network");
   }
   if (!res.ok) {
@@ -50,6 +66,7 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
     if (res.status === 429) errorClass = "rate_limit";
     if (res.status === 503) errorClass = "service_unavailable";
     if (res.status === 404) errorClass = "not_found";
+    toastError(errorClass, message);
     throw new ApiError(message, res.status, errorClass);
   }
   return await res.json() as T;
