@@ -5,11 +5,17 @@ export interface AppConfig {
   singleBudgetUsd: number;
   /** HTTP 端口 */
   port: number;
+  /** 写作模型 */
+  writeModelId: string;
+  /** 审查模型 */
+  auditModelId: string;
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
   singleBudgetUsd: 5,
   port: 6789,
+  writeModelId: "deepseek-v4-pro",
+  auditModelId: "deepseek-v4-flash",
 };
 
 /** 读 config.json,缺失字段用默认值;文件不存在返回默认 */
@@ -22,6 +28,12 @@ export function loadConfig(configJsonPath: string): AppConfig {
         ? raw.singleBudgetUsd
         : DEFAULT_CONFIG.singleBudgetUsd,
       port: typeof raw.port === "number" ? raw.port : DEFAULT_CONFIG.port,
+      writeModelId: typeof raw.writeModelId === "string" && raw.writeModelId
+        ? raw.writeModelId
+        : DEFAULT_CONFIG.writeModelId,
+      auditModelId: typeof raw.auditModelId === "string" && raw.auditModelId
+        ? raw.auditModelId
+        : DEFAULT_CONFIG.auditModelId,
     };
   } catch {
     return { ...DEFAULT_CONFIG };

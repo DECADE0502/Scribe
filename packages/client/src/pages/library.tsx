@@ -48,7 +48,10 @@ export function LibraryPage() {
     <main data-testid="page-library" style={{ padding: 24, maxWidth: 960, margin: "0 auto" }}>
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
         <h1 style={{ margin: 0 }}>{t.library.title}</h1>
-        <button data-testid="btn-new-book" onClick={handleNew}>{t.library.newBook}</button>
+        <span style={{ display: "flex", gap: 8 }}>
+          <button data-testid="btn-settings" onClick={() => navigate("/settings")}>{t.settings.title}</button>
+          <button data-testid="btn-new-book" onClick={handleNew}>{t.library.newBook}</button>
+        </span>
       </header>
       {loading && <p data-testid="library-loading">{t.app.loading}</p>}
       {error && <p data-testid="library-error" role="alert" style={{ color: "#c00" }}>{error}</p>}

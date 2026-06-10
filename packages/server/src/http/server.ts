@@ -12,6 +12,7 @@ import { usageRoutes } from "./routes/usage.js";
 import { snapshotRoutes } from "./routes/snapshots.js";
 import { exportRoutes } from "./routes/export.js";
 import type { AppPaths } from "../config/paths.js";
+import type { ModelManager } from "../ai/model-manager.js";
 
 export interface AppDeps {
   getModel?: () => LanguageModel | undefined;
@@ -22,28 +23,42 @@ export interface AppDeps {
   writeModelInfo?: ModelInfo;
   auditModelInfo?: ModelInfo;
   configJsonPath?: string;
+  secretsEnvPath?: string;
   appPaths?: AppPaths;
+  /** 注入后 getModel 等自动回落到 manager(显式 deps 优先,便于测试) */
+  modelManager?: ModelManager;
 }
 
 export function createApp(deps: AppDeps = {}) {
+  const mm = deps.modelManager;
+  const getModel = deps.getModel ?? (mm ? () => mm.getModel() : undefined);
+  const getAuditModel = deps.getAuditModel ?? (mm ? () => mm.getAuditModel() : undefined);
+  const writeModelInfo = deps.writeModelInfo ?? mm?.getWriteModelInfo();
+  const auditModelInfo = deps.auditModelInfo ?? mm?.getAuditModelInfo();
+
   const app = new Hono();
   app.get("/api/health", (c) => c.json({ status: "ok", name: "scribe" }));
-  app.route("/", conversationRoutes({ getModel: deps.getModel }));
+  app.route("/", conversationRoutes({ getModel }));
   app.route("/", chapterRoutes({ getDeps: deps.getChapterDeps, registry: deps.bookRegistry }));
   if (deps.bookRegistry) {
-    app.route("/", bookRoutes({ registry: deps.bookRegistry, getModel: deps.getModel }));
-    app.route("/", reviseRoutes({ registry: deps.bookRegistry, getModel: deps.getModel }));
+    app.route("/", bookRoutes({ registry: deps.bookRegistry, getModel }));
+    app.route("/", reviseRoutes({ registry: deps.bookRegistry, getModel }));
     app.route("/", sidebarRoutes({ registry: deps.bookRegistry }));
     app.route("/", autoRoutes({
       registry: deps.bookRegistry,
-      getModel: deps.getModel,
-      getAuditModel: deps.getAuditModel,
+      getModel,
+      getAuditModel,
       budgetLimitUsd: deps.budgetLimitUsd,
-      writeModelInfo: deps.writeModelInfo,
-      auditModelInfo: deps.auditModelInfo,
+      writeModelInfo,
+      auditModelInfo,
     }));
     app.route("/", versionRoutes({ registry: deps.bookRegistry }));
-    app.route("/", usageRoutes({ registry: deps.bookRegistry, configJsonPath: deps.configJsonPath }));
+    app.route("/", usageRoutes({
+      registry: deps.bookRegistry,
+      configJsonPath: deps.configJsonPath,
+      secretsEnvPath: deps.secretsEnvPath,
+      modelManager: deps.modelManager,
+    }));
     if (deps.appPaths) {
       app.route("/", snapshotRoutes({ registry: deps.bookRegistry, paths: deps.appPaths }));
       app.route("/", exportRoutes({ registry: deps.bookRegistry, paths: deps.appPaths }));
