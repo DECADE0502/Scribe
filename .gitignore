@@ -9,3 +9,4 @@ secrets.env
 playwright-report/
 test-results/
 .superpowers/brainstorm/*/state/
+.scribe-e2e-data/
