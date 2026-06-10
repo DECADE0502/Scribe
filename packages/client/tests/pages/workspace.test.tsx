@@ -19,7 +19,7 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("book-id-label")).toHaveTextContent("abc");
   });
 
-  it("三栏占位显示中文标签", () => {
+  it("左栏渲染对话面板,中右栏为中文占位", () => {
     render(
       <MemoryRouter initialEntries={["/books/x"]}>
         <Routes>
@@ -27,7 +27,7 @@ describe("WorkspacePage", () => {
         </Routes>
       </MemoryRouter>,
     );
-    expect(screen.getByTestId("placeholder-conversation")).toHaveTextContent("对话");
+    expect(screen.getByTestId("conversation-pane")).toBeInTheDocument();
     expect(screen.getByTestId("placeholder-editor")).toHaveTextContent("正文");
     expect(screen.getByTestId("placeholder-sidebar")).toHaveTextContent("资料");
   });
