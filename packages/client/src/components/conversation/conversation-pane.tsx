@@ -4,6 +4,7 @@ import { useConversationStore } from "../../stores/conversation.js";
 import { startSseStream, type SseStreamHandle, type StartStreamOptions } from "../../api/streaming.js";
 import { Message } from "./message.js";
 import { StreamingMessage } from "./streaming-message.js";
+import { SlashSuggestions } from "./slash-suggestions.js";
 
 export type StreamFn = (opts: StartStreamOptions) => SseStreamHandle;
 
@@ -117,23 +118,47 @@ export function ConversationPane(props: ConversationPaneProps) {
 
 function Composer(props: { onSend: (text: string) => void; onCancel: () => void; streaming: boolean }) {
   const [value, setValue] = useState("");
+  const [slashOpen, setSlashOpen] = useState(false);
 
   const submit = () => {
     if (!value.trim()) return;
     props.onSend(value);
     setValue("");
+    setSlashOpen(false);
+  };
+
+  const pickSlash = (alias: string) => {
+    // 替换第一个 token 为补全的 alias
+    const rest = value.includes(" ") ? value.slice(value.indexOf(" ")) : "";
+    setValue(alias + (rest || " "));
+    setSlashOpen(false);
   };
 
   return (
-    <div style={{ borderTop: "1px solid #e5e5e5", padding: 12 }}>
+    <div style={{ borderTop: "1px solid #e5e5e5", padding: 12, position: "relative" }}>
+      <SlashSuggestions
+        input={value}
+        visible={slashOpen}
+        onPick={pickSlash}
+        onClose={() => setSlashOpen(false)}
+      />
       <textarea
         data-testid="composer-input"
         value={value}
         placeholder={t.conversation.placeholder}
         rows={3}
         style={{ width: "100%", resize: "vertical", padding: 8, borderRadius: 6, border: "1px solid #d0d0d0" }}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => {
+          const v = e.target.value;
+          setValue(v);
+          setSlashOpen(v.startsWith("/") && !v.includes("\n"));
+        }}
         onKeyDown={(e) => {
+          if (slashOpen && ["ArrowDown", "ArrowUp", "Tab", "Enter", "Escape"].includes(e.key)) {
+            // 弹层打开时这些键交给 SlashSuggestions 的全局监听处理
+            if (e.key === "Enter" || e.key === "Tab") e.preventDefault();
+            return;
+          }
           if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
             e.preventDefault();
             submit();
