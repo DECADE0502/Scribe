@@ -3,6 +3,7 @@ import type { LanguageModel } from "ai";
 import { conversationRoutes } from "./routes/conversation.js";
 import { chapterRoutes, type ChapterRoutesDeps } from "./routes/chapters.js";
 import { bookRoutes, type BookRoutesDeps } from "./routes/books.js";
+import { reviseRoutes } from "./routes/revise.js";
 
 export interface AppDeps {
   getModel?: () => LanguageModel | undefined;
@@ -17,6 +18,7 @@ export function createApp(deps: AppDeps = {}) {
   app.route("/", chapterRoutes({ getDeps: deps.getChapterDeps, registry: deps.bookRegistry }));
   if (deps.bookRegistry) {
     app.route("/", bookRoutes({ registry: deps.bookRegistry, getModel: deps.getModel }));
+    app.route("/", reviseRoutes({ registry: deps.bookRegistry, getModel: deps.getModel }));
   }
   return app;
 }
