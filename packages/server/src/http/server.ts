@@ -9,6 +9,9 @@ import { sidebarRoutes } from "./routes/sidebar.js";
 import { autoRoutes } from "./routes/auto.js";
 import { versionRoutes } from "./routes/versions.js";
 import { usageRoutes } from "./routes/usage.js";
+import { snapshotRoutes } from "./routes/snapshots.js";
+import { exportRoutes } from "./routes/export.js";
+import type { AppPaths } from "../config/paths.js";
 
 export interface AppDeps {
   getModel?: () => LanguageModel | undefined;
@@ -19,6 +22,7 @@ export interface AppDeps {
   writeModelInfo?: ModelInfo;
   auditModelInfo?: ModelInfo;
   configJsonPath?: string;
+  appPaths?: AppPaths;
 }
 
 export function createApp(deps: AppDeps = {}) {
@@ -40,6 +44,10 @@ export function createApp(deps: AppDeps = {}) {
     }));
     app.route("/", versionRoutes({ registry: deps.bookRegistry }));
     app.route("/", usageRoutes({ registry: deps.bookRegistry, configJsonPath: deps.configJsonPath }));
+    if (deps.appPaths) {
+      app.route("/", snapshotRoutes({ registry: deps.bookRegistry, paths: deps.appPaths }));
+      app.route("/", exportRoutes({ registry: deps.bookRegistry, paths: deps.appPaths }));
+    }
   }
   return app;
 }

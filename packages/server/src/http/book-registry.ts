@@ -35,6 +35,8 @@ export interface BookRegistry {
   libraryDb: Database;
   booksRepo: ReturnType<typeof createBooksRepo>;
   open(bookId: string): BookHandle;
+  /** 关闭某本书的 workspace 连接(快照恢复前必须调用) */
+  closeBook(bookId: string): void;
   closeAll(): void;
 }
 
@@ -75,6 +77,14 @@ export function createBookRegistry(opts: BookRegistryOpts): BookRegistry {
     return handle;
   }
 
+  function closeBook(bookId: string): void {
+    const h = handles.get(bookId);
+    if (h) {
+      try { h.workspaceDb.close(); } catch { /* ignore */ }
+      handles.delete(bookId);
+    }
+  }
+
   function closeAll(): void {
     for (const h of handles.values()) {
       try { h.workspaceDb.close(); } catch { /* ignore */ }
@@ -83,5 +93,5 @@ export function createBookRegistry(opts: BookRegistryOpts): BookRegistry {
     try { libraryDb.close(); } catch { /* ignore */ }
   }
 
-  return { libraryDb, booksRepo, open, closeAll };
+  return { libraryDb, booksRepo, open, closeBook, closeAll };
 }
