@@ -4,13 +4,16 @@ import {
   writeChapterSimple,
   type WriteChapterDeps,
 } from "../../ai/orchestrator/write-chapter.js";
+import type { BookRegistry } from "../book-registry.js";
 
 export interface ChapterRoutesDeps {
   getDeps?: (bookId: string) => WriteChapterDeps | undefined;
+  registry?: BookRegistry;
 }
 
 export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
   const app = new Hono();
+
   app.post("/api/books/:bookId/chapters/:no/write", async (c) => {
     const bookId = c.req.param("bookId");
     const no = Number(c.req.param("no"));
@@ -31,5 +34,63 @@ export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
       }),
     );
   });
+
+  // 读取章节(编辑器加载)
+  app.get("/api/books/:bookId/chapters/:no", async (c) => {
+    const bookId = c.req.param("bookId");
+    const no = Number(c.req.param("no"));
+    if (!Number.isInteger(no) || no < 1) return c.json({ error: "章节号无效" }, 400);
+    if (!deps.registry) return c.json({ error: "服务未就绪" }, 503);
+    const book = deps.registry.booksRepo.get(bookId);
+    if (!book) return c.json({ error: "书不存在" }, 404);
+    const handle = deps.registry.open(bookId);
+    const record = handle.chapterFiles.read(no);
+    if (!record) return c.json({ error: "章节不存在" }, 404);
+    return c.json(record);
+  });
+
+  // 章节列表
+  app.get("/api/books/:bookId/chapters", async (c) => {
+    const bookId = c.req.param("bookId");
+    if (!deps.registry) return c.json({ error: "服务未就绪" }, 503);
+    const book = deps.registry.booksRepo.get(bookId);
+    if (!book) return c.json({ error: "书不存在" }, 404);
+    const handle = deps.registry.open(bookId);
+    return c.json({ chapters: handle.chapterFiles.list() });
+  });
+
+  // 用户手动保存(user_edit version)
+  app.put("/api/books/:bookId/chapters/:no", async (c) => {
+    const bookId = c.req.param("bookId");
+    const no = Number(c.req.param("no"));
+    if (!Number.isInteger(no) || no < 1) return c.json({ error: "章节号无效" }, 400);
+    if (!deps.registry) return c.json({ error: "服务未就绪" }, 503);
+    const book = deps.registry.booksRepo.get(bookId);
+    if (!book) return c.json({ error: "书不存在" }, 404);
+
+    const body = await c.req.json().catch(() => ({}));
+    const content = String((body as { content?: unknown })?.content ?? "");
+    if (!content.trim()) return c.json({ error: "content 不能为空" }, 400);
+    const titleRaw = (body as { title?: unknown })?.title;
+    const handle = deps.registry.open(bookId);
+    const existing = handle.chapterFiles.read(no);
+    const title = typeof titleRaw === "string" && titleRaw.trim()
+      ? titleRaw.trim()
+      : existing?.title ?? `第${no}章`;
+
+    const saved = handle.chaptersRepo.saveVersion({
+      chapterNo: no,
+      source: "user_edit",
+      contentMd: content,
+    });
+    try {
+      handle.chapterFiles.save({ chapterNo: no, title, content, versionNo: saved.versionNo });
+    } catch (fsErr) {
+      try { handle.chaptersRepo.deleteVersion(no, saved.versionNo); } catch { /* ignore */ }
+      return c.json({ error: `章节文件落盘失败:${(fsErr as Error).message ?? "unknown"}` }, 500);
+    }
+    return c.json({ versionNo: saved.versionNo });
+  });
+
   return app;
 }
