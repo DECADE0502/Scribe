@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import { Hono } from "hono";
 import type { BookRegistry } from "../book-registry.js";
+import { validateItemAgainstSchema, ValidationError } from "../../ai/genre-section-validator.js";
 
 export interface SidebarRoutesDeps {
   registry: BookRegistry;
@@ -133,6 +134,82 @@ export function sidebarRoutes(deps: SidebarRoutesDeps) {
       items: handle.genreSectionsRepo.listItems(section.id),
     }));
     return c.json({ sections });
+  });
+
+  // 添加条目(手动,带 schema 校验 + 广播)
+  app.post("/api/books/:bookId/genre-sections/:sectionId/items", async (c) => {
+    const handle = withBook(c.req.param("bookId"));
+    if (!handle) return c.json({ error: "书不存在" }, 404);
+    const section = handle.genreSectionsRepo.getSection(c.req.param("sectionId"));
+    if (!section) return c.json({ error: "板块不存在" }, 404);
+    const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+    const data = (body.data ?? {}) as Record<string, unknown>;
+    try {
+      validateItemAgainstSchema(section, data, handle.charactersRepo, handle.genreSectionsRepo);
+    } catch (e) {
+      if (e instanceof ValidationError) return c.json({ error: e.message }, 400);
+      throw e;
+    }
+    const item = handle.genreSectionsRepo.addItem(section.id, data);
+    handle.conversationsRepo.append({
+      role: "system",
+      content: `用户在板块「${section.name}」手动添加了条目。`,
+      metadata: { kind: "manual_edit", target: "genre_section_item", id: item.id },
+    });
+    return c.json(item, 201);
+  });
+
+  // 更新条目
+  app.put("/api/books/:bookId/genre-sections/items/:itemId", async (c) => {
+    const handle = withBook(c.req.param("bookId"));
+    if (!handle) return c.json({ error: "书不存在" }, 404);
+    const itemId = c.req.param("itemId");
+    const item = handle.genreSectionsRepo.getItem(itemId);
+    if (!item) return c.json({ error: "条目不存在" }, 404);
+    const section = handle.genreSectionsRepo.getSection(item.sectionId);
+    if (!section) return c.json({ error: "条目所属板块已被删除" }, 409);
+    const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+    const merged = { ...item.data, ...(body.data as Record<string, unknown> ?? {}) };
+    try {
+      validateItemAgainstSchema(section, merged, handle.charactersRepo, handle.genreSectionsRepo);
+    } catch (e) {
+      if (e instanceof ValidationError) return c.json({ error: e.message }, 400);
+      throw e;
+    }
+    const updated = handle.genreSectionsRepo.updateItem(itemId, merged);
+    handle.conversationsRepo.append({
+      role: "system",
+      content: `用户在板块「${section.name}」手动修改了条目。`,
+      metadata: { kind: "manual_edit", target: "genre_section_item", id: itemId },
+    });
+    return c.json(updated);
+  });
+
+  // 删除条目
+  app.delete("/api/books/:bookId/genre-sections/items/:itemId", async (c) => {
+    const handle = withBook(c.req.param("bookId"));
+    if (!handle) return c.json({ error: "书不存在" }, 404);
+    const itemId = c.req.param("itemId");
+    const item = handle.genreSectionsRepo.getItem(itemId);
+    if (!item) return c.json({ error: "条目不存在" }, 404);
+    handle.genreSectionsRepo.deleteItem(itemId);
+    return c.json({ deleted: itemId });
+  });
+
+  // 删除整个板块(级联删 items + 广播)
+  app.delete("/api/books/:bookId/genre-sections/:sectionId", async (c) => {
+    const handle = withBook(c.req.param("bookId"));
+    if (!handle) return c.json({ error: "书不存在" }, 404);
+    const section = handle.genreSectionsRepo.getSection(c.req.param("sectionId"));
+    if (!section) return c.json({ error: "板块不存在" }, 404);
+    const itemsCount = handle.genreSectionsRepo.listItems(section.id).length;
+    handle.genreSectionsRepo.deleteSection(section.id);
+    handle.conversationsRepo.append({
+      role: "system",
+      content: `用户手动删除了板块「${section.name}」(含 ${itemsCount} 个条目)。`,
+      metadata: { kind: "manual_edit", target: "genre_section", id: section.id },
+    });
+    return c.json({ deleted: section.name, itemsRemoved: itemsCount });
   });
 
   return app;

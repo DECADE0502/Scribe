@@ -172,3 +172,59 @@ describe("GET genre-sections", () => {
     expect(j.sections[0]!.items).toHaveLength(1);
   });
 });
+
+describe("genre-sections 写入端点", () => {
+  it("POST items:schema 校验通过则 201 + 广播,缺必填 400", async () => {
+    const handle = registry.open(bookId);
+    const sec = handle.genreSectionsRepo.createSection({
+      name: "境界",
+      schema: [{ name: "name", type: "string", required: true }],
+      createdBy: "ai",
+    });
+    const ok = await app.request(`/api/books/${bookId}/genre-sections/${sec.id}/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: { name: "炼气" } }),
+    });
+    expect(ok.status).toBe(201);
+    const bad = await app.request(`/api/books/${bookId}/genre-sections/${sec.id}/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: {} }),
+    });
+    expect(bad.status).toBe(400);
+    expect(((await bad.json()) as { error: string }).error).toContain("必填");
+    const msgs = handle.conversationsRepo.listLatest(5);
+    expect(msgs.some(m => m.content.includes("境界"))).toBe(true);
+  });
+
+  it("PUT items merge 更新;DELETE items;DELETE section 级联 + 广播", async () => {
+    const handle = registry.open(bookId);
+    const sec = handle.genreSectionsRepo.createSection({
+      name: "法器",
+      schema: [
+        { name: "name", type: "string", required: true },
+        { name: "rank", type: "string" },
+      ],
+      createdBy: "ai",
+    });
+    const item = handle.genreSectionsRepo.addItem(sec.id, { name: "青锋剑" });
+
+    const put = await app.request(`/api/books/${bookId}/genre-sections/items/${item.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: { rank: "中品" } }),
+    });
+    expect(put.status).toBe(200);
+    const updated = handle.genreSectionsRepo.getItem(item.id);
+    expect(updated!.data.name).toBe("青锋剑"); // merge 保留
+    expect(updated!.data.rank).toBe("中品");
+
+    const delSec = await app.request(`/api/books/${bookId}/genre-sections/${sec.id}`, { method: "DELETE" });
+    expect(delSec.status).toBe(200);
+    expect((await delSec.json() as { itemsRemoved: number }).itemsRemoved).toBe(1);
+    expect(handle.genreSectionsRepo.getSection(sec.id)).toBeUndefined();
+    const msgs = handle.conversationsRepo.listLatest(10);
+    expect(msgs.some(m => m.content.includes("删除了板块「法器」"))).toBe(true);
+  });
+});
