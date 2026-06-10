@@ -4,24 +4,19 @@ import { ThreePaneLayout, EmptyPane } from "../components/workspace/three-pane-l
 import { ConversationPane } from "../components/conversation/conversation-pane.js";
 import { SidePanel } from "../components/sidebar/side-panel.js";
 import { UsageMeter } from "../components/usage-meter.js";
+import { EditorPane } from "../components/editor/editor-pane.js";
 
 export function WorkspacePage() {
   const { bookId } = useParams<{ bookId: string }>();
   const navigate = useNavigate();
   return (
     <div data-testid="page-workspace" style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
-      <header
-        style={{
-          padding: "8px 16px",
-          borderBottom: "1px solid #e5e5e5",
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-        }}
-      >
-        <button onClick={() => navigate("/library")}>{t.workspace.backToLibrary}</button>
-        <span style={{ color: "#666" }} data-testid="book-id-label">
-          {bookId}
+      <header className="nav-bar">
+        <button className="ios-btn-small" onClick={() => navigate("/library")}>
+          ‹ {t.workspace.backToLibrary}
+        </button>
+        <span className="muted" style={{ fontSize: 12 }} data-testid="book-id-label">
+          {bookId?.slice(0, 8)}
         </span>
         <span style={{ marginLeft: "auto" }}>
           {bookId && <UsageMeter bookId={bookId} />}
@@ -32,7 +27,9 @@ export function WorkspacePage() {
           left={bookId
             ? <ConversationPane bookId={bookId} />
             : <EmptyPane testId="placeholder-conversation" label={t.workspace.tabConversation} />}
-          center={<EmptyPane testId="placeholder-editor" label={t.workspace.tabEditor} />}
+          center={bookId
+            ? <EditorPane bookId={bookId} />
+            : <EmptyPane testId="placeholder-editor" label={t.workspace.tabEditor} />}
           right={bookId
             ? <SidePanel bookId={bookId} />
             : <EmptyPane testId="placeholder-sidebar" label={t.workspace.tabSidebar} />}

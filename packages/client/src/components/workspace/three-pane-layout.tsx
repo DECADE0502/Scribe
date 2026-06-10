@@ -19,17 +19,17 @@ export function ThreePaneLayout(props: ThreePaneLayoutProps) {
     >
       <section
         data-testid="pane-conversation"
-        style={{ borderRight: "1px solid #e5e5e5", overflow: "auto" }}
+        style={{ borderRight: "0.5px solid var(--ios-sep)", overflow: "auto", background: "var(--ios-bg)" }}
       >
         {props.left}
       </section>
       <section
         data-testid="pane-editor"
-        style={{ borderRight: "1px solid #e5e5e5", overflow: "auto" }}
+        style={{ borderRight: "0.5px solid var(--ios-sep)", overflow: "auto", background: "var(--ios-card)" }}
       >
         {props.center}
       </section>
-      <section data-testid="pane-sidebar" style={{ overflow: "auto" }}>
+      <section data-testid="pane-sidebar" style={{ overflow: "auto", background: "var(--ios-bg)" }}>
         {props.right}
       </section>
     </div>

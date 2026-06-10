@@ -5,10 +5,20 @@ export function Message(props: { m: ChatMessage }) {
   const { m } = props;
   const isUser = m.role === "user";
   const isSystem = m.role === "system";
+
+  if (isSystem) {
+    return (
+      <div data-testid={`msg-${m.id}`} data-role="system" className="bubble-system fade-up" style={{ margin: "10px 0" }}>
+        {m.content}
+      </div>
+    );
+  }
+
   return (
     <div
       data-testid={`msg-${m.id}`}
       data-role={m.role}
+      className="fade-up"
       style={{
         display: "flex",
         justifyContent: isUser ? "flex-end" : "flex-start",
@@ -16,16 +26,14 @@ export function Message(props: { m: ChatMessage }) {
       }}
     >
       <div
+        className={isUser ? "bubble-user" : "bubble-ai"}
         style={{
           maxWidth: "85%",
-          padding: "8px 12px",
-          borderRadius: 8,
+          padding: "9px 14px",
           whiteSpace: "pre-wrap",
           wordBreak: "break-word",
-          background: isUser ? "#daf0ff" : isSystem ? "#f5f5f5" : "#fff",
-          border: isSystem ? "1px dashed #ccc" : "1px solid #e5e5e5",
-          color: isSystem ? "#888" : "#222",
-          fontSize: isSystem ? 12 : 14,
+          fontSize: 14,
+          lineHeight: 1.6,
         }}
       >
         {m.toolEvents && m.toolEvents.length > 0 && (
@@ -36,22 +44,23 @@ export function Message(props: { m: ChatMessage }) {
                 data-testid="tool-chip"
                 style={{
                   display: "inline-block",
-                  fontSize: 12,
-                  color: "#555",
-                  background: "#eef",
-                  borderRadius: 4,
-                  padding: "1px 6px",
+                  fontSize: 11,
+                  color: "var(--ios-blue)",
+                  background: "rgba(0,122,255,0.1)",
+                  borderRadius: 999,
+                  padding: "1px 8px",
                   marginRight: 4,
+                  marginBottom: 2,
                 }}
               >
-                {t.conversation.toolCalled}:{ev.toolName}
+                ⚙ {t.conversation.toolCalled}:{ev.toolName}
               </span>
             ))}
           </div>
         )}
         {m.content}
         {m.error && (
-          <div role="alert" style={{ color: "#c00", fontSize: 12, marginTop: 6 }}>
+          <div role="alert" style={{ color: "var(--ios-red)", fontSize: 12, marginTop: 6 }}>
             {m.error.message}
           </div>
         )}

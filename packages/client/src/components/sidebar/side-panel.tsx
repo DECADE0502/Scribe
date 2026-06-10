@@ -37,26 +37,21 @@ export function SidePanel(props: { bookId: string }) {
 
   return (
     <div data-testid="side-panel" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <nav style={{ display: "flex", borderBottom: "1px solid #e5e5e5", flexWrap: "wrap" }}>
-        {[...BUILTIN_TABS, ...genreTabs].map(item => (
-          <button
-            key={item.id}
-            data-testid={`tab-${item.id}`}
-            onClick={() => setTab(item.id)}
-            style={{
-              border: "none",
-              borderBottom: tab === item.id ? "2px solid #1a73e8" : "2px solid transparent",
-              borderRadius: 0,
-              background: "transparent",
-              padding: "8px 10px",
-              fontWeight: tab === item.id ? 600 : 400,
-            }}
-          >
-            {item.label}
-          </button>
-        ))}
-      </nav>
-      <div style={{ flex: 1, overflow: "auto", padding: 12 }}>
+      <div style={{ padding: "10px 12px 8px" }}>
+        <nav className="segmented">
+          {[...BUILTIN_TABS, ...genreTabs].map(item => (
+            <button
+              key={item.id}
+              data-testid={`tab-${item.id}`}
+              className={tab === item.id ? "active" : ""}
+              onClick={() => setTab(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+      <div style={{ flex: 1, overflow: "auto", padding: "4px 12px 12px" }}>
         {tab === "characters" && <CharactersPanel bookId={props.bookId} />}
         {tab === "outline" && <OutlinePanel bookId={props.bookId} />}
         {tab === "foreshadowing" && <ForeshadowingPanel bookId={props.bookId} />}

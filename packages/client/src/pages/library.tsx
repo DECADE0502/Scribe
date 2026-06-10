@@ -33,67 +33,88 @@ export function LibraryPage() {
     }
   }, [navigate]);
 
-  const handleDelete = useCallback(async (b: BookSummary) => {
+  const handleDelete = useCallback(async (b: BookSummary, e: React.MouseEvent) => {
+    e.stopPropagation();
     const sure = window.confirm(`${t.library.deleteConfirm}\n\n${t.library.deleteWarning}`);
     if (!sure) return;
     try {
       await api.deleteBook(b.id);
       await reload();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
     }
   }, [reload]);
 
   return (
-    <main data-testid="page-library" style={{ padding: 24, maxWidth: 960, margin: "0 auto" }}>
-      <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
-        <h1 style={{ margin: 0 }}>{t.library.title}</h1>
+    <main data-testid="page-library" style={{ padding: "32px 24px", maxWidth: 1080, margin: "0 auto" }}>
+      <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28 }}>
+        <h1 className="large-title">{t.library.title}</h1>
         <span style={{ display: "flex", gap: 8 }}>
-          <button data-testid="btn-settings" onClick={() => navigate("/settings")}>{t.settings.title}</button>
-          <button data-testid="btn-new-book" onClick={handleNew}>{t.library.newBook}</button>
+          <button data-testid="btn-settings" onClick={() => navigate("/settings")}>
+            {t.settings.title}
+          </button>
+          <button className="ios-btn-primary" data-testid="btn-new-book" onClick={handleNew}>
+            + {t.library.newBook}
+          </button>
         </span>
       </header>
-      {loading && <p data-testid="library-loading">{t.app.loading}</p>}
-      {error && <p data-testid="library-error" role="alert" style={{ color: "#c00" }}>{error}</p>}
+      {loading && <p data-testid="library-loading" className="muted">{t.app.loading}</p>}
+      {error && <p data-testid="library-error" role="alert" style={{ color: "var(--ios-red)" }}>{error}</p>}
       {!loading && books.length === 0 && (
-        <p data-testid="library-empty">{t.library.emptyHint}</p>
+        <div data-testid="library-empty" className="ios-card fade-up" style={{ padding: 48, textAlign: "center" }}>
+          <p style={{ fontSize: 44, margin: "0 0 8px" }}>📚</p>
+          <p className="muted">{t.library.emptyHint}</p>
+        </div>
       )}
       {books.length > 0 && (
-        <ul data-testid="library-list" style={{ listStyle: "none", padding: 0 }}>
+        <div
+          data-testid="library-list"
+          className="fade-up"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+            gap: 16,
+          }}
+        >
           {books.map(b => (
-            <BookCard key={b.id} book={b} onDelete={() => handleDelete(b)} />
+            <article
+              key={b.id}
+              data-testid={`book-card-${b.id}`}
+              className="book-card"
+              onClick={() => navigate(`/books/${b.id}`)}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <h3 style={{ margin: 0, fontSize: 17, letterSpacing: "-0.2px" }}>{b.title}</h3>
+                {b.genre && (
+                  <span
+                    style={{
+                      fontSize: 11, color: "var(--ios-blue)",
+                      background: "rgba(0,122,255,0.1)", borderRadius: 999, padding: "2px 10px",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {b.genre}
+                  </span>
+                )}
+              </div>
+              <p className="muted" style={{ margin: "10px 0 0", fontSize: 12 }}>
+                {t.library.lastUpdated} {new Date(b.updatedAt).toLocaleString("zh-CN")}
+              </p>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {t.library.totalCost} ${b.totalCostUsd.toFixed(4)}
+                </span>
+                <button
+                  className="ios-btn-small ios-btn-danger"
+                  onClick={(e) => void handleDelete(b, e)}
+                >
+                  {t.library.delete}
+                </button>
+              </div>
+            </article>
           ))}
-        </ul>
+        </div>
       )}
     </main>
-  );
-}
-
-function BookCard(props: { book: BookSummary; onDelete: () => void }) {
-  const { book, onDelete } = props;
-  const navigate = useNavigate();
-  const updated = new Date(book.updatedAt).toLocaleString("zh-CN");
-  return (
-    <li data-testid={`book-card-${book.id}`}
-        style={{
-          border: "1px solid #ddd",
-          borderRadius: 8,
-          padding: 16,
-          marginBottom: 12,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}>
-      <div>
-        <h3 style={{ margin: 0 }}>{book.title}</h3>
-        <p style={{ color: "#666", margin: "4px 0 0" }}>
-          {book.genre ?? ""} · {t.library.lastUpdated} {updated} · {t.library.totalCost} ${book.totalCostUsd.toFixed(4)}
-        </p>
-      </div>
-      <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={() => navigate(`/books/${book.id}`)}>{t.library.open}</button>
-        <button onClick={onDelete} style={{ color: "#c00" }}>{t.library.delete}</button>
-      </div>
-    </li>
   );
 }

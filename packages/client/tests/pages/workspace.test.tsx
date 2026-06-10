@@ -7,11 +7,11 @@ const fetchMock = vi.fn();
 
 beforeEach(() => {
   fetchMock.mockReset();
-  // SidePanel 默认 tab 会拉 characters
+  // SidePanel 拉 characters/genre-sections,EditorPane 拉 chapters
   fetchMock.mockResolvedValue({
     ok: true,
     status: 200,
-    json: async () => ({ characters: [] }),
+    json: async () => ({ characters: [], chapters: [], sections: [] }),
   } as Response);
   vi.stubGlobal("fetch", fetchMock);
 });
@@ -40,15 +40,18 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("book-id-label")).toHaveTextContent("abc");
   });
 
-  it("左栏对话面板,中栏占位,右栏资料面板", () => {
+  it("左栏对话面板,中栏编辑器,右栏资料面板", () => {
     renderAt("/books/x");
     expect(screen.getByTestId("conversation-pane")).toBeInTheDocument();
-    expect(screen.getByTestId("placeholder-editor")).toHaveTextContent("正文");
+    // 中栏现在是真实 EditorPane(加载态或空状态)
+    expect(
+      screen.queryByTestId("editor-pane") ?? screen.queryByTestId("editor-loading"),
+    ).toBeInTheDocument();
     expect(screen.getByTestId("side-panel")).toBeInTheDocument();
   });
 
   it("返回书架按钮存在", () => {
     renderAt("/books/x");
-    expect(screen.getByText("返回书架")).toBeInTheDocument();
+    expect(screen.getByText(/返回书架/)).toBeInTheDocument();
   });
 });

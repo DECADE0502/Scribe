@@ -1,3 +1,26 @@
+/* ===== Scribe iOS 风格设计系统 ===== */
+
+:root {
+  --ios-blue: #007aff;
+  --ios-blue-press: #0062cc;
+  --ios-bg: #f2f2f7;
+  --ios-card: #ffffff;
+  --ios-text: #1c1c1e;
+  --ios-text-2: #6e6e73;
+  --ios-text-3: #aeaeb2;
+  --ios-sep: rgba(60, 60, 67, 0.12);
+  --ios-red: #ff3b30;
+  --ios-green: #34c759;
+  --ios-orange: #ff9500;
+  --ios-fill: rgba(120, 120, 128, 0.12);
+  --ios-fill-2: rgba(120, 120, 128, 0.2);
+  --radius-s: 8px;
+  --radius-m: 12px;
+  --radius-l: 16px;
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 4px 14px rgba(0, 0, 0, 0.04);
+  --shadow-float: 0 8px 30px rgba(0, 0, 0, 0.12);
+}
+
 *, *::before, *::after { box-sizing: border-box; }
 
 html, body, #root {
@@ -7,40 +30,255 @@ html, body, #root {
 }
 
 body {
-  font-family: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "Source Han Sans CN",
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
+    "Microsoft YaHei", "Hiragino Sans GB", "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
-  color: #222;
-  background: #fafafa;
+  color: var(--ios-text);
+  background: var(--ios-bg);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ===== 控件 ===== */
+
 button {
   font-family: inherit;
-  font-size: inherit;
+  font-size: 14px;
   cursor: pointer;
-  padding: 6px 14px;
-  border: 1px solid #d0d0d0;
-  background: #fff;
-  border-radius: 4px;
-  color: #222;
+  padding: 7px 16px;
+  border: none;
+  background: var(--ios-fill);
+  border-radius: var(--radius-s);
+  color: var(--ios-blue);
+  font-weight: 500;
+  transition: background 0.15s ease, transform 0.1s ease, opacity 0.15s ease;
 }
 
-button:hover {
-  background: #f0f0f0;
+button:hover { background: var(--ios-fill-2); }
+button:active { transform: scale(0.97); }
+button:disabled { cursor: not-allowed; color: var(--ios-text-3); background: var(--ios-fill); opacity: 0.6; }
+
+.ios-btn-primary {
+  background: var(--ios-blue);
+  color: #fff;
+}
+.ios-btn-primary:hover { background: var(--ios-blue-press); }
+.ios-btn-primary:disabled { background: var(--ios-fill-2); color: var(--ios-text-3); }
+
+.ios-btn-danger { color: var(--ios-red); }
+
+.ios-btn-small {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 7px;
 }
 
-button:disabled {
-  cursor: not-allowed;
-  color: #aaa;
-}
-
-input, textarea {
+input, textarea, select {
   font-family: inherit;
-  font-size: inherit;
+  font-size: 14px;
+  color: var(--ios-text);
+  background: var(--ios-card);
+  border: 1px solid var(--ios-sep);
+  border-radius: var(--radius-s);
+  padding: 9px 12px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-a { color: #1a73e8; text-decoration: none; }
+input:focus, textarea:focus, select:focus {
+  border-color: var(--ios-blue);
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
+}
+
+a { color: var(--ios-blue); text-decoration: none; }
 a:hover { text-decoration: underline; }
+
+code {
+  background: var(--ios-fill);
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-size: 13px;
+}
+
+/* ===== 通用布局 ===== */
+
+.ios-card {
+  background: var(--ios-card);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-card);
+  border: 0.5px solid var(--ios-sep);
+}
+
+.muted { color: var(--ios-text-2); }
+
+.pane-center {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ios-text-2);
+}
+
+/* 顶部导航条 */
+.nav-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 0.5px solid var(--ios-sep);
+  position: relative;
+  z-index: 10;
+}
+
+/* 大标题(书架等页面) */
+.large-title {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  margin: 0;
+}
+
+/* ===== 分段控件(右栏 tab) ===== */
+.segmented {
+  display: flex;
+  gap: 0;
+  background: var(--ios-fill);
+  border-radius: 9px;
+  padding: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.segmented::-webkit-scrollbar { display: none; }
+
+.segmented button {
+  flex-shrink: 0;
+  background: transparent;
+  color: var(--ios-text);
+  font-size: 13px;
+  padding: 5px 12px;
+  border-radius: 7px;
+  font-weight: 400;
+}
+.segmented button.active {
+  background: var(--ios-card);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  font-weight: 600;
+}
+
+/* ===== 章节条 ===== */
+.chapter-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 0.5px solid var(--ios-sep);
+  background: rgba(255, 255, 255, 0.7);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.chapter-chip {
+  flex-shrink: 0;
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--ios-fill);
+  color: var(--ios-text);
+  font-weight: 400;
+}
+.chapter-chip.active {
+  background: var(--ios-blue);
+  color: #fff;
+  font-weight: 600;
+}
+.chapter-chip.add {
+  font-weight: 700;
+  color: var(--ios-blue);
+}
+
+/* ===== 对话气泡 ===== */
+.bubble-user {
+  background: var(--ios-blue);
+  color: #fff;
+  border-radius: 18px 18px 4px 18px;
+}
+.bubble-ai {
+  background: var(--ios-card);
+  border: 0.5px solid var(--ios-sep);
+  border-radius: 18px 18px 18px 4px;
+  box-shadow: var(--shadow-card);
+}
+.bubble-system {
+  background: transparent;
+  color: var(--ios-text-3);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* ===== 编辑器 ===== */
+.ProseMirror {
+  outline: none;
+  min-height: 200px;
+  font-size: 16px;
+  line-height: 1.9;
+  letter-spacing: 0.02em;
+}
+.ProseMirror p { margin: 0 0 1em; }
+.ProseMirror h1, .ProseMirror h2 { letter-spacing: -0.3px; }
+
+/* ===== 列表卡片(书架) ===== */
+.book-card {
+  background: var(--ios-card);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-card);
+  border: 0.5px solid var(--ios-sep);
+  padding: 18px;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  cursor: pointer;
+}
+.book-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-float);
+}
+
+/* ===== 设置分组(iOS Settings 风格) ===== */
+.settings-group {
+  background: var(--ios-card);
+  border-radius: var(--radius-m);
+  border: 0.5px solid var(--ios-sep);
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+}
+.settings-row + .settings-row { border-top: 0.5px solid var(--ios-sep); }
+.settings-label { font-size: 14px; }
+.settings-caption {
+  font-size: 12px;
+  color: var(--ios-text-2);
+  padding: 6px 16px 0;
+}
+
+/* ===== 滚动条精简 ===== */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ===== 过渡动画 ===== */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fade-up 0.25s ease; }

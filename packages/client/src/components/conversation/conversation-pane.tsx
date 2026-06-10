@@ -225,7 +225,7 @@ function Composer(props: { onSend: (text: string) => void; onCancel: () => void;
               {t.conversation.cancelStream}
             </button>
           )}
-          <button data-testid="btn-send" onClick={submit} disabled={props.streaming || !value.trim()}>
+          <button className="ios-btn-primary" data-testid="btn-send" onClick={submit} disabled={props.streaming || !value.trim()}>
             {t.conversation.sendButton}
           </button>
         </div>
