@@ -41,7 +41,8 @@ export const AuditIssueOutputSchema = z.object({
   dimension: AuditDimensionKey,
   severity: SeveritySchema,
   score: z.number().int().min(0).max(10),
-  excerpt: z.string().optional(),
+  // LLM 常输出 null 表示"无摘录",容错转 undefined
+  excerpt: z.string().nullish().transform(v => v ?? undefined),
   note: z.string(),
 });
 

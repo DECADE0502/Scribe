@@ -4,6 +4,7 @@ import type { ModelInfo } from "@scribe/shared";
 import { streamSseResponse } from "../sse.js";
 import type { BookRegistry } from "../book-registry.js";
 import { runAutoMode } from "../../ai/orchestrator/auto-mode.js";
+import { buildBookPromptContext } from "../../ai/context-builder/book-context.js";
 
 export interface AutoRoutesDeps {
   registry: BookRegistry;
@@ -45,10 +46,13 @@ export function autoRoutes(deps: AutoRoutesDeps) {
 
     const writeModelInfo = deps.writeModelInfo ?? { id: "unknown" };
     const auditModelInfo = deps.auditModelInfo ?? writeModelInfo;
+    // B-5-001 修复:把书的设定(premise/角色/大纲/规则)注入写作与审查 prompt
+    const promptCtx = buildBookPromptContext(handle);
 
     async function* withCleanup() {
+      let currentChapter: number | undefined;
       try {
-        yield* runAutoMode(
+        for await (const ev of runAutoMode(
           {
             model: model!,
             auditModel: auditModel!,
@@ -62,8 +66,31 @@ export function autoRoutes(deps: AutoRoutesDeps) {
             auditModelInfo,
             abortSignal: controller.signal,
           },
-          { n },
-        );
+          { n, writeCtx: promptCtx.writeCtx, auditCtx: promptCtx.auditCtx },
+        )) {
+          if (ev.type === "auto_status" && ev.currentChapter != null) {
+            currentChapter = ev.currentChapter;
+          }
+          // usage 事件落库(写作模型的用量;audit 用量由 generateText 路径暂不上报)
+          if (ev.type === "usage") {
+            const pricing = writeModelInfo.pricing;
+            const cost = pricing
+              ? (ev.promptTokens / 1e6) * pricing.input + (ev.completionTokens / 1e6) * pricing.output
+              : 0;
+            handle.tokenUsageRepo.record({
+              taskType: "write",
+              model: writeModelInfo.id,
+              promptTokens: ev.promptTokens,
+              completionTokens: ev.completionTokens,
+              cachedTokens: ev.cachedTokens ?? 0,
+              reasoningTokens: ev.reasoningTokens ?? 0,
+              costUsd: cost,
+              chapterNo: currentChapter ?? null,
+            });
+            deps.registry.booksRepo.addCost(bookId, cost);
+          }
+          yield ev;
+        }
       } finally {
         running.delete(bookId);
       }

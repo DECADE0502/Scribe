@@ -24,6 +24,7 @@ export interface AutoModeDeps extends Omit<WriteWithAuditDeps, "model" | "auditM
 export interface AutoModeInput {
   n: number;
   auditCtx?: WriteWithAuditInput["auditCtx"];
+  writeCtx?: WriteWithAuditInput["ctx"];
 }
 
 /**
@@ -84,6 +85,7 @@ export async function* runAutoMode(
       {
         chapterNo: next,
         userIntent: "",
+        ctx: input.writeCtx,
         auditCtx: input.auditCtx,
         enableRepair: true,
         abortSignal: deps.abortSignal,

@@ -46,32 +46,45 @@ export interface AuditResult {
  *
  * 一次 LLM 调用同时产出 7 维审查与三层摘要(oneLiner / paragraph / keyEvents)。
  * 流式不是必要的(审查无需 UI 实时显示),用 generateText 简化错误处理。
+ *
+ * 容错:SDK 偶发解析失败 / LLM 偶发输出坏 JSON,各重试至多 2 次。
  */
 export async function auditChapter(
   deps: AuditDeps,
   ctx: AuditContext,
 ): Promise<AuditResult> {
   const userMsg = buildAuditUserPrompt(ctx);
-  const result = await generateText({
-    model: deps.model,
-    messages: [
-      { role: "system", content: AUDIT_SUMMARIZE_PROMPT },
-      { role: "user", content: userMsg },
-    ],
-    abortSignal: deps.abortSignal,
-  });
-  const output = parseAuditOutput(result.text);
-  return {
-    output,
-    usage: {
-      promptTokens: result.usage.promptTokens ?? 0,
-      completionTokens: result.usage.completionTokens ?? 0,
-      cachedTokens: 0,
-      reasoningTokens: 0,
-    },
-    rawText: result.text,
-    reasoningText: result.reasoning ?? undefined,
-  };
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (deps.abortSignal?.aborted) break;
+    try {
+      const result = await generateText({
+        model: deps.model,
+        messages: [
+          { role: "system", content: AUDIT_SUMMARIZE_PROMPT },
+          { role: "user", content: userMsg },
+        ],
+        abortSignal: deps.abortSignal,
+      });
+      const output = parseAuditOutput(result.text);
+      return {
+        output,
+        usage: {
+          promptTokens: result.usage.promptTokens ?? 0,
+          completionTokens: result.usage.completionTokens ?? 0,
+          cachedTokens: 0,
+          reasoningTokens: 0,
+        },
+        rawText: result.text,
+        reasoningText: result.reasoning ?? undefined,
+      };
+    } catch (e) {
+      lastError = e;
+      // abort 不重试
+      if ((e as Error)?.name === "AbortError") break;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 /**

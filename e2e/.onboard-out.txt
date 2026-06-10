@@ -1,0 +1,1542 @@
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":""}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"用户"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"给出了"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"很"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"充分"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"的信息"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"，"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"让我"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"来"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"梳理"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"一下"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"：\n\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"1"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"."}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" **"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"题材"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"**"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"："}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"仙"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"侠"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" ✓"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"2"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"."}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" **"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"主角"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"**"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"："}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"林"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"尘"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"，"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"被"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"废"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"功"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"法的"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"弃"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"婴"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"，"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"在"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"云"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"岚"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"宗"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"做"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"杂"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"役"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"，"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"后来"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"获得"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"上古"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"剑"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"灵"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"传承"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"重修"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"崛起"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"3"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"."}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" **"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"调"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"性"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"**"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"："}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"清"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"冷"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"克制"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"4"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"."}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" **"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"篇幅"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"**"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"："}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"长篇"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"连载"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"5"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"."}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" **"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"Prem"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"ise"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"**"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"："}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"可以从"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"描述"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"中"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"提炼"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"\n\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"现在"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"我需要"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"逐步"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"执行"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"：\n\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"1"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"."}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" "}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"先"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"设置"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" book"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"_"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"meta"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"："}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"genre"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"=\""}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"仙"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"侠"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"\","}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" tone"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"=\""}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"清"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"冷"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"克制"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"\","}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" length"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"Target"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"=\""}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"长篇"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"\"\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"2"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"."}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" "}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"提炼"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" premise"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"："}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"类似"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"\""}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"被"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"废"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"功"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"法的"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"弃"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"婴"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"林"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"尘"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"在"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"云"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"岚"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"宗"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"做"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"杂"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"役"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"，"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"偶"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"得上"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"古"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"剑"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"灵"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"传承"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"，"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"踏上"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"重修"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"之路"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"\"\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"3"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"."}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" "}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"创建"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"主角"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"："}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"林"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"尘"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"4"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"."}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" "}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"创建"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"题材"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"板块"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"："}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"仙"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"侠"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"→"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"功法"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"体系"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"、"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"境界"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"、"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"法器"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"丹药"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"、"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"宗门"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"/"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"势力"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"5"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"."}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" "}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"还需要"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"一级"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"大纲"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"\n\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"用户"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"还"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"缺"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"一级"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"大纲"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"，"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"我需要"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"问"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"。\n\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"先"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"并行"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"调用"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" set"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"_book"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"_"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"meta"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" "}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"和"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" create"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"_"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"character"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" "}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"和"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" create"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"_gen"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"re"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"_s"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"ection"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"。\n\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"题材"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"是"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"仙"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"侠"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"，"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"默认"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"板块"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"："}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"功法"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"体系"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"、"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"境界"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"、"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"法器"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"丹药"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"、"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"宗门"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"/"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"势力"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"。"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"我"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"还可以"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"考虑"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"加"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"一个"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"，"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"比如"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"\""}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"剑"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"灵"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"/"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"传承"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"\""}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"之类的"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"，"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"但"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"默认"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"3"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"-"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"5"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"个"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"就够了"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"。\n\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"先"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"做"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"这些"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"调用"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"，"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"然后"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"问"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"一级"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"大纲"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"。"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"信息"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"量"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"很"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"足"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"，"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"我先"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"落"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"几个"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"，"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"然后"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"只"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"差"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"一级"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"大纲"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"了"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"。"}
+
+event: tool_call_start
+data: {"type":"tool_call_start","toolName":"set_book_meta","args":{"premise":"被废功法的弃婴林尘在云岚宗做杂役，偶得上古剑灵传承，踏上重修崛起之路。","tone":"清冷克制","genre":"仙侠","lengthTarget":"长篇"}}
+
+event: tool_call_end
+data: {"type":"tool_call_end","toolName":"set_book_meta","result":{"updated":{"premise":"被废功法的弃婴林尘在云岚宗做杂役，偶得上古剑灵传承，踏上重修崛起之路。","tone":"清冷克制","genre":"仙侠","lengthTarget":"长篇"}}}
+
+event: tool_call_start
+data: {"type":"tool_call_start","toolName":"create_character","args":{"name":"林尘","role":"protagonist","background":"被废功法的弃婴，自幼在云岚宗做杂役，受尽冷眼。","motivation":"重修崛起，找回自己被废的真相，走出属于自己的剑道。","languageHabits":"寡言少语，话短而冷，不争辩。"}}
+
+event: tool_call_end
+data: {"type":"tool_call_end","toolName":"create_character","result":{"id":"52b9f2bb-7cf3-4f1d-ba1c-96a5ef40239a","name":"林尘"}}
+
+event: tool_call_start
+data: {"type":"tool_call_start","toolName":"create_genre_section","args":{"name":"功法体系","schema":[{"name":"功法名","type":"string","description":"功法名称","required":true},{"name":"等级","type":"enum","description":"功法品级","required":true,"values":["凡品","灵品","玄品","地品","天品","圣品","神品"]},{"name":"描述","type":"text","description":"功法简介","required":false}]}}
+
+event: tool_call_end
+data: {"type":"tool_call_end","toolName":"create_genre_section","result":{"id":"8835a7de-1240-4ac5-8129-3c923afb9f65","name":"功法体系","schema":[{"name":"功法名","type":"string","description":"功法名称","required":true},{"name":"等级","type":"enum","description":"功法品级","required":true,"values":["凡品","灵品","玄品","地品","天品","圣品","神品"]},{"name":"描述","type":"text","description":"功法简介","required":false}],"createdBy":"ai","createdAt":1781076612847}}
+
+event: tool_call_start
+data: {"type":"tool_call_start","toolName":"create_genre_section","args":{"name":"境界","schema":[{"name":"境界名","type":"string","description":"境界名称","required":true},{"name":"排序","type":"number","description":"从低到高的序号","required":true},{"name":"特征","type":"text","description":"此境界的标志性能力或特征","required":false}]}}
+
+event: tool_call_end
+data: {"type":"tool_call_end","toolName":"create_genre_section","result":{"id":"54998103-52ce-4e21-a96f-0f0e74226c37","name":"境界","schema":[{"name":"境界名","type":"string","description":"境界名称","required":true},{"name":"排序","type":"number","description":"从低到高的序号","required":true},{"name":"特征","type":"text","description":"此境界的标志性能力或特征","required":false}],"createdBy":"ai","createdAt":1781076614610}}
+
+event: tool_call_start
+data: {"type":"tool_call_start","toolName":"create_genre_section","args":{"name":"法器丹药","schema":[{"name":"名称","type":"string","required":true},{"name":"类型","type":"enum","description":"物品类型","required":true,"values":["法器","丹药","灵材","符箓","阵法"]},{"name":"品级","type":"enum","required":false,"values":["凡品","灵品","玄品","地品","天品","圣品","神品"]},{"name":"描述","type":"text","required":false}]}}
+
+event: tool_call_end
+data: {"type":"tool_call_end","toolName":"create_genre_section","result":{"id":"37fb93d3-2db5-4ce0-b1bf-79ebeb0c8479","name":"法器丹药","schema":[{"name":"名称","type":"string","required":true},{"name":"类型","type":"enum","description":"物品类型","required":true,"values":["法器","丹药","灵材","符箓","阵法"]},{"name":"品级","type":"enum","required":false,"values":["凡品","灵品","玄品","地品","天品","圣品","神品"]},{"name":"描述","type":"text","required":false}],"createdBy":"ai","createdAt":1781076616867}}
+
+event: tool_call_start
+data: {"type":"tool_call_start","toolName":"create_genre_section","args":{"name":"宗门/势力","schema":[{"name":"势力名","type":"string","required":true},{"name":"类型","type":"enum","description":"势力类型","required":true,"values":["仙门宗派","魔道","散修联盟","上古遗族","皇朝"]},{"name":"描述","type":"text","required":false}]}}
+
+event: tool_call_end
+data: {"type":"tool_call_end","toolName":"create_genre_section","result":{"id":"cc8aa07f-4276-450a-9d3c-8c076d080ab9","name":"宗门/势力","schema":[{"name":"势力名","type":"string","required":true},{"name":"类型","type":"enum","description":"势力类型","required":true,"values":["仙门宗派","魔道","散修联盟","上古遗族","皇朝"]},{"name":"描述","type":"text","required":false}],"createdBy":"ai","createdAt":1781076618717}}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":""}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"都已"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"落"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"定"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"。"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"现在"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"我还"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"需要"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"一级"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"大纲"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"。"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"用户"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"还"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"差"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"这个"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"。\n\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"让我"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"来"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"总结"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"一下"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"进度"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"：\n\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"✅"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" "}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"题材"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"："}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"仙"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"侠"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"✅"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" "}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"主角"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"："}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"林"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"尘"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"（"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"已"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"创建"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"）\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"✅"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" "}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"调"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"性"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"："}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"清"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"冷"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"克制"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"✅"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" "}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"篇幅"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"："}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"长篇"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"✅"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" Prem"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"ise"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"："}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"已"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"设定"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"✅"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":" "}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"题材"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"板块"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"："}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"功法"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"体系"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"、"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"境界"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"、"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"法器"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"丹药"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"、"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"宗门"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"/"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"势力"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"（"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"已"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"创建"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"4"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"个"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"板块"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"）\n\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"还"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"差"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"："}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"一级"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"大纲"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"（"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"卷"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"或"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"弧"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"）\n\n"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"现在"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"问"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"用户"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"关于"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"一级"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"大纲"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"的想法"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"。"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"可以"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"给"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"几个"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"方向"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"让"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"用户"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"选"}
+
+event: reasoning_delta
+data: {"type":"reasoning_delta","delta":"。"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"已"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"落"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"定"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"不少"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"，"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"现在"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"只"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"差"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"最后一个"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"关键"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"项"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"——"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"**"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"一级"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"大纲"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"**"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"。\n\n"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"林"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"尘"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"的故事"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"，"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"你"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"心里"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"有"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"大致"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"的方向"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"吗"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"？"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"给你"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"几个"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"方向"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"参考"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"：\n\n"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"-"}
+
+event: text_delta
+data: {"type":"text_delta","delta":" **"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"云"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"岚"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"蛰"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"伏"}
+
+event: text_delta
+data: {"type":"text_delta","delta":" →"}
+
+event: text_delta
+data: {"type":"text_delta","delta":" "}
+
+event: text_delta
+data: {"type":"text_delta","delta":"剑"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"灵"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"觉醒"}
+
+event: text_delta
+data: {"type":"text_delta","delta":" →"}
+
+event: text_delta
+data: {"type":"text_delta","delta":" "}
+
+event: text_delta
+data: {"type":"text_delta","delta":"叛"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"出"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"宗门"}
+
+event: text_delta
+data: {"type":"text_delta","delta":" →"}
+
+event: text_delta
+data: {"type":"text_delta","delta":" "}
+
+event: text_delta
+data: {"type":"text_delta","delta":"重修"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"证"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"道"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"**"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"，"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"四"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"卷"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"推进"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"\n"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"-"}
+
+event: text_delta
+data: {"type":"text_delta","delta":" **"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"先"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"聚焦"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"云"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"岚"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"宗"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"内的"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"压抑"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"与"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"暗"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"流"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"**"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"，"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"第一卷"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"就"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"讲"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"杂"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"役"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"期"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"到"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"剑"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"灵"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"初"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"醒"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"\n"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"-"}
+
+event: text_delta
+data: {"type":"text_delta","delta":" "}
+
+event: text_delta
+data: {"type":"text_delta","delta":"你"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"已有"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"更"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"具体的"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"分段"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"想法"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"？\n\n"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"一句话"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"说说"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"你想"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"怎么"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"铺"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"就行"}
+
+event: text_delta
+data: {"type":"text_delta","delta":"。"}
+
+event: usage
+data: {"type":"usage","promptTokens":7343,"completionTokens":1371}
+
+event: done
+data: {"type":"done"}
+
