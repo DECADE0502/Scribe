@@ -2,6 +2,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { t } from "../i18n/zh-CN.js";
 import { ThreePaneLayout, EmptyPane } from "../components/workspace/three-pane-layout.js";
 import { ConversationPane } from "../components/conversation/conversation-pane.js";
+import { SidePanel } from "../components/sidebar/side-panel.js";
 
 export function WorkspacePage() {
   const { bookId } = useParams<{ bookId: string }>();
@@ -28,7 +29,9 @@ export function WorkspacePage() {
             ? <ConversationPane bookId={bookId} />
             : <EmptyPane testId="placeholder-conversation" label={t.workspace.tabConversation} />}
           center={<EmptyPane testId="placeholder-editor" label={t.workspace.tabEditor} />}
-          right={<EmptyPane testId="placeholder-sidebar" label={t.workspace.tabSidebar} />}
+          right={bookId
+            ? <SidePanel bookId={bookId} />
+            : <EmptyPane testId="placeholder-sidebar" label={t.workspace.tabSidebar} />}
         />
       </div>
     </div>
