@@ -1,6 +1,27 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { createApp } from "../../src/http/server.js";
+import { createBookRegistry } from "../../src/http/book-registry.js";
 import { runChat } from "../../src/ai/orchestrator/chat.js";
+
+function makePaths(root: string) {
+  return {
+    appRoot: root,
+    libraryDb: path.posix.join(root, "library.db"),
+    booksDir: path.posix.join(root, "books"),
+    backupsDir: path.posix.join(root, "backups"),
+    secretsEnv: path.posix.join(root, "secrets.env"),
+    configJson: path.posix.join(root, "config.json"),
+    bookDir: (id: string) => path.posix.join(root, "books", id),
+    workspaceDb: (id: string) => path.posix.join(root, "books", id, "workspace.db"),
+    chaptersDir: (id: string) => path.posix.join(root, "books", id, "chapters"),
+    rulesMd: (id: string) => path.posix.join(root, "books", id, "rules.md"),
+    exportsDir: (id: string) => path.posix.join(root, "books", id, "exports"),
+    bookBackupsDir: (id: string) => path.posix.join(root, "backups", id),
+  };
+}
 
 function makeStubModel(chunks: string[]): any {
   return {
@@ -8,7 +29,13 @@ function makeStubModel(chunks: string[]): any {
     provider: "stub",
     modelId: "stub",
     async doGenerate() {
-      throw new Error("not used");
+      // classifyIntent 走 generateText:返回 chitchat,使消息进入普通对话分支
+      return {
+        text: "chitchat",
+        finishReason: "stop",
+        usage: { promptTokens: 1, completionTokens: 1 },
+        rawCall: { rawPrompt: null, rawSettings: {} },
+      };
     },
     async doStream() {
       return {
@@ -53,7 +80,11 @@ describe("runChat 流式", () => {
   });
 
   it("HTTP /conversation?mode=chat + model 注入,SSE 输出真实文本", async () => {
-    const app = createApp({ getModel: () => makeStubModel(["你", "好"]) });
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "scribe-chat-"));
+    const paths = makePaths(tmp);
+    fs.mkdirSync(paths.booksDir, { recursive: true });
+    const registry = createBookRegistry({ paths });
+    const app = createApp({ getModel: () => makeStubModel(["你", "好"]), bookRegistry: registry });
     const res = await app.request("/api/books/b1/conversation?mode=chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -66,6 +97,8 @@ describe("runChat 流式", () => {
     expect(text).toContain("event: usage");
     expect(text).toContain("event: done");
     expect(text).not.toContain("[echo]");
+    registry.closeAll();
+    fs.rmSync(tmp, { recursive: true, force: true });
   });
 
   it("无 model 注入或 mode=echo 时走回声", async () => {

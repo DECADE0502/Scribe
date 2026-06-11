@@ -25,6 +25,15 @@ export const SseEventSchema = z.discriminatedUnion("type", [
     doneChapters: z.array(z.number().int()),
     currentChapter: z.number().int().optional(),
   }),
+  // 意图识别结果(spec §7.3),前端可展示"识别到的意图"
+  z.object({
+    type: z.literal("intent"),
+    category: z.enum([
+      "chitchat", "writing_intent", "revise_intent",
+      "query", "genre_section_op", "command_explicit", "other",
+    ]),
+    command: z.string().optional(),
+  }),
   z.object({ type: z.literal("done") }),
   z.object({ type: z.literal("error"), errorClass: z.string(), message: z.string() }),
 ]);

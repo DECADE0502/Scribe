@@ -40,7 +40,13 @@ export function createApp(deps: AppDeps = {}) {
 
   const app = new Hono();
   app.get("/api/health", (c) => c.json({ status: "ok", name: "scribe" }));
-  app.route("/", conversationRoutes({ getModel }));
+  app.route("/", conversationRoutes({
+    getModel,
+    getAuditModel,
+    registry: deps.bookRegistry,
+    auditModelInfo,
+    onChapterCommitted: deps.onChapterCommitted,
+  }));
   app.route("/", chapterRoutes({ getDeps: deps.getChapterDeps, registry: deps.bookRegistry, onChapterCommitted: deps.onChapterCommitted }));
   if (deps.bookRegistry) {
     app.route("/", bookRoutes({ registry: deps.bookRegistry, getModel }));

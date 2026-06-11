@@ -72,6 +72,19 @@ export function ConversationPane(props: ConversationPaneProps) {
           case "tool_call_end":
             pushToolEvent({ kind: "end", toolName: String(ev.toolName ?? ""), payload: ev.result });
             break;
+          case "intent": {
+            // spec §7.3:展示识别到的意图(仅对会触发动作的意图提示,避免噪音)
+            const labels: Record<string, string> = {
+              writing_intent: "✍️ 识别意图:写下一章",
+              revise_intent: "✏️ 识别意图:修改内容",
+              query: "🔍 识别意图:查询设定/前情",
+              genre_section_op: "🗂️ 识别意图:整理题材资料",
+              command_explicit: "",
+            };
+            const label = labels[String(ev.category ?? "")];
+            if (label) appendSystemMessage(label);
+            break;
+          }
           case "auto_status": {
             const done = Array.isArray(ev.doneChapters) ? ev.doneChapters.length : 0;
             const state = String(ev.state ?? "");

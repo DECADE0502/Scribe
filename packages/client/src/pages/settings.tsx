@@ -20,6 +20,7 @@ export function SettingsPage() {
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [models, setModels] = useState<ModelOption[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  const [modelsLoading, setModelsLoading] = useState(false);
   const [writeModelId, setWriteModelId] = useState("");
   const [auditModelId, setAuditModelId] = useState("");
   const [budget, setBudget] = useState("");
@@ -37,6 +38,7 @@ export function SettingsPage() {
 
   const refreshModels = useCallback(async () => {
     setModelsError(null);
+    setModelsLoading(true);
     try {
       const res = await fetch("/api/models");
       if (!res.ok) {
@@ -48,6 +50,8 @@ export function SettingsPage() {
     } catch (e) {
       setModelsError(t.settings.modelLoadFailed);
       setModels([]);
+    } finally {
+      setModelsLoading(false);
     }
   }, []);
 
@@ -95,7 +99,14 @@ export function SettingsPage() {
   ) => (
     <span style={{ display: "flex", gap: 6 }}>
       {models.length > 0 ? (
-        <select data-testid={testId} value={value} onChange={(e) => onChange(e.target.value)} style={{ flex: 1, padding: 6 }}>
+        // spec §5.3:用户聚焦下拉(准备选模型)时实时重新拉取列表
+        <select
+          data-testid={testId}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={() => void refreshModels()}
+          style={{ flex: 1, padding: 6 }}
+        >
           {!models.some(m => m.id === value) && value && <option value={value}>{value}(手动)</option>}
           {models.map(m => <option key={m.id} value={m.id}>{m.id}</option>)}
         </select>
@@ -145,8 +156,8 @@ export function SettingsPage() {
 
       <p className="settings-caption" style={{ paddingLeft: 4, display: "flex", alignItems: "center", gap: 8 }}>
         {t.settings.model}
-        <button className="ios-btn-small" data-testid="refresh-models" onClick={() => void refreshModels()}>
-          {t.settings.refreshModels}
+        <button className="ios-btn-small" data-testid="refresh-models" onClick={() => void refreshModels()} disabled={modelsLoading}>
+          {modelsLoading ? t.app.loading : t.settings.refreshModels}
         </button>
       </p>
       {modelsError && (
