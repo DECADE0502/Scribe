@@ -1,6 +1,7 @@
 import type { LanguageModel } from "ai";
 import type { SseEvent } from "@scribe/shared";
 import { streamLlm } from "../llm-call.js";
+import { prependDeepestPrompt } from "../prompts/deepest-prompt.js";
 import {
   REPAIR_PROMPT,
   buildRepairUserPrompt,
@@ -30,6 +31,8 @@ export interface RepairDeps {
   chaptersRepo: ChaptersRepoLike;
   chapterFiles: ChapterFilesLike;
   abortSignal?: AbortSignal;
+  /** 用户最深处提示词,原文拼到最前端 */
+  deepestPrompt?: string;
 }
 
 export interface RepairInput {
@@ -52,10 +55,10 @@ export async function* repairChapter(
   input: RepairInput,
 ): AsyncIterable<SseEvent> {
   const userPrompt = buildRepairUserPrompt(input.ctx);
-  const messages = [
+  const messages = prependDeepestPrompt([
     { role: "system" as const, content: REPAIR_PROMPT },
     { role: "user" as const, content: userPrompt },
-  ];
+  ], deps.deepestPrompt);
   let buffer = "";
   let success = false;
   for await (const ev of streamLlm({

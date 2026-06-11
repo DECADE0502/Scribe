@@ -5,6 +5,7 @@ import { streamSseResponse } from "../sse.js";
 import type { BookRegistry } from "../book-registry.js";
 import { runAutoMode } from "../../ai/orchestrator/auto-mode.js";
 import { computeUsageCost } from "../../ai/usage-tracker.js";
+import { resolveDeepestPrompt } from "../../ai/prompts/deepest-prompt.js";
 import {
   buildBookPromptContext,
   buildChapterWriteMessages,
@@ -22,6 +23,7 @@ export interface AutoRoutesDeps {
   writeModelInfo?: ModelInfo;
   auditModelInfo?: ModelInfo;
   onChapterCommitted?: (bookId: string) => void;
+  getMasterPrompt?: () => string;
 }
 
 export function autoRoutes(deps: AutoRoutesDeps) {
@@ -57,6 +59,11 @@ export function autoRoutes(deps: AutoRoutesDeps) {
     const auditModelInfo = deps.auditModelInfo ?? writeModelInfo;
     // B-5-001 修复:把书的设定(premise/角色/大纲/规则)注入写作与审查 prompt
     const promptCtx = buildBookPromptContext(handle);
+    // 最深处提示词:每本覆盖 || 全局
+    const deepestPrompt = resolveDeepestPrompt({
+      perBook: handle.bookMetaRepo.get("master_prompt"),
+      global: deps.getMasterPrompt?.() ?? "",
+    });
 
     // 章末状态记录 pass(spec §6.3)。记录用审查模型,这里就地把它的 usage 计入账,
     // 否则 auto-mode 只透传 tool 事件、丢弃 usage,导致 record-state 成本不入账。
@@ -85,6 +92,7 @@ export function autoRoutes(deps: AutoRoutesDeps) {
             charactersRepo: handle.charactersRepo,
           },
           abortSignal: controller.signal,
+          deepestPrompt,
         },
         { chapterNo, chapterContent: chapter.content, archiveSummary },
       );
@@ -132,6 +140,7 @@ export function autoRoutes(deps: AutoRoutesDeps) {
             // spec §6.1:逐章组装召回+最近摘要+题材板块+伏笔的完整防漂移上下文
             buildWriteMessages: (chapterNo) =>
               buildChapterWriteMessages(handle, chapterNo, "").messages,
+            deepestPrompt,
           },
           { n, writeCtx: promptCtx.writeCtx, auditCtx: promptCtx.auditCtx },
         )) {

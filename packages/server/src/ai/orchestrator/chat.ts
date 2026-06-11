@@ -1,6 +1,7 @@
 import type { SseEvent } from "@scribe/shared";
 import type { LanguageModel, CoreMessage } from "ai";
 import { streamLlm } from "../llm-call.js";
+import { prependDeepestPrompt } from "../prompts/deepest-prompt.js";
 
 const SYSTEM_PROMPT =
   "你是 Scribe,一个对话式中文长篇小说创作助手。简洁、贴近中文表达。";
@@ -19,13 +20,15 @@ export interface RunChatInput {
   history?: CoreMessage[];
   message: string;
   abortSignal?: AbortSignal;
+  /** 用户最深处提示词,原文拼到最前端 */
+  deepestPrompt?: string;
 }
 
 export async function* runChat(input: RunChatInput): AsyncIterable<SseEvent> {
-  const messages: CoreMessage[] = [
+  const messages = prependDeepestPrompt([
     { role: "system", content: SYSTEM_PROMPT },
     ...(input.history ?? []),
     { role: "user", content: input.message },
-  ];
+  ], input.deepestPrompt);
   yield* streamLlm({ model: input.model, messages, abortSignal: input.abortSignal });
 }

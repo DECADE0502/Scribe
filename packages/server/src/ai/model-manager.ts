@@ -12,6 +12,8 @@ export interface ModelManagerState {
   apiKey: string | null;
   writeModelId: string;
   auditModelId: string;
+  /** 全局「最深处提示词」(热配置) */
+  masterPrompt: string;
 }
 
 export interface ModelManager {
@@ -20,6 +22,8 @@ export interface ModelManager {
   getWriteModelInfo(): ModelInfo;
   getAuditModelInfo(): ModelInfo;
   getState(): ModelManagerState;
+  /** 全局最深处提示词(热配置) */
+  getMasterPrompt(): string;
   /** UI 保存设置后调用,热生效 */
   configure(patch: Partial<ModelManagerState>): void;
   /** 实时拉模型列表(无 key 时抛错) */
@@ -35,6 +39,7 @@ export function createModelManager(initial?: Partial<ModelManagerState>): ModelM
     apiKey: initial?.apiKey ?? null,
     writeModelId: initial?.writeModelId ?? DEFAULT_WRITE_MODEL,
     auditModelId: initial?.auditModelId ?? DEFAULT_AUDIT_MODEL,
+    masterPrompt: initial?.masterPrompt ?? "",
   };
 
   function provider(): ProviderAdapter | undefined {
@@ -60,11 +65,13 @@ export function createModelManager(initial?: Partial<ModelManagerState>): ModelM
     getWriteModelInfo() { return infoFor(state.writeModelId); },
     getAuditModelInfo() { return infoFor(state.auditModelId); },
     getState() { return { ...state }; },
+    getMasterPrompt() { return state.masterPrompt; },
     configure(patch) {
       if (patch.provider) state.provider = patch.provider;
       if (patch.apiKey !== undefined) state.apiKey = patch.apiKey;
       if (patch.writeModelId) state.writeModelId = patch.writeModelId;
       if (patch.auditModelId) state.auditModelId = patch.auditModelId;
+      if (patch.masterPrompt !== undefined) state.masterPrompt = patch.masterPrompt;
     },
     async listModels() {
       const p = provider();

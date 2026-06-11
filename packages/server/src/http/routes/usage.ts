@@ -67,6 +67,9 @@ export function usageRoutes(deps: UsageRoutesDeps) {
       ...(typeof body.auditModelId === "string" && body.auditModelId
         ? { auditModelId: body.auditModelId }
         : {}),
+      ...(typeof body.masterPrompt === "string"
+        ? { masterPrompt: body.masterPrompt }
+        : {}),
     };
     saveConfig(deps.configJsonPath, next);
 
@@ -80,6 +83,7 @@ export function usageRoutes(deps: UsageRoutesDeps) {
       provider: next.provider,
       writeModelId: next.writeModelId,
       auditModelId: next.auditModelId,
+      masterPrompt: next.masterPrompt,
     });
 
     const state = deps.modelManager?.getState();

@@ -4,6 +4,7 @@ import {
   AUDIT_SUMMARIZE_PROMPT,
   parseAuditOutput,
 } from "../prompts/audit-summarize.js";
+import { prependDeepestPrompt } from "../prompts/deepest-prompt.js";
 import type { ChapterAuditOutput } from "@scribe/shared";
 
 export interface AuditContext {
@@ -28,6 +29,8 @@ export interface AuditContext {
 export interface AuditDeps {
   model: LanguageModel;
   abortSignal?: AbortSignal;
+  /** 用户最深处提示词,原文拼到最前端 */
+  deepestPrompt?: string;
 }
 
 export interface AuditResult {
@@ -61,10 +64,10 @@ export async function auditChapter(
     try {
       const result = await generateText({
         model: deps.model,
-        messages: [
+        messages: prependDeepestPrompt([
           { role: "system", content: AUDIT_SUMMARIZE_PROMPT },
           { role: "user", content: userMsg },
-        ],
+        ], deps.deepestPrompt),
         abortSignal: deps.abortSignal,
       });
       const output = parseAuditOutput(result.text);

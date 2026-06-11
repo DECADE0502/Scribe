@@ -2,6 +2,7 @@ import type { LanguageModel, CoreMessage } from "ai";
 import type { SseEvent } from "@scribe/shared";
 import { streamLlm } from "../llm-call.js";
 import { NEW_BOOK_ONBOARD_PROMPT } from "../prompts/new-book-onboard.js";
+import { prependDeepestPrompt } from "../prompts/deepest-prompt.js";
 import { buildToolRegistry, type ToolRegistryDeps } from "../tools/registry.js";
 
 export interface NewBookOrchestratorDeps {
@@ -9,6 +10,8 @@ export interface NewBookOrchestratorDeps {
   toolDeps: ToolRegistryDeps;
   abortSignal?: AbortSignal;
   maxSteps?: number;
+  /** 用户最深处提示词,原文拼到最前端 */
+  deepestPrompt?: string;
 }
 
 export interface NewBookInput {
@@ -25,11 +28,11 @@ export async function* runNewBookConversation(
   const systemContent = input.completenessHint
     ? `${NEW_BOOK_ONBOARD_PROMPT}\n\n## 当前进度\n${input.completenessHint}`
     : NEW_BOOK_ONBOARD_PROMPT;
-  const messages: CoreMessage[] = [
+  const messages: CoreMessage[] = prependDeepestPrompt([
     { role: "system", content: systemContent },
     ...(input.history ?? []),
     { role: "user", content: input.message },
-  ];
+  ], deps.deepestPrompt);
   yield* streamLlm({
     model: deps.model,
     messages,

@@ -3,6 +3,7 @@ import type { SseEvent } from "@scribe/shared";
 import { parseSlashCommand, SLASH_COMMANDS } from "@scribe/shared";
 import type { BookHandle } from "../../http/book-registry.js";
 import { streamLlm } from "../llm-call.js";
+import { prependDeepestPrompt } from "../prompts/deepest-prompt.js";
 import { writeWithAudit } from "./write-with-audit.js";
 import { auditChapter } from "./audit-chapter.js";
 import { persistAuditResult } from "./audit-persist.js";
@@ -32,6 +33,8 @@ export interface ConversationOrchestratorDeps {
   auditModel: LanguageModel;
   auditModelId: string;
   abortSignal?: AbortSignal;
+  /** 用户最深处提示词,原文拼到最前端 */
+  deepestPrompt?: string;
 }
 
 export interface ConversationInput {
@@ -71,6 +74,7 @@ async function* recordStateForChapter(
       },
       genreDeps: { repo: handle.genreSectionsRepo, charactersRepo: handle.charactersRepo },
       abortSignal: deps.abortSignal,
+      deepestPrompt: deps.deepestPrompt,
     },
     { chapterNo, chapterContent: chapter.content, archiveSummary },
   )) {
@@ -123,6 +127,7 @@ async function* writeChapterFlow(
       auditCtx: promptCtx.auditCtx,
       enableRepair: true,
       abortSignal: deps.abortSignal,
+      deepestPrompt: deps.deepestPrompt,
     },
   )) {
     if (ev.type === "done") continue; // 末尾统一收尾
@@ -158,12 +163,12 @@ async function* chatWithContext(
       }
     : undefined;
 
-  const messages: CoreMessage[] = [
+  const messages: CoreMessage[] = prependDeepestPrompt([
     { role: "system", content: CHAT_SYSTEM },
     ...(contextBlock ? [{ role: "system" as const, content: contextBlock }] : []),
     ...(input.history ?? []),
     { role: "user", content: input.message },
-  ];
+  ], deps.deepestPrompt);
   yield* streamLlm({ model: deps.model, messages, tools, maxSteps: withTools ? 12 : 1, abortSignal: deps.abortSignal });
 }
 
@@ -204,7 +209,7 @@ async function* auditFlow(
   yield { type: "tool_call_start", toolName: "chapter_audit", args: { chapterNo } };
   try {
     const result = await auditChapter(
-      { model: deps.auditModel, abortSignal: deps.abortSignal },
+      { model: deps.auditModel, abortSignal: deps.abortSignal, deepestPrompt: deps.deepestPrompt },
       { chapterNo, chapterContent: chapter.content, ...promptCtx.auditCtx },
     );
     persistAuditResult(handle.chaptersRepo, chapterNo, result, deps.auditModelId);

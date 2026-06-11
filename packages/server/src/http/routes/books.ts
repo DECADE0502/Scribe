@@ -3,6 +3,7 @@ import type { LanguageModel } from "ai";
 import { streamSseResponse } from "../sse.js";
 import type { BookRegistry } from "../book-registry.js";
 import { runNewBookConversation } from "../../ai/orchestrator/new-book.js";
+import { resolveDeepestPrompt } from "../../ai/prompts/deepest-prompt.js";
 import { loadBookSnapshot } from "../../ai/context-builder/snapshot.js";
 import {
   isOnboardComplete,
@@ -12,6 +13,7 @@ import {
 export interface BookRoutesDeps {
   registry: BookRegistry;
   getModel?: () => LanguageModel | undefined;
+  getMasterPrompt?: () => string;
 }
 
 export function bookRoutes(deps: BookRoutesDeps) {
@@ -82,6 +84,10 @@ export function bookRoutes(deps: BookRoutesDeps) {
           },
         },
         abortSignal: c.req.raw.signal,
+        deepestPrompt: resolveDeepestPrompt({
+          perBook: handle.bookMetaRepo.get("master_prompt"),
+          global: deps.getMasterPrompt?.() ?? "",
+        }),
       },
       { history, message, completenessHint },
     );
@@ -127,6 +133,27 @@ export function bookRoutes(deps: BookRoutesDeps) {
     if (!book) return c.json({ error: "书不存在" }, 404);
     deps.registry.open(bookId);
     return c.json({ skipped: true });
+  });
+
+  // 本书的「最深处提示词」覆盖(空串=不覆盖,回退全局)
+  app.get("/api/books/:bookId/master-prompt", async (c) => {
+    const bookId = c.req.param("bookId");
+    if (!deps.registry.booksRepo.get(bookId)) return c.json({ error: "书不存在" }, 404);
+    const handle = deps.registry.open(bookId);
+    return c.json({
+      perBook: handle.bookMetaRepo.get("master_prompt") ?? "",
+      global: deps.getMasterPrompt?.() ?? "",
+    });
+  });
+
+  app.put("/api/books/:bookId/master-prompt", async (c) => {
+    const bookId = c.req.param("bookId");
+    if (!deps.registry.booksRepo.get(bookId)) return c.json({ error: "书不存在" }, 404);
+    const body = await c.req.json().catch(() => ({})) as { perBook?: unknown };
+    const value = typeof body.perBook === "string" ? body.perBook : "";
+    const handle = deps.registry.open(bookId);
+    handle.bookMetaRepo.set("master_prompt", value);
+    return c.json({ perBook: value });
   });
 
   return app;

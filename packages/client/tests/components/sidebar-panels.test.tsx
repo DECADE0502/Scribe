@@ -131,17 +131,42 @@ describe("TimelinePanel", () => {
 
 describe("RulesPanel", () => {
   it("显示内容,编辑后保存发 PUT + 显示已保存", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse({ content: "## 旧规则" }));
+    // RulesPanel 内含「本书最深处提示词」子组件,会额外请求 /master-prompt;
+    // 用带条件的默认实现处理它,/rules 的 GET 仍走 once 队列。
+    fetchMock.mockImplementation((url: any) => {
+      if (String(url).includes("/master-prompt")) return Promise.resolve(jsonResponse({ perBook: "", global: "" }));
+      return Promise.resolve(jsonResponse({ content: "## 旧规则" }));
+    });
     render(<RulesPanel bookId="b1" />);
     await waitFor(() => expect(screen.getByTestId("rules-content")).toHaveTextContent("旧规则"));
 
     fireEvent.click(screen.getByTestId("rules-edit"));
     fireEvent.change(screen.getByTestId("rules-textarea"), { target: { value: "## 新规则" } });
-    fetchMock.mockResolvedValueOnce(jsonResponse({ bytes: 10 })); // PUT
     fireEvent.click(screen.getByTestId("rules-save"));
     await waitFor(() => expect(screen.getByTestId("rules-saved-tip")).toBeInTheDocument());
     expect(screen.getByTestId("rules-content")).toHaveTextContent("新规则");
-    const putCall = fetchMock.mock.calls.find(c => (c[1] as RequestInit | undefined)?.method === "PUT");
+    const putCall = fetchMock.mock.calls.find(c => (c[1] as RequestInit | undefined)?.method === "PUT" && String(c[0]).includes("/rules"));
     expect(putCall![0]).toContain("/rules");
+  });
+
+  it("本书最深处提示词:未覆盖时提示用全局,保存发 PUT /master-prompt", async () => {
+    fetchMock.mockImplementation((url: any, init: any) => {
+      if (String(url).includes("/master-prompt")) {
+        if (init?.method === "PUT") return Promise.resolve(jsonResponse({ perBook: "本书第一人称" }));
+        return Promise.resolve(jsonResponse({ perBook: "", global: "全局冷硬文风" }));
+      }
+      return Promise.resolve(jsonResponse({ content: "" }));
+    });
+    render(<RulesPanel bookId="b1" />);
+    await waitFor(() => expect(screen.getByTestId("deepest-prompt-override")).toBeInTheDocument());
+    expect(screen.getByTestId("deepest-prompt-override").textContent).toContain("使用全局设置");
+
+    fireEvent.click(screen.getByTestId("deepest-edit"));
+    fireEvent.change(screen.getByTestId("deepest-textarea"), { target: { value: "本书第一人称" } });
+    fireEvent.click(screen.getByTestId("deepest-save"));
+    await waitFor(() => expect(screen.getByTestId("deepest-content")).toHaveTextContent("本书第一人称"));
+    const putCall = fetchMock.mock.calls.find(c => (c[1] as RequestInit | undefined)?.method === "PUT" && String(c[0]).includes("/master-prompt"));
+    expect(putCall).toBeTruthy();
+    expect(JSON.parse((putCall![1] as RequestInit).body as string).perBook).toBe("本书第一人称");
   });
 });

@@ -29,6 +29,8 @@ export interface AppDeps {
   modelManager?: ModelManager;
   /** 章节提交回调(自动快照计数,spec §3.4) */
   onChapterCommitted?: (bookId: string) => void;
+  /** 全局最深处提示词(可被每本书覆盖) */
+  getMasterPrompt?: () => string;
 }
 
 export function createApp(deps: AppDeps = {}) {
@@ -37,6 +39,7 @@ export function createApp(deps: AppDeps = {}) {
   const getAuditModel = deps.getAuditModel ?? (mm ? () => mm.getAuditModel() : undefined);
   const writeModelInfo = deps.writeModelInfo ?? mm?.getWriteModelInfo();
   const auditModelInfo = deps.auditModelInfo ?? mm?.getAuditModelInfo();
+  const getMasterPrompt = deps.getMasterPrompt ?? (mm ? () => mm.getMasterPrompt() : () => "");
 
   const app = new Hono();
   app.get("/api/health", (c) => c.json({ status: "ok", name: "scribe" }));
@@ -46,10 +49,11 @@ export function createApp(deps: AppDeps = {}) {
     registry: deps.bookRegistry,
     auditModelInfo,
     onChapterCommitted: deps.onChapterCommitted,
+    getMasterPrompt,
   }));
-  app.route("/", chapterRoutes({ getDeps: deps.getChapterDeps, registry: deps.bookRegistry, onChapterCommitted: deps.onChapterCommitted }));
+  app.route("/", chapterRoutes({ getDeps: deps.getChapterDeps, registry: deps.bookRegistry, onChapterCommitted: deps.onChapterCommitted, getMasterPrompt }));
   if (deps.bookRegistry) {
-    app.route("/", bookRoutes({ registry: deps.bookRegistry, getModel }));
+    app.route("/", bookRoutes({ registry: deps.bookRegistry, getModel, getMasterPrompt }));
     app.route("/", reviseRoutes({ registry: deps.bookRegistry, getModel }));
     app.route("/", sidebarRoutes({ registry: deps.bookRegistry }));
     app.route("/", autoRoutes({
@@ -60,6 +64,7 @@ export function createApp(deps: AppDeps = {}) {
       writeModelInfo,
       auditModelInfo,
       onChapterCommitted: deps.onChapterCommitted,
+      getMasterPrompt,
     }));
     app.route("/", versionRoutes({ registry: deps.bookRegistry }));
     app.route("/", usageRoutes({

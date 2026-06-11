@@ -4,6 +4,7 @@ import type { ModelInfo } from "@scribe/shared";
 import { streamSseResponse } from "../sse.js";
 import { runEcho } from "../../ai/orchestrator/chat.js";
 import { runConversation } from "../../ai/orchestrator/conversation-orchestrator.js";
+import { resolveDeepestPrompt } from "../../ai/prompts/deepest-prompt.js";
 import type { BookRegistry } from "../book-registry.js";
 
 export interface ConversationDeps {
@@ -12,6 +13,7 @@ export interface ConversationDeps {
   registry?: BookRegistry;
   auditModelInfo?: ModelInfo;
   onChapterCommitted?: (bookId: string) => void;
+  getMasterPrompt?: () => string;
 }
 
 export function conversationRoutes(deps: ConversationDeps = {}) {
@@ -34,6 +36,10 @@ export function conversationRoutes(deps: ConversationDeps = {}) {
         .filter((m) => m.metadata?.kind === "chat" && (m.role === "user" || m.role === "assistant"))
         .reverse()
         .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+      const deepestPrompt = resolveDeepestPrompt({
+        perBook: handle.bookMetaRepo.get("master_prompt"),
+        global: deps.getMasterPrompt?.() ?? "",
+      });
       const inner = runConversation(
         {
           handle,
@@ -41,6 +47,7 @@ export function conversationRoutes(deps: ConversationDeps = {}) {
           auditModel,
           auditModelId: deps.auditModelInfo?.id ?? "unknown",
           abortSignal: c.req.raw.signal,
+          deepestPrompt,
         },
         { message, history },
       );

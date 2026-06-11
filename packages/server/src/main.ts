@@ -28,6 +28,7 @@ const modelManager = createModelManager({
   apiKey: activeKey,
   writeModelId: config.writeModelId,
   auditModelId: config.auditModelId,
+  masterPrompt: config.masterPrompt,
 });
 
 // 自动快照备份(spec §3.4):周期 6 小时 + 累计 5 章触发。

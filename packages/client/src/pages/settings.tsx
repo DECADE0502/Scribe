@@ -7,6 +7,7 @@ interface SettingsData {
   singleBudgetUsd: number;
   writeModelId: string;
   auditModelId: string;
+  masterPrompt: string;
   apiKeyMasked: string | null;
   hasApiKey: boolean;
 }
@@ -24,6 +25,7 @@ export function SettingsPage() {
   const [writeModelId, setWriteModelId] = useState("");
   const [auditModelId, setAuditModelId] = useState("");
   const [budget, setBudget] = useState("");
+  const [masterPrompt, setMasterPrompt] = useState("");
   const [saving, setSaving] = useState(false);
 
   const reload = useCallback(async () => {
@@ -34,6 +36,7 @@ export function SettingsPage() {
     setWriteModelId(j.writeModelId);
     setAuditModelId(j.auditModelId);
     setBudget(String(j.singleBudgetUsd));
+    setMasterPrompt(j.masterPrompt ?? "");
   }, []);
 
   const refreshModels = useCallback(async () => {
@@ -71,6 +74,7 @@ export function SettingsPage() {
       const body: Record<string, unknown> = {
         writeModelId,
         auditModelId,
+        masterPrompt,
         ...(budgetNum > 0 ? { singleBudgetUsd: budgetNum } : {}),
       };
       if (apiKeyInput.trim()) body.apiKey = apiKeyInput.trim();
@@ -177,6 +181,23 @@ export function SettingsPage() {
           </span>
         </div>
       </div>
+
+      <p className="settings-caption" style={{ paddingLeft: 4 }}>最深处提示词(全局)</p>
+      <div className="settings-group fade-up">
+        <div style={{ padding: "10px 12px" }}>
+          <textarea
+            data-testid="master-prompt-input"
+            value={masterPrompt}
+            placeholder="写给 AI 的最高优先级指令,会原文拼到所有内置提示词最前端。例:全程第一人称、冷硬克制文风、禁用'仿佛/似乎'、每章结尾留钩子……"
+            rows={6}
+            onChange={(e) => setMasterPrompt(e.target.value)}
+            style={{ width: "100%", resize: "vertical", padding: 8, borderRadius: 8, border: "1px solid #d0d0d0", fontSize: 13, lineHeight: 1.6, fontFamily: "inherit" }}
+          />
+        </div>
+      </div>
+      <p className="settings-caption" style={{ marginTop: -14, marginBottom: 20 }}>
+        这是全局默认,对所有书生效;单本书可在书内右栏「规则/提示词」覆盖它。留空则不注入。
+      </p>
 
       <p className="settings-caption" style={{ paddingLeft: 4 }}>预算</p>
       <div className="settings-group fade-up">

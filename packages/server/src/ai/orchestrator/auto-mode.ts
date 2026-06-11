@@ -27,6 +27,8 @@ export interface AutoModeDeps extends Omit<WriteWithAuditDeps, "model" | "auditM
    * 提供时优先于静态 writeCtx,因为召回结果逐章变化,必须按当前章号重算。
    */
   buildWriteMessages?: (chapterNo: number) => CoreMessage[];
+  /** 用户最深处提示词,原文拼到最前端(写作与审查) */
+  deepestPrompt?: string;
 }
 
 /** 可重试的瞬时流/网络错误(provider 断流、连接重置、超时等) */
@@ -116,6 +118,7 @@ export async function* runAutoMode(
           auditCtx: input.auditCtx,
           enableRepair: true,
           abortSignal: deps.abortSignal,
+          deepestPrompt: deps.deepestPrompt,
         },
       )) {
         if (ev.type === "done") continue; // auto 流自管终结

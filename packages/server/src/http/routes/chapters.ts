@@ -5,12 +5,14 @@ import {
   type WriteChapterDeps,
 } from "../../ai/orchestrator/write-chapter.js";
 import { buildChapterWriteMessages } from "../../ai/context-builder/book-context.js";
+import { resolveDeepestPrompt } from "../../ai/prompts/deepest-prompt.js";
 import type { BookRegistry } from "../book-registry.js";
 
 export interface ChapterRoutesDeps {
   getDeps?: (bookId: string) => WriteChapterDeps | undefined;
   registry?: BookRegistry;
   onChapterCommitted?: (bookId: string) => void;
+  getMasterPrompt?: () => string;
 }
 
 export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
@@ -32,10 +34,17 @@ export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
     const prebuiltMessages = deps.registry
       ? buildChapterWriteMessages(deps.registry.open(bookId), no, userIntent).messages
       : undefined;
+    const deepestPrompt = deps.registry
+      ? resolveDeepestPrompt({
+          perBook: deps.registry.open(bookId).bookMetaRepo.get("master_prompt"),
+          global: deps.getMasterPrompt?.() ?? "",
+        })
+      : "";
     const inner = writeChapterSimple(wcDeps, {
       chapterNo: no,
       userIntent,
       prebuiltMessages,
+      deepestPrompt,
       abortSignal: c.req.raw.signal,
     });
     async function* withCommit() {

@@ -2,6 +2,7 @@ import type { CoreMessage, LanguageModel } from "ai";
 import type { SseEvent } from "@scribe/shared";
 import { streamLlm } from "../llm-call.js";
 import { SYSTEM_PROMPT } from "../prompts/system-prompt.js";
+import { prependDeepestPrompt } from "../prompts/deepest-prompt.js";
 import {
   buildWriteChapterPrompt,
   type WriteChapterContext,
@@ -43,6 +44,8 @@ export interface WriteChapterInput {
   prebuiltMessages?: CoreMessage[];
   /** 落盘版本来源标记,默认 ai_write;/rewrite 传 ai_rewrite */
   source?: "ai_write" | "ai_rewrite";
+  /** 用户最深处提示词,原文拼到最前端 */
+  deepestPrompt?: string;
   abortSignal?: AbortSignal;
 }
 
@@ -50,7 +53,7 @@ export async function* writeChapterSimple(
   deps: WriteChapterDeps,
   input: WriteChapterInput,
 ): AsyncIterable<SseEvent> {
-  const messages: CoreMessage[] = input.prebuiltMessages ?? [
+  const baseMessages: CoreMessage[] = input.prebuiltMessages ?? [
     { role: "system", content: SYSTEM_PROMPT },
     {
       role: "user",
@@ -61,6 +64,8 @@ export async function* writeChapterSimple(
       }),
     },
   ];
+  // 用户最深处提示词:原文拼到所有内置提示词最前端
+  const messages = prependDeepestPrompt(baseMessages, input.deepestPrompt);
   let buffer = "";
   for await (const ev of streamLlm({
     model: deps.model,

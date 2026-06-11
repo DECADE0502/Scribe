@@ -70,6 +70,85 @@ export function RulesPanel(props: { bookId: string }) {
             : <p data-testid="rules-empty" style={{ color: "#999" }}>{t.common.empty}</p>}
         </>
       )}
+      <DeepestPromptOverride bookId={props.bookId} />
+    </div>
+  );
+}
+
+/**
+ * 本书「最深处提示词」覆盖。空=用设置页的全局值;填了=本书优先。
+ * 与 rules.md 区别:rules.md 是世界观/写作规则(注入在内置提示之后);
+ * 最深处提示词原文拼在所有内置提示**最前端**,优先级最高。
+ */
+function DeepestPromptOverride(props: { bookId: string }) {
+  const [perBook, setPerBook] = useState("");
+  const [global, setGlobal] = useState("");
+  const [draft, setDraft] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [tip, setTip] = useState(false);
+
+  const reload = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/books/${encodeURIComponent(props.bookId)}/master-prompt`);
+      if (!res.ok) return;
+      const j = await res.json() as { perBook: string; global: string };
+      setPerBook(j.perBook ?? "");
+      setGlobal(j.global ?? "");
+    } catch { /* 静默 */ }
+  }, [props.bookId]);
+
+  useEffect(() => { void reload(); }, [reload]);
+
+  const save = async () => {
+    const res = await fetch(`/api/books/${encodeURIComponent(props.bookId)}/master-prompt`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ perBook: draft }),
+    });
+    if (res.ok) {
+      setPerBook(draft);
+      setEditing(false);
+      setTip(true);
+      setTimeout(() => setTip(false), 2000);
+    }
+  };
+
+  const effective = perBook.trim() || global.trim();
+  return (
+    <div data-testid="deepest-prompt-override" style={{ marginTop: 20, paddingTop: 14, borderTop: "1px solid #e5e5e5" }}>
+      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>本书最深处提示词</div>
+      <p style={{ color: "#999", fontSize: 12, margin: "0 0 8px" }}>
+        最高优先级指令,原文拼到所有内置提示最前端。留空则用全局设置。
+      </p>
+      {tip && <p data-testid="deepest-saved-tip" style={{ color: "#080", fontSize: 12 }}>已保存</p>}
+      {editing ? (
+        <>
+          <textarea
+            data-testid="deepest-textarea"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={6}
+            placeholder={global ? `留空将使用全局:\n${global.slice(0, 80)}${global.length > 80 ? "…" : ""}` : "例:全程第一人称、冷硬克制、每章留钩子……"}
+            style={{ width: "100%", padding: 8, fontFamily: "inherit", fontSize: 13, lineHeight: 1.6 }}
+          />
+          <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+            <button data-testid="deepest-save" onClick={() => void save()}>保存</button>
+            <button onClick={() => setEditing(false)}>取消</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <button data-testid="deepest-edit" style={{ marginBottom: 6 }} onClick={() => { setDraft(perBook); setEditing(true); }}>
+            编辑
+          </button>
+          {perBook.trim()
+            ? <pre data-testid="deepest-content" style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 12.5, background: "rgba(0,0,0,0.03)", padding: 8, borderRadius: 6 }}>{perBook}</pre>
+            : <p style={{ color: "#999", fontSize: 12 }}>
+                {global.trim() ? "(未覆盖,当前使用全局设置)" : "(全局与本书都未设置)"}
+              </p>}
+          {!effective && null}
+        </>
+      )}
     </div>
   );
 }

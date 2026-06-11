@@ -93,7 +93,7 @@ export async function* writeWithAudit(
   let auditResult: AuditResult;
   try {
     auditResult = await auditChapter(
-      { model: deps.auditModel, abortSignal: input.abortSignal },
+      { model: deps.auditModel, abortSignal: input.abortSignal, deepestPrompt: input.deepestPrompt },
       {
         chapterNo: input.chapterNo,
         chapterContent: writtenContent,
@@ -157,6 +157,7 @@ export async function* writeWithAudit(
       chaptersRepo: deps.chaptersRepo,
       chapterFiles: deps.chapterFiles,
       abortSignal: input.abortSignal,
+      deepestPrompt: input.deepestPrompt,
     };
     let repairStreamErrored = false;
     for await (const ev of repairChapter(repairDeps, {
@@ -189,7 +190,7 @@ export async function* writeWithAudit(
     if (repairOk && repairContent.trim()) {
       try {
         const reAudit = await auditChapter(
-          { model: deps.auditModel, abortSignal: input.abortSignal },
+          { model: deps.auditModel, abortSignal: input.abortSignal, deepestPrompt: input.deepestPrompt },
           {
             chapterNo: input.chapterNo,
             chapterContent: repairContent,

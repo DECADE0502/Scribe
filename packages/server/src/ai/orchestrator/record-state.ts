@@ -1,6 +1,7 @@
 import type { LanguageModel } from "ai";
 import type { SseEvent } from "@scribe/shared";
 import { streamLlm } from "../llm-call.js";
+import { prependDeepestPrompt } from "../prompts/deepest-prompt.js";
 import { makeStateTools, type StateToolsDeps } from "../tools/state-tools.js";
 import { makeGenreSectionTools, type GenreToolsDeps } from "../tools/genre-section-tools.js";
 
@@ -26,6 +27,8 @@ export interface RecordStateDeps {
   stateDeps: StateToolsDeps;
   genreDeps: GenreToolsDeps;
   abortSignal?: AbortSignal;
+  /** 用户最深处提示词,原文拼到最前端 */
+  deepestPrompt?: string;
 }
 
 export interface RecordStateInput {
@@ -53,10 +56,10 @@ export async function* recordChapterState(
 
   yield* streamLlm({
     model: deps.model,
-    messages: [
+    messages: prependDeepestPrompt([
       { role: "system", content: RECORD_STATE_PROMPT },
       { role: "user", content: userMsg },
-    ],
+    ], deps.deepestPrompt),
     tools,
     maxSteps: 16,
     abortSignal: deps.abortSignal,
