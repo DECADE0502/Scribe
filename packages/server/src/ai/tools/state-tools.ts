@@ -6,6 +6,12 @@ export interface StateCharactersRepoLike {
   list(): Array<{ id: string; name: string; currentState: Record<string, unknown> }>;
   update(id: string, patch: Record<string, unknown>): unknown;
   addAppearance(id: string, appearance: { chapterNo: number; brief: string }): unknown;
+  create(input: {
+    name: string;
+    role: "protagonist" | "antagonist" | "supporting";
+    baseData: Record<string, unknown>;
+    currentState: Record<string, unknown>;
+  }): { id: string; name: string };
 }
 
 export interface StateForeshadowingRepoLike {
@@ -47,6 +53,27 @@ function findCharacter(deps: StateToolsDeps, name: string) {
 /** 章末状态记录工具集(spec §6.3):角色状态 / 出场 / 伏笔 / 时间线 */
 export function makeStateTools(deps: StateToolsDeps): Record<string, Tool> {
   return {
+    create_character: tool({
+      description: "登记本章新出现、且档案里还没有的角色(配角/反派/盟友等)。仅在该角色名不在现有角色列表时调用;已存在的不要重复创建。创建后可再用 add_character_appearance 记录其本章戏份。",
+      parameters: z.object({
+        name: z.string().describe("角色名"),
+        role: z.enum(["protagonist", "antagonist", "supporting"]).describe("定位:主角/反派/配角,拿不准用 supporting"),
+        background: z.string().optional().describe("一句话背景/身份"),
+        motivation: z.string().optional().describe("动机/目标(如已知)"),
+        languageHabits: z.string().optional().describe("说话/行为习惯(如已知)"),
+      }),
+      execute: async ({ name, role, background, motivation, languageHabits }) => {
+        const existing = deps.charactersRepo.list().find(x => x.name === name);
+        if (existing) return { skipped: "角色已存在", name };
+        const baseData: Record<string, unknown> = {};
+        if (background) baseData.background = background;
+        if (motivation) baseData.motivation = motivation;
+        if (languageHabits) baseData.languageHabits = languageHabits;
+        const c = deps.charactersRepo.create({ name, role, baseData, currentState: {} });
+        return { created: c.name, role };
+      },
+    }),
+
     update_character_state: tool({
       description: "更新角色的当前状态(位置/伤势/心境/修为/持有物等),merge 到现有状态。本章中角色发生重要变化时调用。",
       parameters: z.object({

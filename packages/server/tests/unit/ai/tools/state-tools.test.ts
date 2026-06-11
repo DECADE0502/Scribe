@@ -50,6 +50,25 @@ describe("update_character_state", () => {
   });
 });
 
+describe("create_character(章末记录新角色)", () => {
+  it("happy:创建本章新出现的配角", async () => {
+    const r = await exec("create_character", { name: "沈姐", role: "supporting", background: "观测局引路人" });
+    expect(r.created).toBe("沈姐");
+    const names = charactersRepo.list().map((c: any) => c.name);
+    expect(names).toContain("沈姐");
+    // 创建后可直接记录其状态/出场
+    await exec("add_character_appearance", { name: "沈姐", brief: "在 B3 层掩护陈默" });
+    const shen = charactersRepo.list().find((c: any) => c.name === "沈姐");
+    expect(shen.appearances).toHaveLength(1);
+  });
+
+  it("去重:已存在角色不重复创建", async () => {
+    const r = await exec("create_character", { name: "林尘", role: "protagonist" });
+    expect(r.skipped).toBeTruthy();
+    expect(charactersRepo.list().filter((c: any) => c.name === "林尘")).toHaveLength(1);
+  });
+});
+
 describe("add_character_appearance", () => {
   it("happy:写入 appearances 带当前章号", async () => {
     await exec("add_character_appearance", { name: "林尘", brief: "觉醒剑灵" });
