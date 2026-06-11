@@ -29,6 +29,13 @@ export interface AutoModeDeps extends Omit<WriteWithAuditDeps, "model" | "auditM
   buildWriteMessages?: (chapterNo: number) => CoreMessage[];
 }
 
+/** 可重试的瞬时流/网络错误(provider 断流、连接重置、超时等) */
+function isTransient(message: string): boolean {
+  return /terminated|fetch failed|ECONNRESET|socket hang up|EAI_AGAIN|ETIMEDOUT|timeout|stream.*idle|network|aborted the connection|premature close/i.test(
+    message,
+  );
+}
+
 export interface AutoModeInput {
   n: number;
   auditCtx?: WriteWithAuditInput["auditCtx"];
@@ -81,33 +88,65 @@ export async function* runAutoMode(
       doneChapters: [...doneChapters], currentChapter: next,
     };
 
+    // 单章写作带重试:长篇 reasoning 写作的流可能被 provider/网络中途 terminate。
+    // 每次尝试把事件缓冲为原子单元 —— 失败且本章尚未落盘时丢弃缓冲并重试,
+    // 避免一次瞬时断流就终结整个 /auto 长跑(只有写阶段断流才会"未落盘")。
+    const MAX_WRITE_ATTEMPTS = 3;
     let chapterFailed = false;
-    for await (const ev of writeWithAudit(
-      {
-        model: deps.model,
-        auditModel: deps.auditModel,
-        auditModelId: deps.auditModelId,
-        chaptersRepo: deps.chaptersRepo,
-        chapterFiles: deps.chapterFiles,
-      },
-      {
-        chapterNo: next,
-        userIntent: "",
-        ctx: input.writeCtx,
-        prebuiltMessages: deps.buildWriteMessages?.(next),
-        auditCtx: input.auditCtx,
-        enableRepair: true,
-        abortSignal: deps.abortSignal,
-      },
-    )) {
-      // 内层 done 不透传(整个 auto 流自己管理终结),其余事件透传
-      if (ev.type === "done") continue;
-      if (ev.type === "error") {
-        yield ev;
-        chapterFailed = true;
+    for (let attempt = 1; attempt <= MAX_WRITE_ATTEMPTS; attempt++) {
+      if (deps.abortSignal?.aborted) {
+        yield { type: "auto_status", state: "paused_by_user", remaining, doneChapters: [...doneChapters] };
+        return;
+      }
+      const buffered: SseEvent[] = [];
+      let errEvent: Extract<SseEvent, { type: "error" }> | undefined;
+      for await (const ev of writeWithAudit(
+        {
+          model: deps.model,
+          auditModel: deps.auditModel,
+          auditModelId: deps.auditModelId,
+          chaptersRepo: deps.chaptersRepo,
+          chapterFiles: deps.chapterFiles,
+        },
+        {
+          chapterNo: next,
+          userIntent: "",
+          ctx: input.writeCtx,
+          prebuiltMessages: deps.buildWriteMessages?.(next),
+          auditCtx: input.auditCtx,
+          enableRepair: true,
+          abortSignal: deps.abortSignal,
+        },
+      )) {
+        if (ev.type === "done") continue; // auto 流自管终结
+        if (ev.type === "error") { errEvent = ev; break; }
+        buffered.push(ev);
+      }
+
+      const saved = deps.maxChapterNo() >= next; // 本章是否已落盘
+      if (!errEvent) {
+        for (const ev of buffered) yield ev; // 干净完成,整段一次性放出
         break;
       }
-      yield ev;
+      if (saved) {
+        // 写已成功落盘,错误发生在审查/修复阶段:正文有了就继续(verdict 缺省按通过)
+        for (const ev of buffered) yield ev;
+        break;
+      }
+      // 写阶段断流、未落盘:可重试的瞬时错误则丢弃缓冲重来
+      const transient = isTransient(errEvent.message) && !deps.abortSignal?.aborted;
+      if (transient && attempt < MAX_WRITE_ATTEMPTS) {
+        yield {
+          type: "auto_status", state: "writing", remaining,
+          doneChapters: [...doneChapters], currentChapter: next,
+        };
+        continue;
+      }
+      // 不可重试或重试用尽:放出缓冲 + 错误,终结
+      for (const ev of buffered) yield ev;
+      yield errEvent;
+      chapterFailed = true;
+      break;
     }
     if (chapterFailed) {
       yield { type: "auto_status", state: "error", remaining, doneChapters: [...doneChapters], currentChapter: next };
