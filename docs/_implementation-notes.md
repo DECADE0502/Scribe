@@ -357,6 +357,23 @@
   把本章新题材条目/角色状态变化/出场/伏笔/时间线落库;失败降级提示不阻断 auto
 - onboard 对话已持久化到 conversations 表(此前 0 行)
 
+### 全量 spec 审计补缺(2026-06-11):此前 plan task 打勾但 spec 未落地的功能
+用户自查发现 §6.3 缺失后,对 spec 全文做了逐条审计,补完以下确认缺口:
+- §6.1 ✅ 防漂移上下文:`buildWriteContext`(召回+最近摘要+题材板块+伏笔)此前定义却
+  从未被调用,写作只用弱版 `buildBookPromptContext`。新增 `buildChapterWriteMessages`
+  逐章组装,接入 auto 与普通写作两条路径。
+- §7.3 ✅ 意图识别:新增 `intent.ts` 分类器 + `conversation-orchestrator.ts`,
+  消息进 server 先分类再路由(此前所有消息无脑发 LLM)。
+- §7.4 ✅ 斜杠命令:`/write /rewrite /audit /recall /note /help /revise` 后端语义路由
+  (此前 8 个命令只有 /auto 有实现)。
+- §8 ✅ 对话式新建书前端:替换 `OnboardPlaceholder` 占位符为真正的 onboard 页面。
+- §5.6/§5.5 ✅ prompt cache/reasoning 用量:`deepseekMetadataExtractor` 提取
+  cached/reasoning token(此前 cachedTokens 硬编码 0);`Message` 加"看 AI 思考过程"折叠。
+- §5.3 ✅ 模型列表:设置页下拉聚焦时实时重拉。
+- §3.4 ✅ 自动快照:`main.ts` 启动 `SnapshotScheduler`(此前从未 start)。
+- §6.2:写作审查现覆盖真实写作路径(auto + 对话 /write 均走 writeWithAudit);
+  独立 `chapters/:no/write` 端点未被前端调用,保持 writeChapterSimple。
+
 ### B-6-003(架构资产,任何后续):buildToolRegistry
 - `tools/registry.ts` 提供 `buildToolRegistry(deps)` 按需注入
 - 后续 Task 7+(new-book / chapter-tools / state-tools / book-meta-tools) 都要往里加

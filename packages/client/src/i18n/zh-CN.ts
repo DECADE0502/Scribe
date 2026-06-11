@@ -32,6 +32,7 @@ export const zhCN = {
     aiThinking: "AI 思考中...",
     toolCalled: "调用工具",
     toolFailed: "工具失败",
+    viewReasoning: "看 AI 思考过程",
   },
   editor: {
     title: "章节正文",

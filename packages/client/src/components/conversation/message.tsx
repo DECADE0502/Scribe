@@ -1,8 +1,10 @@
+import { useState } from "react";
 import type { ChatMessage } from "../../stores/conversation.js";
 import { t } from "../../i18n/zh-CN.js";
 
 export function Message(props: { m: ChatMessage }) {
   const { m } = props;
+  const [showReasoning, setShowReasoning] = useState(false);
   const isUser = m.role === "user";
   const isSystem = m.role === "system";
 
@@ -59,6 +61,32 @@ export function Message(props: { m: ChatMessage }) {
           </div>
         )}
         {m.content}
+        {!isUser && m.reasoning && m.reasoning.trim() && (
+          <div style={{ marginTop: 8 }}>
+            <button
+              data-testid="toggle-reasoning"
+              onClick={() => setShowReasoning(v => !v)}
+              style={{
+                fontSize: 12, color: "var(--ios-blue)", background: "none",
+                border: "none", padding: 0, cursor: "pointer",
+              }}
+            >
+              {showReasoning ? "▾ " : "▸ "}{t.conversation.viewReasoning}
+            </button>
+            {showReasoning && (
+              <div
+                data-testid="reasoning-content"
+                style={{
+                  marginTop: 6, padding: "8px 10px", fontSize: 12.5, lineHeight: 1.6,
+                  color: "#666", background: "rgba(0,0,0,0.035)", borderRadius: 8,
+                  whiteSpace: "pre-wrap", maxHeight: 280, overflow: "auto",
+                }}
+              >
+                {m.reasoning}
+              </div>
+            )}
+          </div>
+        )}
         {m.error && (
           <div role="alert" style={{ color: "var(--ios-red)", fontSize: 12, marginTop: 6 }}>
             {m.error.message}
