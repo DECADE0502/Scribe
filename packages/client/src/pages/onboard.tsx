@@ -77,6 +77,9 @@ export function OnboardPage() {
             void refreshStatus();
             break;
           case "error":
+            // 固化已收到的部分内容为一条消息,清空流式气泡,避免半截 bubble 滞留
+            if (buf.trim()) setMessages((prev) => [...prev, { role: "assistant", content: buf }]);
+            setStreamingText("");
             setError(String(ev.message ?? t.errors.unknown));
             setBusy(false);
             handleRef.current = null;
