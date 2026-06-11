@@ -3,7 +3,6 @@ import type { SseEvent } from "@scribe/shared";
 import { parseSlashCommand, SLASH_COMMANDS } from "@scribe/shared";
 import type { BookHandle } from "../../http/book-registry.js";
 import { streamLlm } from "../llm-call.js";
-import { runChat } from "./chat.js";
 import { writeWithAudit } from "./write-with-audit.js";
 import { auditChapter } from "./audit-chapter.js";
 import { persistAuditResult } from "./audit-persist.js";
@@ -281,7 +280,8 @@ export async function* runConversation(
     case "chitchat":
     case "other":
     default:
-      yield* runChat({ model: deps.model, message: input.message, history: input.history, abortSignal: deps.abortSignal });
+      // 即便分类不准,也带上书的设定上下文回答,避免"失忆式"闲聊
+      yield* chatWithContext(deps, input, false);
       return;
   }
 }
