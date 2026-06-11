@@ -344,15 +344,18 @@
 - 修法:启动时一次性扫描 `genre_sections` 表,有 NULL schema 的清理掉;或读取层加防御
 - 不阻塞,Task 9.x / 10.x 收尾时顺手补一个 startup health check
 
-### B-6-002(关键,后续修):LLM 工具调用错误恢复
-- 当前 `llm-call.ts` 收到 stream 的 `error` 事件直接 SSE error + return,**短路退出**
-- Vercel AI SDK 在工具 execute 抛错时也是发 `{type:"error", error}`,被同样路径吞掉
-- **结果**:plan 6.4 期望的"LLM 第二轮自我修复"路径不可达
-- 修法:在 `streamLlm` 里区分两类 error:
-  1. **tool execution error**(可恢复):转换成 tool-result(isError=true),让 model 继续生成 → 模型自己读到错误信息后改正
-  2. **stream/connection error**(不可恢复):保持现有短路行为
-- 当前测试已验证:工具抛错时 DB 状态保持正确(不存在的板块没建,存在的没误删),所以**有兜底,但不优雅**
-- 优先级:Task 9.x 自动模式之前必修(自动模式重度依赖工具调用,失败必须能自愈)
+### B-6-002 ✅ 已修(2026-06-11):LLM 工具调用错误恢复
+- 实现:`streamLlm` 用 `withToolErrorRecovery` 把每个工具的 `execute` 包一层 try/catch,
+  抛错转成 `{success:false, error}` 普通工具结果返回给模型,让其下一步自我修正(改参数重试)
+- 连接级 error(stream 的 `error` 事件)仍保持短路退出,只对工具执行错误做恢复
+- 配套:genre 校验的 enum 报错附「允许取值列表」,实测 DS 看到后能从 `修仙宗门`→`仙门宗派` 自纠
+- 真实验证:玄剑录章末状态记录中,DS 连续撞 3 个 enum 错误后全部自纠成功
+- 测试:`tests/unit/ai/llm-call.test.ts`(工具抛错→tool-result→续写,无 error 事件,以 done 收尾)
+
+### §6.3 ✅ 已实现(2026-06-11):章末状态记录
+- `state-tools.ts` + `record-state.ts`:audit 通过后跑"设定记录员"pass,
+  把本章新题材条目/角色状态变化/出场/伏笔/时间线落库;失败降级提示不阻断 auto
+- onboard 对话已持久化到 conversations 表(此前 0 行)
 
 ### B-6-003(架构资产,任何后续):buildToolRegistry
 - `tools/registry.ts` 提供 `buildToolRegistry(deps)` 按需注入
