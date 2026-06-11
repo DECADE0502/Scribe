@@ -4,7 +4,10 @@ import type { ModelInfo } from "@scribe/shared";
 import { streamSseResponse } from "../sse.js";
 import type { BookRegistry } from "../book-registry.js";
 import { runAutoMode } from "../../ai/orchestrator/auto-mode.js";
-import { buildBookPromptContext } from "../../ai/context-builder/book-context.js";
+import {
+  buildBookPromptContext,
+  buildChapterWriteMessages,
+} from "../../ai/context-builder/book-context.js";
 import {
   recordChapterState,
   buildArchiveSummary,
@@ -101,6 +104,9 @@ export function autoRoutes(deps: AutoRoutesDeps) {
             auditModelInfo,
             abortSignal: controller.signal,
             recordState: makeRecordState,
+            // spec §6.1:逐章组装召回+最近摘要+题材板块+伏笔的完整防漂移上下文
+            buildWriteMessages: (chapterNo) =>
+              buildChapterWriteMessages(handle, chapterNo, "").messages,
           },
           { n, writeCtx: promptCtx.writeCtx, auditCtx: promptCtx.auditCtx },
         )) {

@@ -4,6 +4,7 @@ import {
   writeChapterSimple,
   type WriteChapterDeps,
 } from "../../ai/orchestrator/write-chapter.js";
+import { buildChapterWriteMessages } from "../../ai/context-builder/book-context.js";
 import type { BookRegistry } from "../book-registry.js";
 
 export interface ChapterRoutesDeps {
@@ -26,10 +27,15 @@ export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
     if (!wcDeps) {
       return c.json({ error: "未配置模型,请先在设置中配置 API Key" }, 503);
     }
+    // spec §6.1:普通写作同样注入完整防漂移上下文(召回+最近摘要+题材板块+伏笔)
+    const prebuiltMessages = deps.registry
+      ? buildChapterWriteMessages(deps.registry.open(bookId), no, userIntent).messages
+      : undefined;
     return streamSseResponse(
       writeChapterSimple(wcDeps, {
         chapterNo: no,
         userIntent,
+        prebuiltMessages,
         abortSignal: c.req.raw.signal,
       }),
     );

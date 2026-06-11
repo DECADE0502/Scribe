@@ -1,3 +1,4 @@
+import type { CoreMessage } from "ai";
 import type { SseEvent, ModelInfo } from "@scribe/shared";
 import {
   writeWithAudit,
@@ -21,6 +22,11 @@ export interface AutoModeDeps extends Omit<WriteWithAuditDeps, "model" | "auditM
   abortSignal?: AbortSignal;
   /** 可选:章末状态记录 pass(spec §6.3),audit 通过后调用 */
   recordState?: (chapterNo: number) => AsyncIterable<SseEvent>;
+  /**
+   * 可选:为每章组装 spec §6.1 完整防漂移上下文(召回+最近摘要+题材板块+伏笔)。
+   * 提供时优先于静态 writeCtx,因为召回结果逐章变化,必须按当前章号重算。
+   */
+  buildWriteMessages?: (chapterNo: number) => CoreMessage[];
 }
 
 export interface AutoModeInput {
@@ -88,6 +94,7 @@ export async function* runAutoMode(
         chapterNo: next,
         userIntent: "",
         ctx: input.writeCtx,
+        prebuiltMessages: deps.buildWriteMessages?.(next),
         auditCtx: input.auditCtx,
         enableRepair: true,
         abortSignal: deps.abortSignal,

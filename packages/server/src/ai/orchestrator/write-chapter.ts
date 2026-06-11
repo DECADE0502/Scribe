@@ -1,4 +1,4 @@
-import type { LanguageModel } from "ai";
+import type { CoreMessage, LanguageModel } from "ai";
 import type { SseEvent } from "@scribe/shared";
 import { streamLlm } from "../llm-call.js";
 import { SYSTEM_PROMPT } from "../prompts/system-prompt.js";
@@ -35,6 +35,12 @@ export interface WriteChapterInput {
   chapterNo: number;
   userIntent: string;
   ctx?: Partial<WriteChapterContext>;
+  /**
+   * 防漂移完整上下文(spec §6.1):由 buildChapterWriteMessages 用 BookSnapshot +
+   * 召回算法组装好的 messages(含最近 3 章摘要、召回 5 章、题材板块、活跃伏笔、
+   * 角色卡、规则)。提供时优先使用,忽略 ctx 模板;不提供时退回 ctx 模板。
+   */
+  prebuiltMessages?: CoreMessage[];
   abortSignal?: AbortSignal;
 }
 
@@ -42,14 +48,16 @@ export async function* writeChapterSimple(
   deps: WriteChapterDeps,
   input: WriteChapterInput,
 ): AsyncIterable<SseEvent> {
-  const userPrompt = buildWriteChapterPrompt({
-    chapterNo: input.chapterNo,
-    userIntent: input.userIntent,
-    ...input.ctx,
-  });
-  const messages = [
-    { role: "system" as const, content: SYSTEM_PROMPT },
-    { role: "user" as const, content: userPrompt },
+  const messages: CoreMessage[] = input.prebuiltMessages ?? [
+    { role: "system", content: SYSTEM_PROMPT },
+    {
+      role: "user",
+      content: buildWriteChapterPrompt({
+        chapterNo: input.chapterNo,
+        userIntent: input.userIntent,
+        ...input.ctx,
+      }),
+    },
   ];
   let buffer = "";
   for await (const ev of streamLlm({
