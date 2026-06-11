@@ -84,7 +84,7 @@ function validateFieldValue(
     }
     if (field.values && !field.values.includes(value)) {
       throw new ValidationError(
-        `字段 ${field.name} 值 ${value} 不在允许列表`,
+        `字段 ${field.name} 值「${value}」不在允许列表,只能取:${field.values.join("、")}`,
         field.name,
       );
     }
@@ -97,7 +97,7 @@ function validateFieldValue(
     }
     if (!t.values.includes(value)) {
       throw new ValidationError(
-        `字段 ${field.name} 值 ${value} 不在允许列表`,
+        `字段 ${field.name} 值「${value}」不在允许列表,只能取:${t.values.join("、")}`,
         field.name,
       );
     }

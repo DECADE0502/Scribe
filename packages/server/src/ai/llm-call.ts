@@ -13,12 +13,43 @@ export interface LlmCallInput {
   maxSteps?: number;
 }
 
+/**
+ * B-6-002 修复:工具执行抛错时,SDK 会把整个流断掉(LLM 没机会纠正)。
+ * 这里把每个工具的 execute 包一层 try/catch,错误转成普通工具结果
+ * `{ success: false, error }` 返回给 LLM,让它在下一步自我修正(改参数重试等)。
+ */
+function withToolErrorRecovery(
+  tools: Record<string, Tool> | undefined,
+): Record<string, Tool> | undefined {
+  if (!tools) return undefined;
+  const wrapped: Record<string, Tool> = {};
+  for (const [name, tool] of Object.entries(tools)) {
+    const execute = tool.execute;
+    if (!execute) {
+      wrapped[name] = tool;
+      continue;
+    }
+    wrapped[name] = {
+      ...tool,
+      execute: async (args, options) => {
+        try {
+          return await execute(args, options);
+        } catch (e) {
+          const err = e as { message?: string };
+          return { success: false, error: String(err?.message ?? err) };
+        }
+      },
+    } as Tool;
+  }
+  return wrapped;
+}
+
 export async function* streamLlm(input: LlmCallInput): AsyncIterable<SseEvent> {
   try {
     const result = streamText({
       model: input.model,
       messages: input.messages,
-      tools: input.tools,
+      tools: withToolErrorRecovery(input.tools),
       maxSteps: input.maxSteps ?? 5,
       abortSignal: input.abortSignal,
     });

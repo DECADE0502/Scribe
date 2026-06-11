@@ -5,6 +5,10 @@ import { streamSseResponse } from "../sse.js";
 import type { BookRegistry } from "../book-registry.js";
 import { runAutoMode } from "../../ai/orchestrator/auto-mode.js";
 import { buildBookPromptContext } from "../../ai/context-builder/book-context.js";
+import {
+  recordChapterState,
+  buildArchiveSummary,
+} from "../../ai/orchestrator/record-state.js";
 
 export interface AutoRoutesDeps {
   registry: BookRegistry;
@@ -49,6 +53,37 @@ export function autoRoutes(deps: AutoRoutesDeps) {
     // B-5-001 修复:把书的设定(premise/角色/大纲/规则)注入写作与审查 prompt
     const promptCtx = buildBookPromptContext(handle);
 
+    // 章末状态记录 pass(spec §6.3)
+    const makeRecordState = (chapterNo: number) => {
+      const chapter = handle.chapterFiles.read(chapterNo);
+      if (!chapter) return emptyIterable();
+      const archiveSummary = buildArchiveSummary({
+        genreSections: handle.genreSectionsRepo.listSections().map(section => ({
+          section,
+          items: handle.genreSectionsRepo.listItems(section.id),
+        })),
+        characters: handle.charactersRepo.list(),
+        activeForeshadowing: handle.foreshadowingRepo.list("active"),
+      });
+      return recordChapterState(
+        {
+          model: auditModel!, // 记录用便宜的审查模型即可
+          stateDeps: {
+            charactersRepo: handle.charactersRepo,
+            foreshadowingRepo: handle.foreshadowingRepo,
+            timelineRepo: handle.timelineRepo,
+            chapterNo,
+          },
+          genreDeps: {
+            repo: handle.genreSectionsRepo,
+            charactersRepo: handle.charactersRepo,
+          },
+          abortSignal: controller.signal,
+        },
+        { chapterNo, chapterContent: chapter.content, archiveSummary },
+      );
+    };
+
     async function* withCleanup() {
       let currentChapter: number | undefined;
       try {
@@ -65,6 +100,7 @@ export function autoRoutes(deps: AutoRoutesDeps) {
             writeModelInfo,
             auditModelInfo,
             abortSignal: controller.signal,
+            recordState: makeRecordState,
           },
           { n, writeCtx: promptCtx.writeCtx, auditCtx: promptCtx.auditCtx },
         )) {
@@ -107,4 +143,8 @@ export function autoRoutes(deps: AutoRoutesDeps) {
   });
 
   return app;
+}
+
+async function* emptyIterable(): AsyncIterable<never> {
+  // 章节缺失时的空记录流
 }

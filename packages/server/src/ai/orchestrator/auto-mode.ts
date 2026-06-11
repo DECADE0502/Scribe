@@ -19,6 +19,8 @@ export interface AutoModeDeps extends Omit<WriteWithAuditDeps, "model" | "auditM
   auditModelInfo: ModelInfo;
   usageStats?: UsageStatsLike;
   abortSignal?: AbortSignal;
+  /** 可选:章末状态记录 pass(spec §6.3),audit 通过后调用 */
+  recordState?: (chapterNo: number) => AsyncIterable<SseEvent>;
 }
 
 export interface AutoModeInput {
@@ -112,6 +114,28 @@ export async function* runAutoMode(
         doneChapters: [...doneChapters], currentChapter: next,
       };
       return;
+    }
+
+    // 章末状态记录(角色状态/出场/伏笔/时间线/题材板块条目)
+    if (deps.recordState) {
+      yield { type: "tool_call_start", toolName: "record_chapter_state", args: { chapterNo: next } };
+      let recordOk = true;
+      for await (const ev of deps.recordState(next)) {
+        if (ev.type === "error") {
+          recordOk = false;
+          // 记录失败不阻断自动写作,降级为提示
+          yield {
+            type: "tool_call_end", toolName: "record_chapter_state",
+            result: { success: false, message: ev.message },
+          };
+          break;
+        }
+        // 透传内部工具事件,便于 UI 展示记录进度
+        if (ev.type === "tool_call_start" || ev.type === "tool_call_end") yield ev;
+      }
+      if (recordOk) {
+        yield { type: "tool_call_end", toolName: "record_chapter_state", result: { success: true } };
+      }
     }
 
     doneChapters.push(next);

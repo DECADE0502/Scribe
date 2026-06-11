@@ -66,27 +66,39 @@ export function bookRoutes(deps: BookRoutesDeps) {
     const completeness = isOnboardComplete(snapshot);
     const completenessHint = formatCompletenessHint(completeness);
 
-    return streamSseResponse(
-      runNewBookConversation(
-        {
-          model,
-          toolDeps: {
-            bookMetaToolsDeps: {
-              bookMetaRepo: handle.bookMetaRepo,
-              charactersRepo: handle.charactersRepo,
-              outlineRepo: handle.outlineRepo,
-              rulesMdPath: handle.rulesMdPath,
-            },
-            genreToolsDeps: {
-              repo: handle.genreSectionsRepo,
-              charactersRepo: handle.charactersRepo,
-            },
+    const inner = runNewBookConversation(
+      {
+        model,
+        toolDeps: {
+          bookMetaToolsDeps: {
+            bookMetaRepo: handle.bookMetaRepo,
+            charactersRepo: handle.charactersRepo,
+            outlineRepo: handle.outlineRepo,
+            rulesMdPath: handle.rulesMdPath,
           },
-          abortSignal: c.req.raw.signal,
+          genreToolsDeps: {
+            repo: handle.genreSectionsRepo,
+            charactersRepo: handle.charactersRepo,
+          },
         },
-        { history, message, completenessHint },
-      ),
+        abortSignal: c.req.raw.signal,
+      },
+      { history, message, completenessHint },
     );
+
+    // 对话持久化:user 消息即刻入库,assistant 文本在流完后入库
+    async function* persisting() {
+      handle.conversationsRepo.append({ role: "user", content: message, metadata: { kind: "onboard" } });
+      let buf = "";
+      for await (const ev of inner) {
+        if (ev.type === "text_delta") buf += ev.delta;
+        if (ev.type === "done" && buf.trim()) {
+          handle.conversationsRepo.append({ role: "assistant", content: buf, metadata: { kind: "onboard" } });
+        }
+        yield ev;
+      }
+    }
+    return streamSseResponse(persisting());
   });
 
   app.get("/api/books/:bookId/onboard-status", async (c) => {

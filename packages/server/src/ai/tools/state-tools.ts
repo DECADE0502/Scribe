@@ -1,0 +1,130 @@
+import { tool, type Tool } from "ai";
+import { z } from "zod";
+
+/** 最小依赖接口(与真实 repo 结构兼容) */
+export interface StateCharactersRepoLike {
+  list(): Array<{ id: string; name: string; currentState: Record<string, unknown> }>;
+  update(id: string, patch: Record<string, unknown>): unknown;
+  addAppearance(id: string, appearance: { chapterNo: number; brief: string }): unknown;
+}
+
+export interface StateForeshadowingRepoLike {
+  list(filterStatus?: "active" | "paid" | "dropped"): Array<{ id: string; label: string }>;
+  create(input: {
+    label: string;
+    description: string | null;
+    plantedChapter: number | null;
+    paidChapter: number | null;
+    status: "active" | "paid" | "dropped";
+    relatedCharacters: string[];
+  }): unknown;
+  pay(id: string, paidChapter: number): unknown;
+}
+
+export interface StateTimelineRepoLike {
+  create(input: {
+    chapterNo: number;
+    storyTime: string;
+    event: string;
+    participants: string[];
+  }): unknown;
+}
+
+export interface StateToolsDeps {
+  charactersRepo: StateCharactersRepoLike;
+  foreshadowingRepo: StateForeshadowingRepoLike;
+  timelineRepo: StateTimelineRepoLike;
+  /** 当前章节号(工具内部用,LLM 不必传) */
+  chapterNo: number;
+}
+
+function findCharacter(deps: StateToolsDeps, name: string) {
+  const c = deps.charactersRepo.list().find(x => x.name === name);
+  if (!c) throw new Error(`角色不存在:${name}(请先用 create_character 创建)`);
+  return c;
+}
+
+/** 章末状态记录工具集(spec §6.3):角色状态 / 出场 / 伏笔 / 时间线 */
+export function makeStateTools(deps: StateToolsDeps): Record<string, Tool> {
+  return {
+    update_character_state: tool({
+      description: "更新角色的当前状态(位置/伤势/心境/修为/持有物等),merge 到现有状态。本章中角色发生重要变化时调用。",
+      parameters: z.object({
+        name: z.string().describe("角色名"),
+        state: z.record(z.unknown()).describe("状态字段,如 {位置:'云岚宗外',修为:'练气一层',持有:'黑色剑灵碎片'}"),
+      }),
+      execute: async ({ name, state }) => {
+        const c = findCharacter(deps, name);
+        const merged = { ...c.currentState, ...state };
+        deps.charactersRepo.update(c.id, { currentState: merged });
+        return { updated: name, state: merged };
+      },
+    }),
+
+    add_character_appearance: tool({
+      description: "记录角色在本章出场(一句话概括做了什么)。每个在本章有实质戏份的角色都应记录。",
+      parameters: z.object({
+        name: z.string().describe("角色名"),
+        brief: z.string().describe("本章中该角色的一句话概括"),
+      }),
+      execute: async ({ name, brief }) => {
+        const c = findCharacter(deps, name);
+        deps.charactersRepo.addAppearance(c.id, { chapterNo: deps.chapterNo, brief });
+        return { recorded: name, chapterNo: deps.chapterNo };
+      },
+    }),
+
+    add_foreshadowing: tool({
+      description: "登记本章新埋下的伏笔(未来需要回收的悬念/线索)。",
+      parameters: z.object({
+        label: z.string().describe("简短标签,如 '黑剑碎片来历'"),
+        description: z.string().optional().describe("伏笔说明"),
+        relatedCharacters: z.array(z.string()).optional().describe("关联角色名"),
+      }),
+      execute: async ({ label, description, relatedCharacters }) => {
+        const existing = deps.foreshadowingRepo.list().find(f => f.label === label);
+        if (existing) return { skipped: "同名伏笔已存在", label };
+        deps.foreshadowingRepo.create({
+          label,
+          description: description ?? null,
+          plantedChapter: deps.chapterNo,
+          paidChapter: null,
+          status: "active",
+          relatedCharacters: relatedCharacters ?? [],
+        });
+        return { planted: label, chapterNo: deps.chapterNo };
+      },
+    }),
+
+    pay_foreshadowing: tool({
+      description: "标记某伏笔在本章被回收(揭晓/兑现)。",
+      parameters: z.object({
+        label: z.string().describe("已登记的伏笔标签"),
+      }),
+      execute: async ({ label }) => {
+        const f = deps.foreshadowingRepo.list("active").find(x => x.label === label);
+        if (!f) throw new Error(`活跃伏笔不存在:${label}`);
+        deps.foreshadowingRepo.pay(f.id, deps.chapterNo);
+        return { paid: label, chapterNo: deps.chapterNo };
+      },
+    }),
+
+    add_timeline_event: tool({
+      description: "记录本章的关键事件到时间线(故事内时间 + 事件 + 参与角色)。每章 1-3 条。",
+      parameters: z.object({
+        storyTime: z.string().describe("故事内时间,如 '当夜' '次日清晨' '三日后'"),
+        event: z.string().describe("事件一句话"),
+        participants: z.array(z.string()).optional().describe("参与角色名"),
+      }),
+      execute: async ({ storyTime, event, participants }) => {
+        deps.timelineRepo.create({
+          chapterNo: deps.chapterNo,
+          storyTime,
+          event,
+          participants: participants ?? [],
+        });
+        return { recorded: event };
+      },
+    }),
+  };
+}
