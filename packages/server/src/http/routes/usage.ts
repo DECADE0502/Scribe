@@ -58,6 +58,9 @@ export function usageRoutes(deps: UsageRoutesDeps) {
       ...(typeof body.singleBudgetUsd === "number" && body.singleBudgetUsd > 0
         ? { singleBudgetUsd: body.singleBudgetUsd }
         : {}),
+      ...(body.provider === "mimo" || body.provider === "deepseek"
+        ? { provider: body.provider }
+        : {}),
       ...(typeof body.writeModelId === "string" && body.writeModelId
         ? { writeModelId: body.writeModelId }
         : {}),
@@ -67,12 +70,14 @@ export function usageRoutes(deps: UsageRoutesDeps) {
     };
     saveConfig(deps.configJsonPath, next);
 
-    // API key:只写 secrets.env,不进 config.json,热生效
+    // API key:按当前供应商写到对应的 secret(两套 key 独立、不可混用),热生效
     if (typeof body.apiKey === "string" && body.apiKey.trim() && deps.secretsEnvPath) {
-      saveSecret(deps.secretsEnvPath, "DEEPSEEK_API_KEY", body.apiKey.trim());
+      const secretName = next.provider === "mimo" ? "MIMO_API_KEY" : "DEEPSEEK_API_KEY";
+      saveSecret(deps.secretsEnvPath, secretName, body.apiKey.trim());
       deps.modelManager?.configure({ apiKey: body.apiKey.trim() });
     }
     deps.modelManager?.configure({
+      provider: next.provider,
       writeModelId: next.writeModelId,
       auditModelId: next.auditModelId,
     });

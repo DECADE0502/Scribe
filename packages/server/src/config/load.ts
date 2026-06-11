@@ -1,10 +1,14 @@
 import * as fs from "node:fs";
 
+export type ProviderId = "deepseek" | "mimo";
+
 export interface AppConfig {
   /** 单次自动模式预算上限(USD) */
   singleBudgetUsd: number;
   /** HTTP 端口 */
   port: number;
+  /** 当前供应商 */
+  provider: ProviderId;
   /** 写作模型 */
   writeModelId: string;
   /** 审查模型 */
@@ -14,6 +18,7 @@ export interface AppConfig {
 export const DEFAULT_CONFIG: AppConfig = {
   singleBudgetUsd: 5,
   port: 6789,
+  provider: "deepseek",
   writeModelId: "deepseek-v4-pro",
   auditModelId: "deepseek-v4-flash",
 };
@@ -28,6 +33,9 @@ export function loadConfig(configJsonPath: string): AppConfig {
         ? raw.singleBudgetUsd
         : DEFAULT_CONFIG.singleBudgetUsd,
       port: typeof raw.port === "number" ? raw.port : DEFAULT_CONFIG.port,
+      provider: raw.provider === "mimo" || raw.provider === "deepseek"
+        ? raw.provider
+        : DEFAULT_CONFIG.provider,
       writeModelId: typeof raw.writeModelId === "string" && raw.writeModelId
         ? raw.writeModelId
         : DEFAULT_CONFIG.writeModelId,

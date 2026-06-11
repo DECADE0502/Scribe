@@ -12,6 +12,7 @@
 interface DeepSeekUsage {
   prompt_cache_hit_tokens?: number;
   prompt_cache_miss_tokens?: number;
+  prompt_tokens_details?: { cached_tokens?: number };
   completion_tokens_details?: { reasoning_tokens?: number };
 }
 
@@ -29,7 +30,10 @@ function pickUsage(body: unknown): DeepSeekUsage | undefined {
 
 function toMetadata(usage: DeepSeekUsage | undefined): { deepseek: DeepSeekUsageMetadata } | undefined {
   if (!usage) return undefined;
-  const cachedPromptTokens = usage.prompt_cache_hit_tokens ?? 0;
+  // 兼容两种缓存命中字段:DeepSeek 的 prompt_cache_hit_tokens 与
+  // OpenAI/MiMo 标准的 prompt_tokens_details.cached_tokens。
+  const cachedPromptTokens =
+    usage.prompt_cache_hit_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? 0;
   const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens ?? 0;
   if (cachedPromptTokens === 0 && reasoningTokens === 0) return undefined;
   return { deepseek: { cachedPromptTokens, reasoningTokens } };

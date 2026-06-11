@@ -19,8 +19,13 @@ const config = loadConfig(paths.configJson);
 const secrets = loadSecrets(paths.secretsEnv);
 const registry = createBookRegistry({ paths });
 
+// 按 provider 取对应的 key(两套 key 相互独立、不可混用)
+const activeKey = config.provider === "mimo"
+  ? secrets.MIMO_API_KEY ?? null
+  : secrets.DEEPSEEK_API_KEY ?? null;
 const modelManager = createModelManager({
-  apiKey: secrets.DEEPSEEK_API_KEY ?? null,
+  provider: config.provider,
+  apiKey: activeKey,
   writeModelId: config.writeModelId,
   auditModelId: config.auditModelId,
 });
@@ -73,9 +78,9 @@ snapshotScheduler.start(() => [...dirtyBooks]);
 const server = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" });
 console.log(`scribe server listening at http://127.0.0.1:${port}`);
 console.log(
-  secrets.DEEPSEEK_API_KEY
-    ? `已加载 DeepSeek API Key,写作模型 ${config.writeModelId},审查模型 ${config.auditModelId}`
-    : "尚未配置 API Key,可在前端「设置」页录入",
+  activeKey
+    ? `供应商 ${config.provider},已加载 API Key,写作模型 ${config.writeModelId},审查模型 ${config.auditModelId}`
+    : `供应商 ${config.provider},尚未配置 API Key,可在前端「设置」页录入`,
 );
 
 const cleanup = () => {

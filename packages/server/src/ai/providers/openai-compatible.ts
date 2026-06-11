@@ -29,9 +29,17 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
     this.fetchImpl = cfg.fetchImpl ?? fetch;
   }
 
+  /**
+   * 鉴权头。默认 OpenAI 风格 Authorization: Bearer;
+   * 子类可覆盖(如 MiMo 用 `api-key: <key>`)。
+   */
+  protected authHeaders(apiKey: string): Record<string, string> {
+    return { Authorization: `Bearer ${apiKey}` };
+  }
+
   async listModels(): Promise<ModelInfo[]> {
     const res = await this.fetchImpl(`${this.baseUrl}/v1/models`, {
-      headers: { Authorization: `Bearer ${this.apiKey}` },
+      headers: this.authHeaders(this.apiKey),
     });
     if (!res.ok) throw new Error(`listModels 失败 HTTP ${res.status}`);
     const j: any = await res.json();
@@ -75,12 +83,13 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
 
   createModel(modelId: string, opts: ModelOpts): LanguageModel {
     const apiKey = opts.apiKey ?? this.apiKey;
+    const headers = this.authHeaders(apiKey);
     const extractor = this.metadataExtractor();
     if (!extractor) {
       const provider = createOpenAICompatible({
         name: this.id,
         baseURL: `${this.baseUrl}/v1`,
-        apiKey,
+        headers, // 用自定义鉴权头(含 Bearer 默认或 api-key 等)
       });
       return provider.chatModel(modelId);
     }
@@ -90,7 +99,7 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
     return new OpenAICompatibleChatLanguageModel(modelId, {}, {
       provider: `${this.id}.chat`,
       url: ({ path }: { path: string }) => `${baseURL}${path}`,
-      headers: () => ({ Authorization: `Bearer ${apiKey}` }),
+      headers: () => headers,
       fetch: fetchImpl,
       defaultObjectGenerationMode: "tool",
       metadataExtractor: extractor,

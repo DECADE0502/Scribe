@@ -1,9 +1,14 @@
 import type { LanguageModel } from "ai";
 import type { ModelInfo } from "@scribe/shared";
 import { DeepSeekProvider } from "./providers/deepseek.js";
+import { MiMoProvider } from "./providers/mimo.js";
+import type { ProviderAdapter } from "./providers/_interface.js";
 import { lookupLocal } from "./providers/local-model-table.js";
 
+export type ProviderId = "deepseek" | "mimo";
+
 export interface ModelManagerState {
+  provider: ProviderId;
   apiKey: string | null;
   writeModelId: string;
   auditModelId: string;
@@ -26,14 +31,17 @@ const DEFAULT_AUDIT_MODEL = "deepseek-v4-flash";
 
 export function createModelManager(initial?: Partial<ModelManagerState>): ModelManager {
   const state: ModelManagerState = {
+    provider: initial?.provider ?? "deepseek",
     apiKey: initial?.apiKey ?? null,
     writeModelId: initial?.writeModelId ?? DEFAULT_WRITE_MODEL,
     auditModelId: initial?.auditModelId ?? DEFAULT_AUDIT_MODEL,
   };
 
-  function provider(): DeepSeekProvider | undefined {
+  function provider(): ProviderAdapter | undefined {
     if (!state.apiKey) return undefined;
-    return new DeepSeekProvider({ apiKey: state.apiKey });
+    return state.provider === "mimo"
+      ? new MiMoProvider({ apiKey: state.apiKey })
+      : new DeepSeekProvider({ apiKey: state.apiKey });
   }
 
   function infoFor(modelId: string): ModelInfo {
@@ -53,6 +61,7 @@ export function createModelManager(initial?: Partial<ModelManagerState>): ModelM
     getAuditModelInfo() { return infoFor(state.auditModelId); },
     getState() { return { ...state }; },
     configure(patch) {
+      if (patch.provider) state.provider = patch.provider;
       if (patch.apiKey !== undefined) state.apiKey = patch.apiKey;
       if (patch.writeModelId) state.writeModelId = patch.writeModelId;
       if (patch.auditModelId) state.auditModelId = patch.auditModelId;
