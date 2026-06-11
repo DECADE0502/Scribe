@@ -114,4 +114,38 @@ describe("buildChapterWriteMessages(§6.1 防漂移上下文)", () => {
     expect(recentChapterNos).toEqual([]);
     expect(messages.length).toBeGreaterThan(0);
   });
+
+  it("召回聚焦续写上下文,不把无关角色的旧章一并捞回(§6.1 退化修复)", () => {
+    // 另起一本:最近一章只涉及林尘;旧章 ch1 只涉及韩渊、ch2 只涉及林尘。
+    const db2 = new Database(":memory:");
+    const initSql = fs.readFileSync(
+      path.join(__dirname, "../../../../src/db/migrations/workspace/001_init.sql"),
+      "utf-8",
+    );
+    runMigrations(db2, [{ name: "001_init.sql", sql: initSql }]);
+    const meta = createBookMetaRepo(db2);
+    const chars = createCharactersRepo(db2);
+    const chap = createChaptersRepo(db2);
+    meta.set("title", "测试"); meta.set("premise", "x");
+    chars.create({ name: "林尘", role: "protagonist", baseData: {}, currentState: {} });
+    chars.create({ name: "韩渊", role: "antagonist", baseData: {}, currentState: {} });
+    chap.saveSummary(summary(1, "韩渊单独行动", ["韩渊"]));   // 候选,但与续写无关
+    chap.saveSummary(summary(2, "林尘旧事", ["林尘"]));        // 候选,且相关
+    chap.saveSummary(summary(3, "过渡", ["林尘"]));            // 候选
+    chap.saveSummary(summary(4, "近", ["林尘"]));
+    chap.saveSummary(summary(5, "近", ["林尘"]));
+    chap.saveSummary(summary(6, "最新只涉及林尘", ["林尘"]));  // latest → 聚焦 [林尘]
+
+    const h2 = {
+      bookId: "b2", bookMetaRepo: meta, charactersRepo: chars,
+      outlineRepo: createOutlineRepo(db2), foreshadowingRepo: createForeshadowingRepo(db2),
+      genreSectionsRepo: createGenreSectionsRepo(db2), chaptersRepo: chap,
+      rulesMdPath: path.join(__dirname, "__none__.md"),
+    };
+    // currentChapter=7 → cutoff=4 → 候选 ch1/2/3
+    const { recalledChapterNos } = buildChapterWriteMessages(h2 as any, 7, "继续");
+    expect(recalledChapterNos).toContain(2);     // 林尘相关 → 捞回
+    expect(recalledChapterNos).not.toContain(1); // 韩渊(与续写无关)→ 不捞回
+    db2.close();
+  });
 });

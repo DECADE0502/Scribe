@@ -41,6 +41,8 @@ export interface WriteChapterInput {
    * 角色卡、规则)。提供时优先使用,忽略 ctx 模板;不提供时退回 ctx 模板。
    */
   prebuiltMessages?: CoreMessage[];
+  /** 落盘版本来源标记,默认 ai_write;/rewrite 传 ai_rewrite */
+  source?: "ai_write" | "ai_rewrite";
   abortSignal?: AbortSignal;
 }
 
@@ -80,7 +82,7 @@ export async function* writeChapterSimple(
         try {
           saved = deps.chaptersRepo.saveVersion({
             chapterNo: input.chapterNo,
-            source: "ai_write",
+            source: input.source ?? "ai_write",
             contentMd: buffer,
           });
           deps.chapterFiles.save({

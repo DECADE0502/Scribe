@@ -28,6 +28,12 @@ export function conversationRoutes(deps: ConversationDeps = {}) {
     if (mode === "chat" && model && deps.registry) {
       const auditModel = deps.getAuditModel?.() ?? model;
       const handle = deps.registry.open(bookId);
+      // 多轮记忆:回放最近的 chat 历史(只取 chat,排除 note;不含当前这条)
+      const history = handle.conversationsRepo
+        .listLatest(12)
+        .filter((m) => m.metadata?.kind === "chat" && (m.role === "user" || m.role === "assistant"))
+        .reverse()
+        .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
       const inner = runConversation(
         {
           handle,
@@ -36,7 +42,7 @@ export function conversationRoutes(deps: ConversationDeps = {}) {
           auditModelId: deps.auditModelInfo?.id ?? "unknown",
           abortSignal: c.req.raw.signal,
         },
-        { message },
+        { message, history },
       );
       // 对话持久化 + 章节提交回调(写章成功后触发自动快照计数)
       async function* persisting() {
@@ -47,10 +53,14 @@ export function conversationRoutes(deps: ConversationDeps = {}) {
           if (ev.type === "text_delta") buf += ev.delta;
           if (ev.type === "tool_call_end" && ev.toolName === "record_chapter_state") wroteChapter = true;
           if (ev.type === "done") {
-            if (buf.trim()) {
+            // 写章流:整章正文已存为章节版本,聊天历史只留简短标记,避免把整章
+            // 正文塞进 conversations(否则膨胀且会被回放成 history 再喂回模型)。
+            if (wroteChapter) {
+              handle.conversationsRepo.append({ role: "assistant", content: "(已完成写作并记录设定)", metadata: { kind: "chat" } });
+              deps.onChapterCommitted?.(bookId);
+            } else if (buf.trim()) {
               handle.conversationsRepo.append({ role: "assistant", content: buf, metadata: { kind: "chat" } });
             }
-            if (wroteChapter) deps.onChapterCommitted?.(bookId);
           }
           yield ev;
         }

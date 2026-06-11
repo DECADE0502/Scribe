@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import * as path from "node:path";
 import { serve } from "@hono/node-server";
 import { resolveAppPaths } from "./config/paths.js";
 import { loadConfig } from "./config/load.js";
@@ -25,20 +26,30 @@ const modelManager = createModelManager({
 });
 
 // 自动快照备份(spec §3.4):周期 6 小时 + 累计 5 章触发。
-// 背景备份不关闭连接(避免打断进行中的写作),而是先做 WAL checkpoint
-// 把数据落进主库文件,再连同 .md 一起打包 —— SQLite 设计上 db+wal 同时
-// 拷贝可得到可恢复状态,对本地单用户备份足够安全。
+// 一致性:tar 直接打包正在写入的 workspace.db 会与并发写撕裂。改为先用
+// better-sqlite3 的在线备份 db.backup() 产出一致的 DB 拷贝到暂存目录,连同
+// 章节 .md 一起打包暂存目录,从根本上避免边写边读。
+const dirtyBooks = new Set<string>(); // 自上次快照后有章节提交的书
 async function doSnapshot(bookId: string): Promise<void> {
+  const staging = path.join(paths.appRoot, ".snapshot-tmp", bookId);
   try {
+    dirtyBooks.delete(bookId);
     const handle = registry.open(bookId);
-    try { handle.workspaceDb.pragma("wal_checkpoint(TRUNCATE)"); } catch { /* 忽略 checkpoint 失败 */ }
-    await createSnapshot({
-      srcDir: paths.bookDir(bookId),
-      outDir: paths.bookBackupsDir(bookId),
-    });
+    fs.rmSync(staging, { recursive: true, force: true });
+    fs.mkdirSync(staging, { recursive: true });
+    // 复制书目录(章节 .md / rules.md / exports 等),再用一致备份覆盖 DB
+    fs.cpSync(paths.bookDir(bookId), staging, { recursive: true });
+    await handle.workspaceDb.backup(path.join(staging, "workspace.db"));
+    // 去掉可能被复制进来的 WAL/SHM(否则可能把撕裂的 WAL 回放到一致的主库上)
+    for (const sfx of ["-wal", "-shm"]) {
+      fs.rmSync(path.join(staging, `workspace.db${sfx}`), { force: true });
+    }
+    await createSnapshot({ srcDir: staging, outDir: paths.bookBackupsDir(bookId) });
     await pruneSnapshots(paths.bookBackupsDir(bookId));
   } catch (e) {
     console.error(`自动快照失败(${bookId}):`, (e as Error).message);
+  } finally {
+    fs.rmSync(staging, { recursive: true, force: true });
   }
 }
 const snapshotScheduler = createSnapshotScheduler({ doSnapshot });
@@ -51,9 +62,13 @@ const app = createApp({
   secretsEnvPath: paths.secretsEnv,
   budgetLimitUsd: config.singleBudgetUsd,
   modelManager,
-  onChapterCommitted: (bookId) => snapshotScheduler.onChapterCommitted(bookId),
+  onChapterCommitted: (bookId) => {
+    dirtyBooks.add(bookId);
+    snapshotScheduler.onChapterCommitted(bookId);
+  },
 });
-snapshotScheduler.start(() => registry.openBookIds());
+// 周期快照只覆盖"有改动"的书,而非所有曾被打开/浏览过的书
+snapshotScheduler.start(() => [...dirtyBooks]);
 
 const server = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" });
 console.log(`scribe server listening at http://127.0.0.1:${port}`);

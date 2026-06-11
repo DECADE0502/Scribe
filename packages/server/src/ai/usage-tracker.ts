@@ -61,11 +61,24 @@ export function createUsageTracker(opts: {
 }
 
 function computeCost(i: RecordInput): number {
-  const p = i.model.pricing;
+  return computeUsageCost(i.model, i.promptTokens, i.completionTokens, i.cachedTokens);
+}
+
+/**
+ * 计算一次调用的美元成本,缓存命中部分按 cachedInput 价(DeepSeek 缓存命中显著更便宜)。
+ * 供 auto/conversation 路由直接计费时复用,保持与 usage-tracker 一致的口径。
+ */
+export function computeUsageCost(
+  model: ModelInfo,
+  promptTokens: number,
+  completionTokens: number,
+  cachedTokens: number,
+): number {
+  const p = model.pricing;
   if (!p) return 0;
-  const nonCachedPrompt = Math.max(0, i.promptTokens - i.cachedTokens);
+  const nonCachedPrompt = Math.max(0, promptTokens - cachedTokens);
   const inputCost = (nonCachedPrompt / 1e6) * p.input;
-  const cachedCost = (i.cachedTokens / 1e6) * (p.cachedInput ?? p.input);
-  const outputCost = (i.completionTokens / 1e6) * p.output;
+  const cachedCost = (cachedTokens / 1e6) * (p.cachedInput ?? p.input);
+  const outputCost = (completionTokens / 1e6) * p.output;
   return inputCost + cachedCost + outputCost;
 }

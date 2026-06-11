@@ -13,8 +13,16 @@ import {
   buildChapterWriteMessages,
 } from "../context-builder/book-context.js";
 import { makeGenreSectionTools } from "../tools/genre-section-tools.js";
-import { makeStateTools } from "../tools/state-tools.js";
 import { classifyIntent, type IntentCategory } from "./intent.js";
+
+/** 明确的写作意图关键词:命中即直接当 writing_intent,免一次分类往返,也避免分类器误判 */
+const WRITE_HINT = /(写下一章|写第.{0,3}章|续写|接着写|继续写|往下写|write\s+next)/i;
+
+/** 把一段已成形的静态文本作为单个 text_delta 发出(避免逐字符刷屏)。 */
+async function* cannedText(text: string): AsyncIterable<SseEvent> {
+  yield { type: "text_delta", delta: text };
+  yield { type: "done" };
+}
 
 export interface ConversationOrchestratorDeps {
   handle: BookHandle;
@@ -72,14 +80,32 @@ async function* recordStateForChapter(
   yield { type: "tool_call_end", toolName: "record_chapter_state", result: { success: ok } };
 }
 
-/** 写/重写一章并审查 + 记录状态。chapterNo 缺省时写下一章。 */
+/**
+ * 写/重写一章并审查 + 记录状态。
+ * mode="rewrite":带上该章现有正文,要求改进重写,落盘 source=ai_rewrite。
+ */
 async function* writeChapterFlow(
   deps: ConversationOrchestratorDeps,
   chapterNo: number,
   userIntent: string,
+  mode: "write" | "rewrite" = "write",
 ): AsyncIterable<SseEvent> {
   const { handle } = deps;
   const promptCtx = buildBookPromptContext(handle);
+
+  let taskInstruction: string | undefined;
+  if (mode === "rewrite") {
+    const current = handle.chapterFiles.read(chapterNo);
+    taskInstruction = [
+      `# 任务`,
+      `重写第 ${chapterNo} 章并改进质量(承接前文、修正问题、提升文笔)。${userIntent}`.trim(),
+      `直接输出改写后的正文,不要标题、不要前言、不要解释。`,
+      "",
+      `# 当前正文(待改进)`,
+      current?.content ?? "(无现有正文,按新章处理)",
+    ].join("\n");
+  }
+
   let chapterFailed = false;
   for await (const ev of writeWithAudit(
     {
@@ -92,7 +118,8 @@ async function* writeChapterFlow(
     {
       chapterNo,
       userIntent,
-      prebuiltMessages: buildChapterWriteMessages(handle, chapterNo, userIntent).messages,
+      prebuiltMessages: buildChapterWriteMessages(handle, chapterNo, userIntent, taskInstruction).messages,
+      source: mode === "rewrite" ? "ai_rewrite" : "ai_write",
       auditCtx: promptCtx.auditCtx,
       enableRepair: true,
       abortSignal: deps.abortSignal,
@@ -160,8 +187,7 @@ async function* recallFlow(
   const text = hits.length
     ? [`找到 ${hits.length} 个相关章节:`, ...hits.map((s) => `· 第${s.chapterNo}章 ${s.oneLiner}`)].join("\n")
     : `没有找到与「${keyword || "当前线索"}」相关的历史章节。`;
-  for (const ch of text) yield { type: "text_delta", delta: ch };
-  yield { type: "done" };
+  yield* cannedText(text);
 }
 
 async function* auditFlow(
@@ -171,8 +197,7 @@ async function* auditFlow(
   const { handle } = deps;
   const chapter = handle.chapterFiles.read(chapterNo);
   if (!chapter) {
-    for (const ch of `第 ${chapterNo} 章还没有正文,无法审查。`) yield { type: "text_delta", delta: ch };
-    yield { type: "done" };
+    yield* cannedText(`第 ${chapterNo} 章还没有正文,无法审查。`);
     return;
   }
   const promptCtx = buildBookPromptContext(handle);
@@ -191,7 +216,7 @@ async function* auditFlow(
       `第 ${chapterNo} 章审查结论:${result.output.verdict}`,
       ...result.output.issues.map((i) => `· [${i.severity}] ${i.dimension}:${i.note}`),
     ].join("\n");
-    for (const ch of lines) yield { type: "text_delta", delta: ch };
+    yield { type: "text_delta", delta: lines };
     yield { type: "done" };
   } catch (e) {
     yield { type: "error", errorClass: "audit_failed", message: `审查失败:${(e as Error).message}` };
@@ -220,7 +245,7 @@ export async function* runConversation(
         return;
       case "rewrite": {
         const target = maxNo >= 1 ? maxNo : 1;
-        yield* writeChapterFlow(deps, target, `重写第 ${target} 章,改进质量。${parsed.args}`);
+        yield* writeChapterFlow(deps, target, parsed.args, "rewrite");
         yield { type: "done" };
         return;
       }
@@ -232,32 +257,30 @@ export async function* runConversation(
         return;
       case "note": {
         deps.handle.conversationsRepo.append({ role: "user", content: parsed.args, metadata: { kind: "note" } });
-        for (const ch of `已记下便签:${parsed.args}`) yield { type: "text_delta", delta: ch };
-        yield { type: "done" };
+        yield* cannedText(`已记下便签:${parsed.args}`);
         return;
       }
       case "revise":
-        for (const ch of "改写选中段请在中栏编辑器里选中文字后操作(选中后会弹出改写工具条)。") {
-          yield { type: "text_delta", delta: ch };
-        }
-        yield { type: "done" };
+        yield* cannedText("改写选中段请在中栏编辑器里选中文字后操作(选中后会弹出改写工具条)。");
         return;
       case "help":
-        for (const ch of helpText()) yield { type: "text_delta", delta: ch };
-        yield { type: "done" };
+        yield* cannedText(helpText());
         return;
       case "auto":
         // /auto 由前端直连 /auto 端点;走到这里说明是异常入口,给出提示
-        for (const ch of "自动写作请用 /auto N(例如 /auto 5),它会在顶部进度条里运行。") {
-          yield { type: "text_delta", delta: ch };
-        }
-        yield { type: "done" };
+        yield* cannedText("自动写作请用 /auto N(例如 /auto 5),它会在顶部进度条里运行。");
         return;
     }
   }
 
-  // 自然语言:意图分类后分派
-  const intent: IntentCategory = await classifyIntent(deps.auditModel, input.message, deps.abortSignal);
+  // 自然语言:先用关键词快路径兜住"写作"这一核心动作(避免分类器误判/超时把
+  // "写下一章"变成闲聊),其余再交给分类器。
+  let intent: IntentCategory;
+  if (WRITE_HINT.test(input.message)) {
+    intent = "writing_intent";
+  } else {
+    intent = await classifyIntent(deps.auditModel, input.message, deps.abortSignal);
+  }
   yield { type: "intent", category: intent };
 
   switch (intent) {
@@ -272,10 +295,7 @@ export async function* runConversation(
       yield* chatWithContext(deps, input, true);
       return;
     case "revise_intent":
-      for (const ch of "想改已写的内容?在中栏编辑器选中那段文字会弹出改写工具条;或用 /rewrite 重写整章。") {
-        yield { type: "text_delta", delta: ch };
-      }
-      yield { type: "done" };
+      yield* cannedText("想改已写的内容?在中栏编辑器选中那段文字会弹出改写工具条;或用 /rewrite 重写整章。");
       return;
     case "chitchat":
     case "other":

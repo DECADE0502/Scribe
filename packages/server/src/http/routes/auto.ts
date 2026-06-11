@@ -1,9 +1,10 @@
 import { Hono } from "hono";
 import type { LanguageModel } from "ai";
-import type { ModelInfo } from "@scribe/shared";
+import type { ModelInfo, SseEvent } from "@scribe/shared";
 import { streamSseResponse } from "../sse.js";
 import type { BookRegistry } from "../book-registry.js";
 import { runAutoMode } from "../../ai/orchestrator/auto-mode.js";
+import { computeUsageCost } from "../../ai/usage-tracker.js";
 import {
   buildBookPromptContext,
   buildChapterWriteMessages,
@@ -57,8 +58,9 @@ export function autoRoutes(deps: AutoRoutesDeps) {
     // B-5-001 修复:把书的设定(premise/角色/大纲/规则)注入写作与审查 prompt
     const promptCtx = buildBookPromptContext(handle);
 
-    // 章末状态记录 pass(spec §6.3)
-    const makeRecordState = (chapterNo: number) => {
+    // 章末状态记录 pass(spec §6.3)。记录用审查模型,这里就地把它的 usage 计入账,
+    // 否则 auto-mode 只透传 tool 事件、丢弃 usage,导致 record-state 成本不入账。
+    const makeRecordState = (chapterNo: number): AsyncIterable<SseEvent> => {
       const chapter = handle.chapterFiles.read(chapterNo);
       if (!chapter) return emptyIterable();
       const archiveSummary = buildArchiveSummary({
@@ -69,7 +71,7 @@ export function autoRoutes(deps: AutoRoutesDeps) {
         characters: handle.charactersRepo.list(),
         activeForeshadowing: handle.foreshadowingRepo.list("active"),
       });
-      return recordChapterState(
+      const inner = recordChapterState(
         {
           model: auditModel!, // 记录用便宜的审查模型即可
           stateDeps: {
@@ -86,6 +88,27 @@ export function autoRoutes(deps: AutoRoutesDeps) {
         },
         { chapterNo, chapterContent: chapter.content, archiveSummary },
       );
+      return (async function* () {
+        for await (const ev of inner) {
+          if (ev.type === "usage") {
+            const cost = computeUsageCost(
+              auditModelInfo, ev.promptTokens, ev.completionTokens, ev.cachedTokens ?? 0,
+            );
+            handle.tokenUsageRepo.record({
+              taskType: "audit",
+              model: auditModelInfo.id,
+              promptTokens: ev.promptTokens,
+              completionTokens: ev.completionTokens,
+              cachedTokens: ev.cachedTokens ?? 0,
+              reasoningTokens: ev.reasoningTokens ?? 0,
+              costUsd: cost,
+              chapterNo,
+            });
+            deps.registry.booksRepo.addCost(bookId, cost);
+          }
+          yield ev;
+        }
+      })();
     };
 
     async function* withCleanup() {
@@ -120,12 +143,11 @@ export function autoRoutes(deps: AutoRoutesDeps) {
             committedCount = ev.doneChapters.length;
             deps.onChapterCommitted?.(bookId);
           }
-          // usage 事件落库(写作模型的用量;audit 用量由 generateText 路径暂不上报)
+          // usage 事件落库(写作模型用量;缓存命中按 cachedInput 价折扣)
           if (ev.type === "usage") {
-            const pricing = writeModelInfo.pricing;
-            const cost = pricing
-              ? (ev.promptTokens / 1e6) * pricing.input + (ev.completionTokens / 1e6) * pricing.output
-              : 0;
+            const cost = computeUsageCost(
+              writeModelInfo, ev.promptTokens, ev.completionTokens, ev.cachedTokens ?? 0,
+            );
             handle.tokenUsageRepo.record({
               taskType: "write",
               model: writeModelInfo.id,
