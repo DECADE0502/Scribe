@@ -1,4 +1,5 @@
 import { OpenAICompatibleProvider } from "./openai-compatible.js";
+import { deepseekMetadataExtractor } from "./deepseek-metadata.js";
 import type { ErrorClass } from "@scribe/shared";
 
 export class DeepSeekProvider extends OpenAICompatibleProvider {
@@ -9,6 +10,11 @@ export class DeepSeekProvider extends OpenAICompatibleProvider {
       apiKey: cfg.apiKey,
       fetchImpl: cfg.fetchImpl,
     });
+  }
+
+  // spec §5.6/§5.5:抽取 prompt 缓存命中与 reasoning token
+  protected override metadataExtractor(): unknown {
+    return deepseekMetadataExtractor;
   }
 
   override classifyError(err: unknown): ErrorClass {

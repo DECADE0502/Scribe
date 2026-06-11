@@ -1,4 +1,7 @@
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import {
+  createOpenAICompatible,
+  OpenAICompatibleChatLanguageModel,
+} from "@ai-sdk/openai-compatible";
 import type { LanguageModel } from "ai";
 import type { ProviderAdapter, ModelOpts } from "./_interface.js";
 import type { ModelInfo, ErrorClass } from "@scribe/shared";
@@ -61,13 +64,37 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
     return true;
   }
 
+  /**
+   * 子类可覆盖以提供 provider 特有的用量元数据抽取(如 DeepSeek 的
+   * prompt_cache_hit_tokens / reasoning_tokens)。返回 undefined 表示不抽取。
+   * 形状须与 @ai-sdk/openai-compatible 的 MetadataExtractor 一致。
+   */
+  protected metadataExtractor(): unknown {
+    return undefined;
+  }
+
   createModel(modelId: string, opts: ModelOpts): LanguageModel {
-    const provider = createOpenAICompatible({
-      name: this.id,
-      baseURL: `${this.baseUrl}/v1`,
-      apiKey: opts.apiKey ?? this.apiKey,
-    });
-    return provider.chatModel(modelId);
+    const apiKey = opts.apiKey ?? this.apiKey;
+    const extractor = this.metadataExtractor();
+    if (!extractor) {
+      const provider = createOpenAICompatible({
+        name: this.id,
+        baseURL: `${this.baseUrl}/v1`,
+        apiKey,
+      });
+      return provider.chatModel(modelId);
+    }
+    // 需要注入 metadataExtractor 时直接构造 chat 模型(工厂不透传该字段)。
+    const baseURL = `${this.baseUrl}/v1`;
+    const fetchImpl = this.fetchImpl;
+    return new OpenAICompatibleChatLanguageModel(modelId, {}, {
+      provider: `${this.id}.chat`,
+      url: ({ path }: { path: string }) => `${baseURL}${path}`,
+      headers: () => ({ Authorization: `Bearer ${apiKey}` }),
+      fetch: fetchImpl,
+      defaultObjectGenerationMode: "tool",
+      metadataExtractor: extractor,
+    } as never) as unknown as LanguageModel;
   }
 
   classifyError(_err: unknown): ErrorClass {

@@ -1,5 +1,6 @@
 import { streamText, type LanguageModel, type CoreMessage, type Tool } from "ai";
 import type { SseEvent } from "@scribe/shared";
+import { readDeepSeekUsage } from "./providers/deepseek-metadata.js";
 
 export interface LlmCallInput {
   model: LanguageModel;
@@ -80,10 +81,14 @@ export async function* streamLlm(input: LlmCallInput): AsyncIterable<SseEvent> {
       }
     }
     const usage = await result.usage;
+    // spec §5.6/§5.5:从 providerMetadata 读取 DeepSeek 缓存命中 / reasoning token
+    const ds = readDeepSeekUsage(await result.providerMetadata);
     yield {
       type: "usage",
       promptTokens: usage.promptTokens ?? 0,
       completionTokens: usage.completionTokens ?? 0,
+      cachedTokens: ds.cachedPromptTokens,
+      reasoningTokens: ds.reasoningTokens,
     };
     yield { type: "done" };
   } catch (e) {

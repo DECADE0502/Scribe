@@ -27,6 +27,8 @@ export interface AppDeps {
   appPaths?: AppPaths;
   /** 注入后 getModel 等自动回落到 manager(显式 deps 优先,便于测试) */
   modelManager?: ModelManager;
+  /** 章节提交回调(自动快照计数,spec §3.4) */
+  onChapterCommitted?: (bookId: string) => void;
 }
 
 export function createApp(deps: AppDeps = {}) {
@@ -39,7 +41,7 @@ export function createApp(deps: AppDeps = {}) {
   const app = new Hono();
   app.get("/api/health", (c) => c.json({ status: "ok", name: "scribe" }));
   app.route("/", conversationRoutes({ getModel }));
-  app.route("/", chapterRoutes({ getDeps: deps.getChapterDeps, registry: deps.bookRegistry }));
+  app.route("/", chapterRoutes({ getDeps: deps.getChapterDeps, registry: deps.bookRegistry, onChapterCommitted: deps.onChapterCommitted }));
   if (deps.bookRegistry) {
     app.route("/", bookRoutes({ registry: deps.bookRegistry, getModel }));
     app.route("/", reviseRoutes({ registry: deps.bookRegistry, getModel }));
@@ -51,6 +53,7 @@ export function createApp(deps: AppDeps = {}) {
       budgetLimitUsd: deps.budgetLimitUsd,
       writeModelInfo,
       auditModelInfo,
+      onChapterCommitted: deps.onChapterCommitted,
     }));
     app.route("/", versionRoutes({ registry: deps.bookRegistry }));
     app.route("/", usageRoutes({

@@ -10,6 +10,7 @@ import type { BookRegistry } from "../book-registry.js";
 export interface ChapterRoutesDeps {
   getDeps?: (bookId: string) => WriteChapterDeps | undefined;
   registry?: BookRegistry;
+  onChapterCommitted?: (bookId: string) => void;
 }
 
 export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
@@ -31,14 +32,19 @@ export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
     const prebuiltMessages = deps.registry
       ? buildChapterWriteMessages(deps.registry.open(bookId), no, userIntent).messages
       : undefined;
-    return streamSseResponse(
-      writeChapterSimple(wcDeps, {
-        chapterNo: no,
-        userIntent,
-        prebuiltMessages,
-        abortSignal: c.req.raw.signal,
-      }),
-    );
+    const inner = writeChapterSimple(wcDeps, {
+      chapterNo: no,
+      userIntent,
+      prebuiltMessages,
+      abortSignal: c.req.raw.signal,
+    });
+    async function* withCommit() {
+      for await (const ev of inner) {
+        if (ev.type === "done") deps.onChapterCommitted?.(bookId);
+        yield ev;
+      }
+    }
+    return streamSseResponse(withCommit());
   });
 
   // 读取章节(编辑器加载)
@@ -95,6 +101,7 @@ export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
       try { handle.chaptersRepo.deleteVersion(no, saved.versionNo); } catch { /* ignore */ }
       return c.json({ error: `章节文件落盘失败:${(fsErr as Error).message ?? "unknown"}` }, 500);
     }
+    deps.onChapterCommitted?.(bookId);
     return c.json({ versionNo: saved.versionNo });
   });
 

@@ -35,6 +35,8 @@ export interface BookRegistry {
   libraryDb: Database;
   booksRepo: ReturnType<typeof createBooksRepo>;
   open(bookId: string): BookHandle;
+  /** 当前已打开(活跃)的书 id —— 自动快照只备份活跃的书 */
+  openBookIds(): string[];
   /** 关闭某本书的 workspace 连接(快照恢复前必须调用) */
   closeBook(bookId: string): void;
   closeAll(): void;
@@ -93,5 +95,9 @@ export function createBookRegistry(opts: BookRegistryOpts): BookRegistry {
     try { libraryDb.close(); } catch { /* ignore */ }
   }
 
-  return { libraryDb, booksRepo, open, closeBook, closeAll };
+  function openBookIds(): string[] {
+    return [...handles.keys()];
+  }
+
+  return { libraryDb, booksRepo, open, openBookIds, closeBook, closeAll };
 }

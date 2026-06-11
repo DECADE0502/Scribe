@@ -20,6 +20,7 @@ export interface AutoRoutesDeps {
   budgetLimitUsd?: number;
   writeModelInfo?: ModelInfo;
   auditModelInfo?: ModelInfo;
+  onChapterCommitted?: (bookId: string) => void;
 }
 
 export function autoRoutes(deps: AutoRoutesDeps) {
@@ -89,6 +90,7 @@ export function autoRoutes(deps: AutoRoutesDeps) {
 
     async function* withCleanup() {
       let currentChapter: number | undefined;
+      let committedCount = 0;
       try {
         for await (const ev of runAutoMode(
           {
@@ -112,6 +114,11 @@ export function autoRoutes(deps: AutoRoutesDeps) {
         )) {
           if (ev.type === "auto_status" && ev.currentChapter != null) {
             currentChapter = ev.currentChapter;
+          }
+          // 每完成一章触发自动快照计数(spec §3.4)
+          if (ev.type === "auto_status" && ev.doneChapters.length > committedCount) {
+            committedCount = ev.doneChapters.length;
+            deps.onChapterCommitted?.(bookId);
           }
           // usage 事件落库(写作模型的用量;audit 用量由 generateText 路径暂不上报)
           if (ev.type === "usage") {

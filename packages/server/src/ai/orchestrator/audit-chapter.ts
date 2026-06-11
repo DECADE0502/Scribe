@@ -1,4 +1,5 @@
 import { generateText, type LanguageModel } from "ai";
+import { readDeepSeekUsage } from "../providers/deepseek-metadata.js";
 import {
   AUDIT_SUMMARIZE_PROMPT,
   parseAuditOutput,
@@ -67,13 +68,14 @@ export async function auditChapter(
         abortSignal: deps.abortSignal,
       });
       const output = parseAuditOutput(result.text);
+      const ds = readDeepSeekUsage(result.providerMetadata);
       return {
         output,
         usage: {
           promptTokens: result.usage.promptTokens ?? 0,
           completionTokens: result.usage.completionTokens ?? 0,
-          cachedTokens: 0,
-          reasoningTokens: 0,
+          cachedTokens: ds.cachedPromptTokens,
+          reasoningTokens: ds.reasoningTokens,
         },
         rawText: result.text,
         reasoningText: result.reasoning ?? undefined,
