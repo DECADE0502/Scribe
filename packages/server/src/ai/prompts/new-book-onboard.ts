@@ -9,7 +9,11 @@ export const NEW_BOOK_ONBOARD_PROMPT = `你正在帮助一位作者新建一本�
 需要收集的最少信息:
 1) 题材(必备)— 通过 set_book_meta(genre)
 2) 至少一个主角 — 通过 create_character(role: "protagonist")
-3) 至少一个一级大纲(卷或主线弧)— 通过 create_outline_node(level: "volume" 或 "arc")
+3) 大纲 — 通过 create_outline_node。**不要只建一个空泛的卷**:
+   - 先建若干卷(level: "volume"),给每卷一句话主线
+   - 再为"当前要开写的第一卷"拆出 2-4 条故事弧(level: "arc",parent 指向该卷),
+     每条弧写清楚:这一弧要发生什么、推进哪条线、结尾的转折/钩子
+   弧级大纲是写作时防止"无方向即兴展开"的关键 —— 它会被注入每章上下文。
 4) 调性 / 篇幅 / premise 至少给到两项 — 通过 set_book_meta(tone / lengthTarget / premise)
 
 识别到题材后立即调用 create_genre_section 创建题材专属板块。**宁可多、宁可细**:
