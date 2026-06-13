@@ -13,6 +13,7 @@ export interface ChaptersRepoAuditLike {
     issues: Array<{
       dimension: string;
       severity: "ok" | "warning" | "critical";
+      score?: number;
       excerpt?: string;
       note: string;
     }>;
@@ -56,6 +57,7 @@ export function persistAuditResult(
     issues: result.output.issues.map((i) => ({
       dimension: i.dimension,
       severity: i.severity,
+      score: i.score,
       excerpt: i.excerpt,
       note: i.note,
     })),

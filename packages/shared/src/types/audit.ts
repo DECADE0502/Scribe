@@ -4,6 +4,7 @@ export const SeveritySchema = z.enum(["ok", "warning", "critical"]);
 export const AuditIssueSchema = z.object({
   dimension: z.string(),
   severity: SeveritySchema,
+  score: z.number().int().min(0).max(10).optional(),
   excerpt: z.string().optional(),
   note: z.string(),
 });

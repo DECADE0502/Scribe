@@ -122,7 +122,7 @@ export async function* writeWithAudit(
     toolName: "chapter_audit",
     result: {
       verdict: auditResult.output.verdict,
-      issuesCount: auditResult.output.issues.length,
+      issuesCount: auditResult.output.issues.filter((i) => i.severity !== "ok").length,
       summary: auditResult.output.summary,
     },
   };

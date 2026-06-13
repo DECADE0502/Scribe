@@ -14,11 +14,11 @@ function sum(no: number, characters: string[], fos: string[]): ChapterSummary {
 }
 
 describe("recallChapters", () => {
-  it("评分按公式 5*角色 + 10*伏笔", () => {
+  it("子串命中 + keyEvents 标注加成,角色权重高于伏笔", () => {
     const summaries = [
-      sum(1, ["林尘"], ["黑剑之谜"]),
-      sum(2, ["林尘", "师妹"], []),
-      sum(3, [], ["黑剑之谜"]),
+      sum(1, ["林尘"], ["黑剑之谜"]), // 角色5+伏笔3 + 标注2+4 = 14
+      sum(2, ["林尘", "师妹"], []),    // 角色5 + 标注2 = 7
+      sum(3, [], ["黑剑之谜"]),        // 伏笔3 + 标注4 = 7
     ];
     const top = recallChapters({
       allSummaries: summaries,
@@ -27,7 +27,28 @@ describe("recallChapters", () => {
       intentForeshadowing: ["黑剑之谜"],
       topK: 3,
     });
-    expect(top.map((s) => s.chapterNo)).toEqual([1, 3, 2]); // 15 / 10 / 5
+    expect(top[0]!.chapterNo).toBe(1); // 双命中最高
+    expect(top.map((s) => s.chapterNo).sort()).toEqual([1, 2, 3]);
+  });
+
+  it("正文/摘要子串命中即可召回,即使 keyEvents 未标注该实体", () => {
+    // 模拟真实情况:keyEvents 标注里没有"方同",但段落正文提到了
+    const s: ChapterSummary = {
+      chapterNo: 1,
+      oneLiner: "陈默得知方同的秘密",
+      paragraph: "本章中,陈默从档案里看到方同(代号溯流)的过往……",
+      keyEvents: [{ event: "查看档案", characters: ["陈默"], foreshadowingRefs: [] }],
+      generatedAt: 1000,
+      reasoningContent: null,
+    };
+    const top = recallChapters({
+      allSummaries: [s],
+      currentChapterNo: 10,
+      intentCharacters: ["方同"], // 仅在 prose 出现,不在 keyEvents 标注
+      intentForeshadowing: [],
+      topK: 5,
+    });
+    expect(top.map((x) => x.chapterNo)).toEqual([1]); // 子串命中成功召回
   });
 
   it("排除最近 3 章 (currentChapterNo - 3 之内)", () => {

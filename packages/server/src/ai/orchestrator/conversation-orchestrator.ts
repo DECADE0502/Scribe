@@ -215,7 +215,7 @@ async function* auditFlow(
     persistAuditResult(handle.chaptersRepo, chapterNo, result, deps.auditModelId);
     yield {
       type: "tool_call_end", toolName: "chapter_audit",
-      result: { verdict: result.output.verdict, issuesCount: result.output.issues.length, summary: result.output.summary },
+      result: { verdict: result.output.verdict, issuesCount: result.output.issues.filter((i) => i.severity !== "ok").length, summary: result.output.summary },
     };
     const lines = [
       `第 ${chapterNo} 章审查结论:${result.output.verdict}`,
