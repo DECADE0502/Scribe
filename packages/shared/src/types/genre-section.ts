@@ -35,8 +35,38 @@ export const GenreSectionFieldSchema = z.object({
   type: GenreFieldTypeSchema,
   description: z.string().optional(),
   required: z.boolean().optional(),
+  /** 该字段是否作为条目的显示名(每个板块应恰有一个 isLabel 字段)。
+   *  由 AI 在创建板块时显式声明,消费方据此读取条目名,不靠猜字段名。 */
+  isLabel: z.boolean().optional(),
   values: z.array(z.string()).optional(),
 });
+
+/**
+ * 解析某板块"作为条目显示名"的字段名(题材无关)。
+ * 优先级:显式声明的 isLabel 字段 > 第一个必填字段 > 第一个字段。
+ * 后两者是对未声明 isLabel 的旧板块的兜底,不是主路径。
+ */
+export function resolveLabelFieldName(
+  schema: Array<{ name: string; required?: boolean; isLabel?: boolean }>,
+): string | undefined {
+  return (
+    schema.find((f) => f.isLabel)?.name ??
+    schema.find((f) => f.required)?.name ??
+    schema[0]?.name
+  );
+}
+
+/** 从一条 item.data 解析显示名;取不到声明字段时退到 data 第一个非空值,再退到 fallback。 */
+export function resolveItemLabel(
+  schema: Array<{ name: string; required?: boolean; isLabel?: boolean }>,
+  data: Record<string, unknown>,
+  fallback = "(未命名)",
+): string {
+  const key = resolveLabelFieldName(schema);
+  if (key && data[key] != null && data[key] !== "") return String(data[key]);
+  const firstVal = Object.values(data).find((v) => v != null && v !== "");
+  return firstVal != null ? String(firstVal) : fallback;
+}
 
 export const GenreSectionSchema = z.object({
   id: z.string(),

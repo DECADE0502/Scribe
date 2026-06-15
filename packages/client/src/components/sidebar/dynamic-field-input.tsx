@@ -4,6 +4,7 @@ export interface GenreFieldDef {
   name: string;
   type: unknown; // string 字面量 | { kind: "enum", values: string[] }
   required?: boolean;
+  isLabel?: boolean;
   values?: string[];
   description?: string;
 }

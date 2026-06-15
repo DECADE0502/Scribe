@@ -55,6 +55,45 @@ describe("create_genre_section", () => {
     expect(r.createdBy).toBe("ai");
   });
 
+  it("isLabel:AI 显式声明的字段被保留为唯一显示名字段", async () => {
+    const r = await exec("create_genre_section", {
+      name: "功法",
+      schema: [
+        { name: "属性", type: "string" },
+        { name: "功法名", type: "string", required: true, isLabel: true },
+        { name: "品阶", type: "string" },
+      ],
+    });
+    const labels = r.schema.filter((f: any) => f.isLabel);
+    expect(labels).toHaveLength(1);
+    expect(labels[0].name).toBe("功法名");
+  });
+
+  it("isLabel:AI 没声明时自动把第一个必填字段提为显示名(落盘必有恰好一个 isLabel)", async () => {
+    const r = await exec("create_genre_section", {
+      name: "法器",
+      schema: [
+        { name: "描述", type: "string" },
+        { name: "名称", type: "string", required: true },
+      ],
+    });
+    const labels = r.schema.filter((f: any) => f.isLabel);
+    expect(labels).toHaveLength(1);
+    expect(labels[0].name).toBe("名称");
+  });
+
+  it("isLabel:AI 误标多个时只保留第一个", async () => {
+    const r = await exec("create_genre_section", {
+      name: "势力",
+      schema: [
+        { name: "势力名", type: "string", isLabel: true },
+        { name: "类型", type: "string", isLabel: true },
+      ],
+    });
+    expect(r.schema.filter((f: any) => f.isLabel)).toHaveLength(1);
+    expect(r.schema.find((f: any) => f.isLabel).name).toBe("势力名");
+  });
+
   it("error:重名抛错", async () => {
     await exec("create_genre_section", {
       name: "功法",

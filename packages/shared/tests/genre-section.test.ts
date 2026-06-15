@@ -94,3 +94,43 @@ describe("GenreSectionSchema", () => {
     ).toThrow();
   });
 });
+
+import { resolveLabelFieldName, resolveItemLabel } from "../src/types/genre-section.js";
+
+describe("resolveLabelFieldName / resolveItemLabel(显示名声明,不猜字段名)", () => {
+  it("优先用显式声明的 isLabel 字段", () => {
+    const schema = [
+      { name: "属性", type: "string" as const },
+      { name: "功法名", type: "string" as const, required: true, isLabel: true },
+    ];
+    expect(resolveLabelFieldName(schema)).toBe("功法名");
+    expect(resolveItemLabel(schema, { 功法名: "吞天诀", 属性: "魔道" })).toBe("吞天诀");
+  });
+
+  it("未声明 isLabel 时退到第一个必填字段", () => {
+    const schema = [
+      { name: "描述", type: "string" as const },
+      { name: "名称", type: "string" as const, required: true },
+    ];
+    expect(resolveLabelFieldName(schema)).toBe("名称");
+  });
+
+  it("既无 isLabel 又无必填时退到第一个字段", () => {
+    const schema = [{ name: "代号", type: "string" as const }, { name: "x", type: "string" as const }];
+    expect(resolveLabelFieldName(schema)).toBe("代号");
+  });
+
+  it("data 缺显示名字段时退到第一个非空值,再退到 fallback", () => {
+    const schema = [{ name: "名称", type: "string" as const, isLabel: true }];
+    expect(resolveItemLabel(schema, { 别的: "有值" })).toBe("有值");
+    expect(resolveItemLabel(schema, {}, "(空)")).toBe("(空)");
+  });
+
+  it("任意题材自定义字段名都能解析(星舰型号)", () => {
+    const schema = [
+      { name: "星舰型号", type: "string" as const, isLabel: true },
+      { name: "武备", type: "string" as const },
+    ];
+    expect(resolveItemLabel(schema, { 星舰型号: "曲率-7", 武备: "离子炮" })).toBe("曲率-7");
+  });
+});

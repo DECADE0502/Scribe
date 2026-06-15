@@ -40,6 +40,19 @@ export interface GenreToolsDeps {
   charactersRepo?: CharactersRepoLike;
 }
 
+/**
+ * 保证 schema 恰好有一个 isLabel 字段(显示名)。
+ * AI 已声明则尊重第一个声明、清掉其余;AI 没声明则把"第一个必填字段、否则第一个字段"
+ * 提升为 isLabel。这样落盘的 schema 始终自带显示名声明,读取方零猜测。
+ */
+export function normalizeLabelField(schema: GenreField[]): GenreField[] {
+  const declared = schema.find((f) => f.isLabel);
+  const labelName = declared?.name
+    ?? schema.find((f) => f.required)?.name
+    ?? schema[0]?.name;
+  return schema.map((f) => ({ ...f, isLabel: f.name === labelName }));
+}
+
 export function makeGenreSectionTools(
   deps: GenreToolsDeps,
 ): Record<string, Tool> {
@@ -48,36 +61,36 @@ export function makeGenreSectionTools(
   return {
     create_genre_section: tool({
       description:
-        "创建一个题材专属板块,用于追踪本题材独有的世界观元素(如修仙的'功法体系'、都市的'财务')。schema 中至少 1 个字段。",
+        "创建一个题材专属板块,用于追踪本题材独有的世界观元素(如修仙的'功法体系'、都市的'财务')。schema 至少 1 个字段,并且**必须恰好有一个字段标记 isLabel:true 作为条目显示名**(如功法板块把'功法名'设为 isLabel)。",
       parameters: z.object({
         name: z.string().min(1).describe("板块名,如 '功法体系'"),
         schema: z
           .array(GenreSectionFieldSchema)
           .min(1)
-          .describe("字段定义数组"),
+          .describe("字段定义数组;须恰好一个字段设 isLabel:true(条目显示名)"),
       }),
       execute: async ({ name, schema }) => {
         if (repo.getByName(name)) {
           throw new Error(`板块名已存在:${name}`);
         }
-        return repo.createSection({ name, schema, createdBy: "ai" });
+        return repo.createSection({ name, schema: normalizeLabelField(schema), createdBy: "ai" });
       },
     }),
 
     update_genre_section_schema: tool({
       description:
-        "修改某板块的字段定义。注意:已存在的条目中,新增的 required 字段会用 fallback 值 null,删除的字段被忽略。",
+        "修改某板块的字段定义。注意:已存在的条目中,新增的 required 字段会用 fallback 值 null,删除的字段被忽略。仍须恰好一个字段 isLabel:true。",
       parameters: z.object({
         sectionName: z.string().describe("要修改的板块名"),
         schema: z
           .array(GenreSectionFieldSchema)
           .min(1)
-          .describe("新的字段定义数组"),
+          .describe("新的字段定义数组;须恰好一个字段设 isLabel:true"),
       }),
       execute: async ({ sectionName, schema }) => {
         const section = repo.getByName(sectionName);
         if (!section) throw new Error(`板块不存在:${sectionName}`);
-        return repo.updateSectionSchema(section.id, schema);
+        return repo.updateSectionSchema(section.id, normalizeLabelField(schema));
       },
     }),
 

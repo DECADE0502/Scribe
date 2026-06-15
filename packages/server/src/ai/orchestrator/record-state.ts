@@ -1,5 +1,6 @@
 import type { LanguageModel } from "ai";
 import type { SseEvent } from "@scribe/shared";
+import { resolveItemLabel } from "@scribe/shared";
 import { streamLlm } from "../llm-call.js";
 import { prependDeepestPrompt } from "../prompts/deepest-prompt.js";
 import { makeStateTools, type StateToolsDeps } from "../tools/state-tools.js";
@@ -84,7 +85,7 @@ export function buildArchiveSummary(src: ArchiveSummarySources): string {
       .map(f => `${f.name}${f.required ? "*" : ""}:${typeof f.type === "string" ? f.type : "enum"}`)
       .join(", ");
     const itemNames = items
-      .map(i => String(i.data.name ?? i.data["名称"] ?? i.data["功法名"] ?? i.data["境界名"] ?? i.data["势力名"] ?? "?"))
+      .map(i => resolveItemLabel(section.schema, i.data, "?"))
       .join("、");
     parts.push(`- ${section.name}(字段:${schemaDesc})已有:${itemNames || "(空)"}`);
   }

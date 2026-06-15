@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { resolveItemLabel, resolveLabelFieldName } from "@scribe/shared";
 import { t } from "../../i18n/zh-CN.js";
 import { DynamicFieldInput, type GenreFieldDef, type RefOptions } from "./dynamic-field-input.js";
 
@@ -59,7 +60,7 @@ export function GenreSectionPanel(props: { bookId: string; sectionId: string }) 
         s.section.name,
         s.items.map(i => ({
           id: i.id,
-          label: String(i.data.name ?? i.data.label ?? i.id),
+          label: resolveItemLabel(s.section.schema, i.data, i.id),
         })),
       ]),
     ),
@@ -171,7 +172,7 @@ export function GenreSectionPanel(props: { bookId: string; sectionId: string }) 
           {editingItem === item.id ? renderForm() : (
             <>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <strong>{String(item.data.name ?? item.data.label ?? "(未命名)")}</strong>
+                <strong>{resolveItemLabel(section.schema, item.data)}</strong>
                 <span style={{ display: "flex", gap: 4 }}>
                   <button
                     data-testid={`genre-item-edit-${item.id}`}
@@ -190,7 +191,7 @@ export function GenreSectionPanel(props: { bookId: string; sectionId: string }) 
                 </span>
               </div>
               {section.schema
-                .filter(f => f.name !== "name" && item.data[f.name] !== undefined && item.data[f.name] !== null)
+                .filter(f => f.name !== resolveLabelFieldName(section.schema) && item.data[f.name] !== undefined && item.data[f.name] !== null)
                 .map(f => (
                   <p key={f.name} style={{ margin: "2px 0", color: "#666" }}>
                     <span style={{ color: "#999" }}>{f.name}:</span>
