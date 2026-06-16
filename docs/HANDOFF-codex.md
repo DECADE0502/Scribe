@@ -1,6 +1,6 @@
 # Codex Handoff: SillyTavern Import, Worldbook Runtime, and Long-Form Continuity
 
-Last updated: 2026-06-16
+Last updated: 2026-06-16 19:46 Asia/Shanghai
 
 ## 0. Read This First
 
@@ -321,7 +321,30 @@ Evidence:
 ]
 ```
 
-A 15-chapter live monitor was started but the user intentionally interrupted it and asked to stop. Do not treat the 15-chapter acceptance gate as complete.
+A 5-chapter live monitor was run after the state-recording integration:
+
+```text
+Book: 22128208-3e29-41ce-8138-3aa83c786db5
+Report: packages/server/tmp/sillytavern-longform-live-2026-06-16T11-35-31-586Z.json
+Verdict: passed=false
+Failure: chapter 5: status bar missing required terms: contract
+```
+
+This run is important because it proves the write/audit/record loop is executing for multiple chapters, while exposing the next quality gap: required-section failures detected by the monitor are not yet fed back into the repair loop. Evidence summary:
+
+```json
+[
+  { "chapterNo": 1, "auditVerdict": "ok", "recordStateSucceeded": true, "recordStateToolCallCount": 14, "recordStateUpsertCount": 2, "worldbookEntryCount": 13 },
+  { "chapterNo": 2, "auditVerdict": "ok", "recordStateSucceeded": true, "recordStateToolCallCount": 9, "recordStateUpsertCount": 1, "worldbookEntryCount": 13 },
+  { "chapterNo": 3, "auditVerdict": "warning", "recordStateSucceeded": true, "recordStateToolCallCount": 9, "recordStateUpsertCount": 1, "worldbookEntryCount": 14 },
+  { "chapterNo": 4, "auditVerdict": "ok", "recordStateSucceeded": true, "recordStateToolCallCount": 8, "recordStateUpsertCount": 1, "worldbookEntryCount": 13, "readerIssueIds": 1 },
+  { "chapterNo": 5, "auditVerdict": "ok", "recordStateSucceeded": true, "recordStateToolCallCount": 23, "recordStateUpsertCount": 2, "worldbookEntryCount": 13, "readerIssueIds": 2, "styleNotes": ["status bar missing required terms: contract"] }
+]
+```
+
+The next implementation should make monitor-detected style/required-section failures actionable, not merely report them. Best path: after final text is selected, if `detectMissingRequiredSections()` or `detectMetaOutputLeakage()` returns issues, invoke the same repair + re-audit path with those issues, then re-run the required-section/meta checks on repaired text before saving the chapter as accepted. Do not rely solely on the audit model, because chapter 5 had `auditVerdict=ok` while still missing a required preset term.
+
+A 15-chapter live monitor was started earlier but the user intentionally interrupted it and asked to stop. Do not treat the 15-chapter acceptance gate as complete.
 
 ## 8. Known Remaining Problems
 
