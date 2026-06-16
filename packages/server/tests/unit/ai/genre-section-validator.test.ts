@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  validateSectionDeclaration,
   validateItemAgainstSchema,
   ValidationError,
 } from "../../../src/ai/genre-section-validator.js";
@@ -11,6 +12,63 @@ const sec = (schema: any[]): GenreSection => ({
   schema,
   createdBy: "ai",
   createdAt: 1,
+});
+
+describe("validateSectionDeclaration", () => {
+  it("拒绝新 AI schema 缺少 identity 声明", () => {
+    expect(() =>
+      validateSectionDeclaration({
+        id: "s",
+        name: "任意集合",
+        createdBy: "ai",
+        createdAt: 1,
+        schema: [{ name: "说明", type: "text" }],
+      } as any),
+    ).toThrow(/identity/);
+  });
+
+  it("拒绝 identityFields 指向不存在的字段", () => {
+    expect(() =>
+      validateSectionDeclaration({
+        id: "s",
+        name: "任意集合",
+        createdBy: "ai",
+        createdAt: 1,
+        identityFields: ["不存在"],
+        displayFields: ["标题"],
+        schema: [{ name: "标题", type: "string", role: "label" }],
+      } as any),
+    ).toThrow(/不存在/);
+  });
+
+  it("拒绝 displayFields 指向不存在的字段", () => {
+    expect(() =>
+      validateSectionDeclaration({
+        id: "s",
+        name: "任意集合",
+        createdBy: "ai",
+        createdAt: 1,
+        identityFields: ["代号"],
+        displayFields: ["不存在"],
+        schema: [{ name: "代号", type: "string", role: "identity" }],
+      } as any),
+    ).toThrow(/display 字段 不存在 不存在/);
+  });
+
+  it("允许旧 isLabel 只在兼容模式下作为 identity fallback", () => {
+    const legacy = {
+      id: "s",
+      name: "旧集合",
+      createdBy: "ai",
+      createdAt: 1,
+      schema: [{ name: "名称", type: "string", isLabel: true }],
+    } as any;
+
+    expect(() => validateSectionDeclaration(legacy)).toThrow(/identity/);
+    expect(() =>
+      validateSectionDeclaration(legacy, { allowLegacyLabel: true }),
+    ).not.toThrow();
+  });
 });
 
 describe("validateItemAgainstSchema", () => {

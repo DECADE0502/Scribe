@@ -17,6 +17,10 @@ function makeSnap(overrides: Partial<BookSnapshot>): BookSnapshot {
     recentSummaries: [],
     allSummaries: [],
     genreSections: [],
+    worldbookEntries: [],
+    promptPresets: [],
+    promptBlocks: [],
+    readerIssues: [],
     ...overrides,
   };
 }

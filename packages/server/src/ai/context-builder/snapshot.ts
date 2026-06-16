@@ -6,6 +6,10 @@ import type {
   GenreSection,
   GenreSectionItem,
   ChapterSummary,
+  WorldbookEntry,
+  PromptBlock,
+  PromptPreset,
+  ReaderIssue,
 } from "@scribe/shared";
 
 export interface BookMeta {
@@ -26,6 +30,10 @@ export interface BookSnapshot {
   recentSummaries: ChapterSummary[]; // 最近 3 章, 按 chapterNo desc
   allSummaries: ChapterSummary[]; // 全部, 按 chapterNo asc
   genreSections: { section: GenreSection; items: GenreSectionItem[] }[];
+  worldbookEntries: WorldbookEntry[];
+  promptPresets: PromptPreset[];
+  promptBlocks: PromptBlock[];
+  readerIssues: ReaderIssue[];
 }
 
 // 用 interface 定义最小依赖, 方便 mock
@@ -41,6 +49,16 @@ export interface SnapshotRepos {
     listItems(sectionId: string): GenreSectionItem[];
   };
   // book_meta 通过 db 直接查 key/value
+  worldbookRepo?: {
+    list(opts?: { enabledOnly?: boolean }): WorldbookEntry[];
+  };
+  promptPresetsRepo?: {
+    listPresets(opts?: { enabledOnly?: boolean }): PromptPreset[];
+    listBlocks(presetId: string, opts?: { enabledOnly?: boolean }): PromptBlock[];
+  };
+  readerIssuesRepo?: {
+    listOpen(): ReaderIssue[];
+  };
   bookMetaRepo: {
     get(key: string): string | undefined;
   };
@@ -73,6 +91,8 @@ export function loadBookSnapshot(
   const rulesMd = fs.existsSync(paths.rulesMd)
     ? fs.readFileSync(paths.rulesMd, "utf-8")
     : "";
+  const promptPresets =
+    repos.promptPresetsRepo?.listPresets({ enabledOnly: true }) ?? [];
   return {
     bookId,
     meta,
@@ -84,6 +104,15 @@ export function loadBookSnapshot(
     recentSummaries,
     allSummaries,
     genreSections,
+    worldbookEntries: repos.worldbookRepo?.list({ enabledOnly: true }) ?? [],
+    promptPresets,
+    promptBlocks:
+      repos.promptPresetsRepo && promptPresets.length
+        ? promptPresets.flatMap((preset) =>
+            repos.promptPresetsRepo!.listBlocks(preset.id, { enabledOnly: true }),
+          )
+        : [],
+    readerIssues: repos.readerIssuesRepo?.listOpen() ?? [],
   };
 }
 

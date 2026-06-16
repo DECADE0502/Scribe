@@ -1,10 +1,12 @@
 import type { GenreField, GenreSection } from "@scribe/shared";
+import { resolveIdentityFieldNames } from "@scribe/shared";
 
 /**
  * 最小 charactersRepo 接口(只要 get 方法)
  */
 export interface CharactersRepoLike {
   get(id: string): { id: string } | undefined;
+  list?(): Array<{ id: string; name: string }>;
 }
 
 /**
@@ -23,6 +25,43 @@ export class ValidationError extends Error {
   ) {
     super(message);
     this.name = "ValidationError";
+  }
+}
+
+export function validateSectionDeclaration(
+  section: GenreSection,
+  opts: { allowLegacyLabel?: boolean } = {},
+): void {
+  const fieldNames = new Set(section.schema.map((field) => field.name));
+  const explicitIdentity =
+    section.identityFields?.filter(Boolean) ??
+    section.schema
+      .filter((field) => field.role === "identity")
+      .map((field) => field.name);
+  const hasLegacyOnly =
+    explicitIdentity.length === 0 &&
+    resolveIdentityFieldNames(section).length > 0;
+
+  if (explicitIdentity.length === 0) {
+    if (opts.allowLegacyLabel && hasLegacyOnly) return;
+    throw new ValidationError("schema 必须声明 identity 字段");
+  }
+
+  for (const field of explicitIdentity) {
+    if (!fieldNames.has(field)) {
+      throw new ValidationError(`identity 字段 ${field} 不存在`, field);
+    }
+  }
+
+  const displayFields =
+    section.displayFields?.filter(Boolean) ??
+    section.schema
+      .filter((field) => field.role === "label")
+      .map((field) => field.name);
+  for (const field of displayFields) {
+    if (!fieldNames.has(field)) {
+      throw new ValidationError(`display 字段 ${field} 不存在`, field);
+    }
   }
 }
 

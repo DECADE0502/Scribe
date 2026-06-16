@@ -1,12 +1,27 @@
 import type { CoreMessage } from "ai";
+import {
+  resolveDisplayFieldNames,
+  resolveIdentityFieldNames,
+  resolveItemIdentityKey,
+  resolveItemLabel,
+  resolveItemSearchText,
+} from "@scribe/shared";
 import type { BookSnapshot } from "./snapshot.js";
 import { recallChapters } from "./recall.js";
 import { fitWithinBudget, defaultTruncate, type Section } from "./budget.js";
 import { SYSTEM_PROMPT } from "../prompts/system-prompt.js";
+import {
+  renderWorldbookEntries,
+  retrieveWorldbookEntries,
+} from "../worldbook/retrieval.js";
+import { renderPromptPresetBlocks } from "../presets/render.js";
+import { applySillyTavernRegexScripts } from "../presets/regex-scripts.js";
+import { SillyTavernRegexScriptSchema } from "@scribe/shared";
 
 export interface BuildIntent {
   characters: string[];
   foreshadowing: string[];
+  records?: string[];
   userMessage: string;
   chapterPlan?: string;
 }
@@ -24,6 +39,12 @@ export interface BuildResult {
   recentChapterNos: number[];
   droppedSectionIds: string[];
   usedTokens: number;
+  diagnostics?: {
+    promptPresetBlockIds: string[];
+    promptRegexScriptsApplied: string[];
+    worldbookEntryIds: string[];
+    readerIssueIds: string[];
+  };
 }
 
 export function renderStaticBlock(snapshot: BookSnapshot): string {
@@ -48,11 +69,17 @@ export function renderStaticBlock(snapshot: BookSnapshot): string {
     }
   }
   if (snapshot.genreSections.length) {
-    parts.push(`\n## 题材专属板块`);
+    parts.push(`\n## 通用记录集合`);
     for (const { section, items } of snapshot.genreSections) {
-      parts.push(`### ${section.name}`);
-      for (const it of items) {
-        parts.push(`- ${JSON.stringify(it.data)}`);
+      const identity = resolveIdentityFieldNames(section).join(",") || "(未声明)";
+      const display = resolveDisplayFieldNames(section).join(",") || "(未声明)";
+      const search = section.searchFields?.join(",") || "(未声明)";
+      parts.push(`### ${section.name} (identity:${identity}; display:${display}; search:${search})`);
+      for (const item of items) {
+        const label = resolveItemLabel(section, item.data, "?");
+        const identityKey = resolveItemIdentityKey(section, item.data) ?? "?";
+        const searchText = resolveItemSearchText(section, item.data);
+        parts.push(`- ${label} | ${identityKey}${searchText ? ` | ${searchText}` : ""}`);
       }
     }
   }
@@ -105,6 +132,56 @@ export function renderDynamicBlock(input: DynamicRenderInput): string {
   return parts.join("\n");
 }
 
+export function renderReaderIssuesBlock(
+  issues: BookSnapshot["readerIssues"],
+): string {
+  if (!issues.length) return "";
+  const parts = ["## Reader Continuity Issues"];
+  for (const issue of issues) {
+    parts.push(
+      `- [${issue.severity}] Chapter ${issue.chapterNo} ${issue.type}: ${issue.note}`,
+    );
+    if (issue.evidence) parts.push(`  Evidence: ${issue.evidence}`);
+    if (issue.suggestedAction) parts.push(`  Action: ${issue.suggestedAction}`);
+  }
+  return parts.join("\n");
+}
+
+function extractPromptRegexScripts(snapshot: BookSnapshot) {
+  return (snapshot.promptPresets ?? [])
+    .filter((preset) => preset.enabled && preset.regexScriptsEnabled)
+    .flatMap((preset) => {
+      const raw = preset.extensions.regex_scripts;
+      if (!Array.isArray(raw)) return [];
+      return raw
+        .map((script) => SillyTavernRegexScriptSchema.safeParse(script))
+        .filter((result) => result.success)
+        .map((result) => result.data);
+    });
+}
+
+function applyPromptRegexScripts(
+  messages: CoreMessage[],
+  snapshot: BookSnapshot,
+): { messages: CoreMessage[]; appliedScriptNames: string[] } {
+  const scripts = extractPromptRegexScripts(snapshot);
+  if (!scripts.length) return { messages, appliedScriptNames: [] };
+  const applied = new Set<string>();
+  const nextMessages = messages.map((message) => {
+    if (message.role === "tool") return message;
+    if (typeof message.content !== "string") return message;
+    const result = applySillyTavernRegexScripts(message.content, scripts, {
+      target: "prompt",
+      depth: 0,
+    });
+    for (const script of result.applied) {
+      applied.add(script.scriptName || script.id || "unnamed");
+    }
+    return { ...message, content: result.text };
+  });
+  return { messages: nextMessages, appliedScriptNames: [...applied] };
+}
+
 export function buildWriteContext(opts: BuildOptions): BuildResult {
   const recent = opts.snapshot.recentSummaries.slice(0, 3);
   const recalled = recallChapters({
@@ -112,9 +189,54 @@ export function buildWriteContext(opts: BuildOptions): BuildResult {
     currentChapterNo: opts.currentChapterNo,
     intentCharacters: opts.intent.characters,
     intentForeshadowing: opts.intent.foreshadowing,
+    intentRecords: opts.intent.records,
     topK: 5,
   });
   const staticBlock = renderStaticBlock(opts.snapshot);
+  const now = new Date();
+  const activePromptBlocks = (opts.snapshot.promptBlocks ?? [])
+    .filter((block) => block.enabled && block.stackIndex !== null)
+    .sort((a, b) => {
+      const stackDelta = (a.stackIndex ?? 999_999) - (b.stackIndex ?? 999_999);
+      if (stackDelta !== 0) return stackDelta;
+      return a.sourceIdentifier.localeCompare(b.sourceIdentifier);
+    });
+  const renderedPresetMessages = renderPromptPresetBlocks(activePromptBlocks, {
+      user: "",
+      char: opts.snapshot.meta.title,
+      lastUserMessage: opts.intent.userMessage,
+      date: now.toISOString().slice(0, 10),
+      time: now.toTimeString().slice(0, 5),
+    });
+  const presetRegexResult = applyPromptRegexScripts(
+    renderedPresetMessages,
+    opts.snapshot,
+  );
+  const presetMessages = presetRegexResult.messages;
+  const worldbook = retrieveWorldbookEntries({
+    entries: opts.snapshot.worldbookEntries,
+    query: opts.intent.userMessage,
+    extraText: [
+      opts.intent.chapterPlan ?? "",
+      ...opts.snapshot.recentSummaries.map((summary) =>
+        [
+          summary.oneLiner,
+          summary.paragraph,
+          ...summary.keyEvents.flatMap((event) => [
+            event.event,
+            ...event.characters,
+            ...event.foreshadowingRefs,
+          ]),
+        ].join("\n"),
+      ),
+      ...opts.intent.characters,
+      ...opts.intent.foreshadowing,
+      ...(opts.intent.records ?? []),
+    ],
+    tokenBudget: 4_000,
+  });
+  const worldbookBlock = renderWorldbookEntries(worldbook.selected);
+  const readerIssuesBlock = renderReaderIssuesBlock(opts.snapshot.readerIssues ?? []);
   const dynamicBlock = renderDynamicBlock({
     recent,
     recalled,
@@ -123,6 +245,12 @@ export function buildWriteContext(opts: BuildOptions): BuildResult {
 
   const sections: Section[] = [
     { id: "static", priority: 100, text: staticBlock },
+    ...(worldbookBlock
+      ? [{ id: "worldbook", priority: 95, text: worldbookBlock }]
+      : []),
+    ...(readerIssuesBlock
+      ? [{ id: "reader-issues", priority: 94, text: readerIssuesBlock }]
+      : []),
     { id: "dynamic", priority: 90, text: dynamicBlock },
   ];
   const fitted = fitWithinBudget(sections, {
@@ -137,6 +265,7 @@ export function buildWriteContext(opts: BuildOptions): BuildResult {
 
   const messages: CoreMessage[] = [
     { role: "system", content: SYSTEM_PROMPT },
+    ...presetMessages,
     ...orderedKept.map((s) => ({ role: "user" as const, content: s.text })),
   ];
 
@@ -146,5 +275,11 @@ export function buildWriteContext(opts: BuildOptions): BuildResult {
     recentChapterNos: recent.map((s) => s.chapterNo),
     droppedSectionIds: fitted.dropped.map((s) => s.id),
     usedTokens: fitted.usedTokens,
+    diagnostics: {
+      promptPresetBlockIds: activePromptBlocks.map((block) => block.id),
+      promptRegexScriptsApplied: presetRegexResult.appliedScriptNames,
+      worldbookEntryIds: worldbook.selected.map((item) => item.entry.id),
+      readerIssueIds: (opts.snapshot.readerIssues ?? []).map((issue) => issue.id),
+    },
   };
 }

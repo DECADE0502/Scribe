@@ -43,7 +43,7 @@ export interface ConversationInput {
 }
 
 const CHAT_SYSTEM = `你是 Scribe,一个对话式中文长篇小说创作助手。你能看到这本书已有的设定与前情。
-用简洁贴近中文的表达回答。当用户想新增或修改题材资料(功法/道具/势力/地点等)时,直接调用工具落地到资料库,不要只口头描述。`;
+用简洁贴近中文的表达回答。当用户想新增或修改需要长期保持一致的记录资料、设定条目、世界规则、关系或线索时,直接调用通用记录工具落地到资料库,不要只口头描述。`;
 
 /** 组装某章的状态记录 pass(写完一章后落地题材条目/角色/伏笔/时间线)。 */
 async function* recordStateForChapter(
@@ -118,6 +118,7 @@ async function* writeChapterFlow(
       auditModelId: deps.auditModelId,
       chaptersRepo: handle.chaptersRepo,
       chapterFiles: handle.chapterFiles,
+      readerIssuesRepo: handle.readerIssuesRepo,
     },
     {
       chapterNo,
@@ -212,7 +213,13 @@ async function* auditFlow(
       { model: deps.auditModel, abortSignal: deps.abortSignal, deepestPrompt: deps.deepestPrompt },
       { chapterNo, chapterContent: chapter.content, ...promptCtx.auditCtx },
     );
-    persistAuditResult(handle.chaptersRepo, chapterNo, result, deps.auditModelId);
+    persistAuditResult(
+      handle.chaptersRepo,
+      chapterNo,
+      result,
+      deps.auditModelId,
+      handle.readerIssuesRepo,
+    );
     yield {
       type: "tool_call_end", toolName: "chapter_audit",
       result: { verdict: result.output.verdict, issuesCount: result.output.issues.filter((i) => i.severity !== "ok").length, summary: result.output.summary },

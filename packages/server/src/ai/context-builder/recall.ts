@@ -5,6 +5,7 @@ export interface RecallInput {
   currentChapterNo: number;
   intentCharacters: string[];
   intentForeshadowing: string[];
+  intentRecords?: string[];
   topK?: number;
 }
 
@@ -33,6 +34,7 @@ function summaryText(s: ChapterSummary): string {
 export function recallChapters(input: RecallInput): ChapterSummary[] {
   const cs = input.intentCharacters.filter((c) => c && c.trim());
   const fs = input.intentForeshadowing.filter((f) => f && f.trim());
+  const rs = (input.intentRecords ?? []).filter((r) => r && r.trim());
   const csSet = new Set(cs);
   const fsSet = new Set(fs);
   const cutoff = input.currentChapterNo - 3;
@@ -45,6 +47,7 @@ export function recallChapters(input: RecallInput): ChapterSummary[] {
       // 子串命中(主信号):每个意图角色/伏笔词在本章全文出现即计分
       for (const c of cs) if (text.includes(c)) score += 5;
       for (const f of fs) if (text.includes(f)) score += 3;
+      for (const r of rs) if (text.includes(r)) score += 4;
       // keyEvents 精确标注命中(加成):标注本就是结构化强信号
       for (const ev of s.keyEvents) {
         for (const c of ev.characters) if (csSet.has(c)) score += 2;

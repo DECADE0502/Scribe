@@ -99,6 +99,63 @@ describe("auditChapter", () => {
   });
 });
 
+describe("buildAuditUserPrompt reader continuity", () => {
+  it("includes worldbook, reader issues, and hard continuity facts for quality judgment", () => {
+    const text = buildAuditUserPrompt({
+      chapterNo: 14,
+      chapterContent: "天界通道打开。",
+      worldbookContext: "## Worldbook\n### 天界\n天界与魔界裂隙对称存在。",
+      readerIssuesContext: "## Reader Continuity Issues\n- [warning] Chapter 13 foreshadowing: 天界缺伏笔。",
+      hardContinuityContext: "## Hard Continuity Constraints\n- Chapter 12: SP仅3点，无法兑换普通球。",
+    });
+
+    expect(text).toContain("## Worldbook Context");
+    expect(text).toContain("天界与魔界裂隙对称存在");
+    expect(text).toContain("## Reader Continuity Issues");
+    expect(text).toContain("天界缺伏笔");
+    expect(text).toContain("## Hard Continuity Constraints");
+    expect(text).toContain("SP仅3点");
+  });
+
+  it("includes recent and recalled summaries so audit can judge reader continuity", () => {
+    const text = buildAuditUserPrompt({
+      chapterNo: 7,
+      chapterContent: "current chapter suddenly says I narrate the case.",
+      recentSummaries: [
+        {
+          chapterNo: 6,
+          oneLiner: "Chapter 6 stayed in close third person.",
+          paragraph: "The previous chapter followed Chen Mo from outside narration.",
+          keyEvents: [
+            {
+              event: "Chen Mo investigated the rain well.",
+              characters: ["Chen Mo"],
+              foreshadowingRefs: ["rain well"],
+            },
+          ],
+          generatedAt: 1,
+          reasoningContent: null,
+        },
+      ],
+      recalledSummaries: [
+        {
+          chapterNo: 2,
+          oneLiner: "Chapter 2 established the narrator contract.",
+          paragraph: "The book used third-person narration and no first-person witness.",
+          keyEvents: [],
+          generatedAt: 1,
+          reasoningContent: null,
+        },
+      ],
+    });
+
+    expect(text).toContain("## Recent Chapter Summaries");
+    expect(text).toContain("Chapter 6 stayed in close third person.");
+    expect(text).toContain("## Recalled Historical Summaries");
+    expect(text).toContain("Chapter 2 established the narrator contract.");
+  });
+});
+
 describe("buildAuditUserPrompt", () => {
   it("拼接 premise + characters + foreshadowing 的中文段落", () => {
     const text = buildAuditUserPrompt({

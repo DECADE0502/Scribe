@@ -45,6 +45,16 @@ describe("update_character_state", () => {
     expect(charactersRepo.list()[0].currentState.修为).toBe("练气一层");
   });
 
+  it("容错:state 若是 JSON 字符串,解析后 merge", async () => {
+    const r = await exec("update_character_state", {
+      name: "林尘",
+      state: "{\"位置\":\"外门\",\"持有物\":[\"木剑\"]}",
+    });
+
+    expect(r.state.位置).toBe("外门");
+    expect(r.state.持有物).toEqual(["木剑"]);
+  });
+
   it("error:角色不存在", async () => {
     await expect(exec("update_character_state", { name: "幽灵", state: {} })).rejects.toThrow(/不存在/);
   });

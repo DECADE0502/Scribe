@@ -88,4 +88,42 @@ describe("streamLlm 工具错误自恢复(B-6-002)", () => {
     const text = events.filter((e) => e.type === "text_delta").map((e: any) => e.delta).join("");
     expect(text).toContain("改正");
   });
+
+  it("passes providerOptions through to the language model request", async () => {
+    let seenProviderOptions: unknown;
+    const model: any = {
+      specificationVersion: "v1",
+      provider: "deepseek.chat",
+      modelId: "deepseek-v4-flash",
+      defaultObjectGenerationMode: "json",
+      async doGenerate() {
+        throw new Error("not used");
+      },
+      async doStream(options: any) {
+        seenProviderOptions = options.providerMetadata;
+        return {
+          stream: new ReadableStream({
+            start(ctrl) {
+              ctrl.enqueue({ type: "text-delta", textDelta: "ok" });
+              ctrl.enqueue({ type: "finish", finishReason: "stop", usage: { promptTokens: 1, completionTokens: 1 } });
+              ctrl.close();
+            },
+          }),
+          rawCall: { rawPrompt: null, rawSettings: {} },
+        };
+      },
+    };
+
+    await consume(
+      streamLlm({
+        model,
+        messages: [{ role: "user", content: "record" }],
+        providerOptions: { deepseek: { thinking: { type: "disabled" } } },
+      }),
+    );
+
+    expect(seenProviderOptions).toEqual({
+      deepseek: { thinking: { type: "disabled" } },
+    });
+  });
 });

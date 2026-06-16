@@ -11,7 +11,13 @@ import { createOutlineRepo } from "../../../../src/db/repositories/outline.js";
 import { createForeshadowingRepo } from "../../../../src/db/repositories/foreshadowing.js";
 import { createGenreSectionsRepo } from "../../../../src/db/repositories/genre-sections.js";
 import { createChaptersRepo } from "../../../../src/db/repositories/chapters.js";
-import { buildChapterWriteMessages } from "../../../../src/ai/context-builder/book-context.js";
+import {
+  buildChapterAuditContext,
+  buildChapterWriteMessages,
+  detectMissingRequiredSections,
+  extractRequiredOutputSections,
+  renderHardContinuityConstraints,
+} from "../../../../src/ai/context-builder/book-context.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -56,9 +62,17 @@ beforeEach(() => {
   });
 
   const sec = genreSectionsRepo.createSection({
-    name: "功法体系", schema: [{ name: "功法名", type: "string", required: true }], createdBy: "ai",
+    name: "通用记录",
+    identityFields: ["代号"],
+    displayFields: ["名称"],
+    searchFields: ["代号", "名称"],
+    schema: [
+      { name: "代号", type: "string", required: true, role: "identity" },
+      { name: "名称", type: "string", role: "label" },
+    ],
+    createdBy: "ai",
   });
-  genreSectionsRepo.addItem(sec.id, { 功法名: "吞天诀" });
+  genreSectionsRepo.addItem(sec.id, { 代号: "A-1", 名称: "一号" });
 
   // 章节摘要:1..6;currentChapterNo=7 时 recent=6/5/4,召回候选=1/2/3
   // 第 1 章 keyEvents 提到林尘 → 应被召回(角色重叠)
@@ -77,6 +91,98 @@ beforeEach(() => {
   };
 });
 
+describe("hard continuity constraints", () => {
+  it("promotes recent resource availability into hard constraints", () => {
+    const constraints = renderHardContinuityConstraints([
+      {
+        chapterNo: 8,
+        oneLiner: "林远追踪隐藏标记金色目标。",
+        paragraph: "林远发现自身SP仅7，无宠物球可用，D级魔物仍在整合中，王建国服从度12.8。",
+        keyEvents: [],
+      },
+    ]);
+
+    expect(constraints).toContain("Hard Continuity Constraints");
+    expect(constraints).toContain("无宠物球可用");
+    expect(constraints).toContain("SP仅7");
+  });
+});
+
+describe("hard continuity timer/resource facts", () => {
+  it("renders deadlines and resource counts as hard continuity constraints", () => {
+    const constraints = renderHardContinuityConstraints([
+      {
+        chapterNo: 8,
+        oneLiner: "阵营选择将在48小时后强制触发，普通捕捉球已经用尽。",
+        paragraph: "主角确认普通捕捉球已经用尽，只剩旧契约还能维持。",
+        keyEvents: [],
+      },
+      {
+        chapterNo: 9,
+        oneLiner: "距离阵营选择还剩约36小时，获得1枚高级捕捉球。",
+        paragraph: "系统状态栏刷新：高级捕捉球1枚，普通捕捉球0枚。",
+        keyEvents: [],
+      },
+    ]);
+
+    expect(constraints).toContain("48小时");
+    expect(constraints).toContain("36小时");
+    expect(constraints).toContain("普通捕捉球已经用尽");
+    expect(constraints).toContain("高级捕捉球");
+  });
+});
+
+describe("required output sections", () => {
+  it("extracts status bar requirements from imported preset blocks", () => {
+    const constraints = extractRequiredOutputSections([
+      { content: "每章结尾必须输出状态栏，包含HP、SP、契约、捕捉球数量。" },
+      { content: "普通叙事要求。" },
+    ]);
+
+    expect(constraints).toContainEqual(expect.objectContaining({
+      kind: "status_section",
+      requiredTerms: expect.arrayContaining(["HP", "SP", "契约", "捕捉球"]),
+    }));
+  });
+
+  it("does not promote unrelated preset terms into status requirements", () => {
+    const constraints = extractRequiredOutputSections([
+      { content: "每章结尾必须输出状态栏，包含HP、契约、捕捉球数量。" },
+      { content: "其他规则可能讨论MP、等级、技能树，但不是状态栏必填字段。" },
+    ]);
+
+    expect(constraints[0]?.requiredTerms).toEqual(["HP", "契约", "捕捉球"]);
+  });
+
+  it("detects missing required status terms in generated prose", () => {
+    const missing = detectMissingRequiredSections("状态栏：HP 10/10，SP 3/4。", [
+      {
+        kind: "status_section",
+        label: "状态栏",
+        requiredTerms: ["HP", "SP", "契约", "捕捉球"],
+        source: "preset",
+      },
+    ]);
+
+    expect(missing).toEqual(["状态栏 missing required terms: 契约, 捕捉球"]);
+  });
+});
+
+describe("buildChapterAuditContext", () => {
+  it("builds dynamic audit context with recent and recalled summaries", () => {
+    const { auditCtx, recentChapterNos, recalledChapterNos } =
+      buildChapterAuditContext(handle, 7, "continue chapter seven");
+
+    expect(recentChapterNos.sort((a, b) => a - b)).toEqual([4, 5, 6]);
+    expect(auditCtx.recentSummaries?.map((s) => s.chapterNo).sort((a, b) => a - b))
+      .toEqual([4, 5, 6]);
+    expect(recalledChapterNos).toContain(1);
+    expect(auditCtx.recalledSummaries?.map((s) => s.chapterNo)).toContain(1);
+    expect(auditCtx.premise).toBeTruthy();
+    expect(auditCtx.characters?.length).toBeGreaterThan(0);
+  });
+});
+
 afterEach(() => {
   try { db.close(); } catch {}
 });
@@ -90,8 +196,8 @@ describe("buildChapterWriteMessages(§6.1 防漂移上下文)", () => {
     // 静态块
     expect(text).toContain("废脉少年得断剑重修"); // premise
     expect(text).toContain("林尘");                // 角色
-    expect(text).toContain("功法体系");            // 题材专属板块
-    expect(text).toContain("吞天诀");              // 板块条目
+    expect(text).toContain("通用记录");            // 通用记录集合
+    expect(text).toContain("A-1");                 // 记录条目
     expect(text).toContain("黑色碎片来历");        // 活跃伏笔
 
     // 动态块:最近 3 章 = 6/5/4
@@ -147,5 +253,24 @@ describe("buildChapterWriteMessages(§6.1 防漂移上下文)", () => {
     expect(recalledChapterNos).toContain(2);     // 林尘相关 → 捞回
     expect(recalledChapterNos).not.toContain(1); // 韩渊(与续写无关)→ 不捞回
     db2.close();
+  });
+
+  it("用户指令点名通用记录实体时召回相关旧章", () => {
+    handle.chaptersRepo.saveSummary({
+      chapterNo: 0,
+      oneLiner: "A-1 的旧线索",
+      paragraph: "A-1 曾经在这里留下重要伏线。",
+      keyEvents: [{ event: "A-1 留下伏线", characters: [], foreshadowingRefs: [] }],
+      generatedAt: 1,
+      reasoningContent: null,
+    });
+
+    const { recalledChapterNos } = buildChapterWriteMessages(
+      handle,
+      7,
+      "这一章继续处理 A-1",
+    );
+
+    expect(recalledChapterNos).toContain(0);
   });
 });

@@ -78,6 +78,33 @@ describe("repairChapter", () => {
     expect(versions[0].source).toBe("ai_rewrite");
   });
 
+  it("sanitizes non-novel meta blocks before saving repair output", async () => {
+    const evs = await consume(
+      repairChapter(
+        {
+          model: makeStubLanguageModel({
+            chunks: [
+              "淇姝ｆ枃",
+              "\n<progress>\nPG.1\n</progress>\n",
+              "缁х画姝ｆ枃",
+            ],
+          }),
+          chaptersRepo,
+          chapterFiles,
+        },
+        { chapterNo: 1, ctx: baseCtx },
+      ),
+    );
+
+    expect(evs.find((e: any) => e.type === "done")).toBeDefined();
+    const md = fs.readFileSync(path.join(tmp, "chapters", "0001.md"), "utf-8");
+    expect(md).toContain("淇姝ｆ枃");
+    expect(md).toContain("缁х画姝ｆ枃");
+    expect(md).not.toContain("<progress>");
+    expect(md).not.toContain("PG.1");
+    expect(chaptersRepo.listVersions(1)[0].contentMd).not.toContain("<progress>");
+  });
+
   it("LLM 抛错:不落盘", async () => {
     const evs = await consume(
       repairChapter(
@@ -135,6 +162,19 @@ describe("repairChapter", () => {
 });
 
 describe("buildRepairUserPrompt", () => {
+  it("repair system prompt forbids non-novel meta output", async () => {
+    const { REPAIR_PROMPT } = await import(
+      "../../../../src/ai/prompts/repair-chapter.js"
+    );
+
+    expect(REPAIR_PROMPT).toContain("删除所有非小说正文的元文本");
+    expect(REPAIR_PROMPT).toContain("聊天记录");
+    expect(REPAIR_PROMPT).toContain("进度标签");
+    expect(REPAIR_PROMPT).toContain("事件卡片");
+    expect(REPAIR_PROMPT).toContain("<progress>");
+    expect(REPAIR_PROMPT).toContain("<konatan_chat>");
+  });
+
   it("拼接 issues + 上下文", async () => {
     const { buildRepairUserPrompt } = await import(
       "../../../../src/ai/prompts/repair-chapter.js"

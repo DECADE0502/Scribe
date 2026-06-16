@@ -8,6 +8,8 @@ export * from "./types/outline.js";
 export * from "./types/foreshadowing.js";
 export * from "./types/timeline.js";
 export * from "./types/genre-section.js";
+export * from "./types/worldbook.js";
+export * from "./types/sillytavern-import.js";
 export * from "./types/chapter.js";
 export * from "./types/audit.js";
 export * from "./types/conversation.js";

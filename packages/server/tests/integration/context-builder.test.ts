@@ -57,6 +57,23 @@ beforeEach(() => {
     status: "active",
     relatedCharacters: ["林尘"],
   });
+  const generic = repos.genreSectionsRepo.createSection({
+    name: "任意集合",
+    identityFields: ["代号"],
+    displayFields: ["名称"],
+    searchFields: ["代号", "名称", "摘要"],
+    schema: [
+      { name: "代号", type: "string", role: "identity", required: true },
+      { name: "名称", type: "string", role: "label" },
+      { name: "摘要", type: "text", role: "summary" },
+    ],
+    createdBy: "ai",
+  });
+  repos.genreSectionsRepo.addItem(generic.id, {
+    代号: "A-1",
+    名称: "一号",
+    摘要: "重要可检索信息",
+  });
   for (let i = 1; i <= 20; i++) {
     const chars = i % 3 === 0 ? ["林尘", "师妹"] : ["林尘"];
     const fos = i % 5 === 0 ? ["黑剑"] : [];
@@ -126,6 +143,25 @@ describe("buildWriteContext 集成", () => {
     expect(allUser).toContain("禁用破折号");
     expect(allUser).toContain("林尘");
     expect(allUser).toContain("[黑剑]");
+  });
+
+  it("static 块按通用记录声明渲染记录集合", () => {
+    const snap = loadBookSnapshot("b1", repos, paths);
+    const r = buildWriteContext({
+      snapshot: snap,
+      currentChapterNo: 21,
+      intent: { characters: [], foreshadowing: [], userMessage: "x" },
+    });
+    const allUser = r.messages
+      .slice(1)
+      .map((m) => m.content as string)
+      .join("\n");
+
+    expect(allUser).toContain("任意集合");
+    expect(allUser).toContain("identity:代号");
+    expect(allUser).toContain("display:名称");
+    expect(allUser).toContain("A-1");
+    expect(allUser).toContain("重要可检索信息");
   });
 
   it("dynamic 块含最近 3 章 + 召回 + 用户指令", () => {

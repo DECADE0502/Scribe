@@ -7,6 +7,7 @@ import {
   buildRepairUserPrompt,
   type RepairContext,
 } from "../prompts/repair-chapter.js";
+import { sanitizeChapterOutput } from "./output-sanitize.js";
 
 export interface ChaptersRepoLike {
   saveVersion(input: {
@@ -83,19 +84,20 @@ export async function* repairChapter(
     yield ev;
   }
   if (!success) return;
-  if (!buffer.trim()) return;
+  const content = sanitizeChapterOutput(buffer);
+  if (!content.trim()) return;
 
   let saved: { versionNo: number } | undefined;
   try {
     saved = deps.chaptersRepo.saveVersion({
       chapterNo: input.chapterNo,
       source: "ai_rewrite",
-      contentMd: buffer,
+      contentMd: content,
     });
     deps.chapterFiles.save({
       chapterNo: input.chapterNo,
       title: `第${input.chapterNo}章`,
-      content: buffer,
+      content,
       versionNo: saved.versionNo,
     });
   } catch (e) {

@@ -93,6 +93,32 @@ function makeSequencedAuditModel(texts: string[]): any {
   };
 }
 
+function makeCapturingAuditModel(text: string): any {
+  const prompts: string[] = [];
+  return {
+    prompts,
+    specificationVersion: "v1",
+    provider: "stub",
+    modelId: "stub-audit",
+    async doGenerate(options: { prompt?: string; messages?: Array<{ content: unknown }> }) {
+      prompts.push(
+        options.prompt ??
+        options.messages?.map((message) => String(message.content)).join("\n") ??
+        "",
+      );
+      return {
+        text,
+        finishReason: "stop",
+        usage: { promptTokens: 100, completionTokens: 200 },
+        rawCall: { rawPrompt: null, rawSettings: {} },
+      };
+    },
+    async doStream() {
+      throw new Error("not used");
+    },
+  };
+}
+
 let tmp: string;
 let db: any;
 let chaptersRepo: any;
@@ -226,6 +252,81 @@ describe("writeWithAudit", () => {
     ).toBeUndefined();
     expect(chaptersRepo.listVersions(1)).toHaveLength(1);
     expect(chaptersRepo.getAudit(1)?.verdict).toBe("critical");
+  });
+
+  it("persists audit warnings into reader issues when repo is provided", async () => {
+    const created: unknown[] = [];
+    const warningAudit = {
+      ...okAudit,
+      verdict: "warning",
+      issues: [
+        {
+          dimension: "setting_consistency",
+          severity: "warning",
+          score: 5,
+          note: "status panel rule drifted",
+          excerpt: "status panel",
+        },
+        ...okAudit.issues.slice(1),
+      ],
+    };
+
+    await consume(
+      writeWithAudit(
+        {
+          model: makeStubLanguageModel({ chunks: ["chapter text"] }),
+          chaptersRepo,
+          chapterFiles,
+          auditModel: makeAuditModel(JSON.stringify(warningAudit)),
+          auditModelId: "deepseek-v4-flash",
+          readerIssuesRepo: {
+            create(input: unknown) {
+              created.push(input);
+              return { id: "issue-1" };
+            },
+          },
+        },
+        { chapterNo: 1, userIntent: "test", enableRepair: false },
+      ),
+    );
+
+    expect(created).toHaveLength(1);
+    expect(created[0]).toMatchObject({
+      chapterNo: 1,
+      type: "setting_consistency",
+      severity: "warning",
+      note: "status panel rule drifted",
+      status: "open",
+    });
+  });
+
+  it("audits sanitized chapter text after removing non-novel meta blocks", async () => {
+    const auditModel = makeCapturingAuditModel(JSON.stringify(okAudit));
+
+    await consume(
+      writeWithAudit(
+        {
+          model: makeStubLanguageModel({
+            chunks: [
+              "姝ｆ枃绗竴娈点€?",
+              "\n<progress>\nPG.1\n</progress>\n",
+              "姝ｆ枃绗簩娈点€?",
+            ],
+          }),
+          chaptersRepo,
+          chapterFiles,
+          auditModel,
+          auditModelId: "deepseek-v4-flash",
+        },
+        { chapterNo: 1, userIntent: "娴嬭瘯" },
+      ),
+    );
+
+    expect(auditModel.prompts[0]).not.toContain("<progress>");
+    expect(auditModel.prompts[0]).not.toContain("PG.1");
+    const md = fs.readFileSync(path.join(tmp, "chapters", "0001.md"), "utf-8");
+    expect(md).not.toContain("<progress>");
+    expect(md).not.toContain("PG.1");
   });
 
   it("写章节失败时不进 audit,不落盘", async () => {

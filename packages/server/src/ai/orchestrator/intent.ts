@@ -6,7 +6,7 @@ import { generateText, type LanguageModel } from "ai";
  * - writing_intent  想推进剧情 / 写下一章 → 触发写章
  * - revise_intent   想改某段(无选区)    → 提示去编辑器选段,或按描述改当前章
  * - query           询问设定 / 前情       → 带书设定+召回的问答
- * - genre_section_op 想加/改题材资料      → 带题材工具的对话(AI 落地到右栏)
+ * - genre_section_op 想加/改通用记录资料  → 带记录工具的对话(AI 落地到右栏)
  * - other           兜底                  → 普通对话
  * command_explicit 由 parseSlashCommand 在分类前判定,不走本分类器。
  */
@@ -32,7 +32,7 @@ const CLASSIFY_PROMPT = `你是意图分类器。判断用户这句话属于下�
 - writing_intent:想继续写、推进剧情、写下一章、"接着写"、描述接下来发生什么
 - revise_intent:想修改/重写已有的某段或某章内容
 - query:在询问故事设定、人物、前情、之前写了什么
-- genre_section_op:想新增或修改题材资料(功法/道具/势力/地点等设定条目)
+- genre_section_op:想新增或修改需要长期保持一致的记录资料、设定条目、世界规则、关系或线索
 - chitchat:闲聊、情绪表达、与创作无关或泛泛而谈
 - other:无法归类
 

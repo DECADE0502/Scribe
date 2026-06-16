@@ -1,6 +1,21 @@
-import { streamText, type LanguageModel, type CoreMessage, type Tool } from "ai";
+import {
+  streamText,
+  type LanguageModel,
+  type CoreMessage,
+  type Tool,
+} from "ai";
 import type { SseEvent } from "@scribe/shared";
 import { readDeepSeekUsage } from "./providers/deepseek-metadata.js";
+
+type JsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
+type ProviderOptions = Record<string, Record<string, JsonValue>>;
 
 export interface LlmCallInput {
   model: LanguageModel;
@@ -12,6 +27,7 @@ export interface LlmCallInput {
    * 需要让 streamText 多步执行。本字段控制最多续写多少轮,默认 5。
    */
   maxSteps?: number;
+  providerOptions?: ProviderOptions;
 }
 
 /**
@@ -53,6 +69,7 @@ export async function* streamLlm(input: LlmCallInput): AsyncIterable<SseEvent> {
       tools: withToolErrorRecovery(input.tools),
       maxSteps: input.maxSteps ?? 5,
       abortSignal: input.abortSignal,
+      providerOptions: input.providerOptions,
     });
     for await (const rawPart of result.fullStream) {
       const part = rawPart as { type: string; [k: string]: unknown };

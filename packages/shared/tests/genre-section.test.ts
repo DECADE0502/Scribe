@@ -95,7 +95,14 @@ describe("GenreSectionSchema", () => {
   });
 });
 
-import { resolveLabelFieldName, resolveItemLabel } from "../src/types/genre-section.js";
+import {
+  resolveDisplayFieldNames,
+  resolveIdentityFieldNames,
+  resolveItemIdentityKey,
+  resolveItemLabel,
+  resolveItemSearchText,
+  resolveLabelFieldName,
+} from "../src/types/genre-section.js";
 
 describe("resolveLabelFieldName / resolveItemLabel(显示名声明,不猜字段名)", () => {
   it("优先用显式声明的 isLabel 字段", () => {
@@ -132,5 +139,66 @@ describe("resolveLabelFieldName / resolveItemLabel(显示名声明,不猜字段�
       { name: "武备", type: "string" as const },
     ];
     expect(resolveItemLabel(schema, { 星舰型号: "曲率-7", 武备: "离子炮" })).toBe("曲率-7");
+  });
+});
+
+describe("generic record declarations(通用记录声明)", () => {
+  it("接受显式 identity/display/search 声明和字段语义角色", () => {
+    expect(() =>
+      GenreSectionSchema.parse({
+        id: "s1",
+        name: "任何记录集合",
+        createdBy: "ai",
+        createdAt: 1,
+        identityFields: ["唯一名"],
+        displayFields: ["唯一名"],
+        searchFields: ["唯一名", "摘要"],
+        schema: [
+          { name: "唯一名", type: "string", required: true, role: "identity" },
+          { name: "摘要", type: "text", role: "summary" },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
+  it("从声明解析 identity/display/search,不靠字段位置猜测", () => {
+    const section = {
+      id: "s1",
+      name: "自定义集合",
+      createdBy: "ai" as const,
+      createdAt: 1,
+      identityFields: ["代号"],
+      displayFields: ["展示"],
+      searchFields: ["代号", "展示", "说明"],
+      schema: [
+        { name: "代号", type: "string" as const, required: true, role: "identity" as const },
+        { name: "展示", type: "string" as const, role: "label" as const },
+        { name: "说明", type: "text" as const, role: "summary" as const },
+      ],
+    };
+    const data = { 代号: "A-7", 展示: "七号", 说明: "可检索文本" };
+
+    expect(resolveIdentityFieldNames(section)).toEqual(["代号"]);
+    expect(resolveDisplayFieldNames(section)).toEqual(["展示"]);
+    expect(resolveItemIdentityKey(section, data)).toBe("代号=A-7");
+    expect(resolveItemLabel(section, data)).toBe("七号");
+    expect(resolveItemSearchText(section, data)).toContain("可检索文本");
+  });
+
+  it("旧 isLabel 只作为兼容 identity/display fallback", () => {
+    const section = {
+      id: "legacy",
+      name: "旧集合",
+      createdBy: "ai" as const,
+      createdAt: 1,
+      schema: [
+        { name: "旧名", type: "string" as const, isLabel: true },
+        { name: "正文", type: "text" as const },
+      ],
+    };
+
+    expect(resolveIdentityFieldNames(section)).toEqual(["旧名"]);
+    expect(resolveDisplayFieldNames(section)).toEqual(["旧名"]);
+    expect(resolveItemIdentityKey(section, { 旧名: "L-1" })).toBe("旧名=L-1");
   });
 });

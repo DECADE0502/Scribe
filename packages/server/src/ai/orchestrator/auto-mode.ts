@@ -23,10 +23,11 @@ export interface AutoModeDeps extends Omit<WriteWithAuditDeps, "model" | "auditM
   /** 可选:章末状态记录 pass(spec §6.3),audit 通过后调用 */
   recordState?: (chapterNo: number) => AsyncIterable<SseEvent>;
   /**
-   * 可选:为每章组装 spec §6.1 完整防漂移上下文(召回+最近摘要+题材板块+伏笔)。
+   * 可选:为每章组装 spec §6.1 完整防漂移上下文(召回+最近摘要+通用记录集合+伏笔)。
    * 提供时优先于静态 writeCtx,因为召回结果逐章变化,必须按当前章号重算。
    */
   buildWriteMessages?: (chapterNo: number) => CoreMessage[];
+  buildAuditCtx?: (chapterNo: number) => WriteWithAuditInput["auditCtx"];
   /** 用户最深处提示词,原文拼到最前端(写作与审查) */
   deepestPrompt?: string;
 }
@@ -115,7 +116,7 @@ export async function* runAutoMode(
           userIntent: "",
           ctx: input.writeCtx,
           prebuiltMessages: deps.buildWriteMessages?.(next),
-          auditCtx: input.auditCtx,
+          auditCtx: deps.buildAuditCtx?.(next) ?? input.auditCtx,
           enableRepair: true,
           abortSignal: deps.abortSignal,
           deepestPrompt: deps.deepestPrompt,
@@ -134,6 +135,8 @@ export async function* runAutoMode(
       if (saved) {
         // 写已成功落盘,错误发生在审查/修复阶段:正文有了就继续(verdict 缺省按通过)
         for (const ev of buffered) yield ev;
+        yield errEvent;
+        chapterFailed = true;
         break;
       }
       // 写阶段断流、未落盘:可重试的瞬时错误则丢弃缓冲重来
@@ -165,7 +168,7 @@ export async function* runAutoMode(
       return;
     }
 
-    // 章末状态记录(角色状态/出场/伏笔/时间线/题材板块条目)
+    // 章末状态记录(角色状态/出场/伏笔/时间线/通用记录条目)
     if (deps.recordState) {
       yield { type: "tool_call_start", toolName: "record_chapter_state", args: { chapterNo: next } };
       let recordOk = true;
@@ -184,6 +187,12 @@ export async function* runAutoMode(
       }
       if (recordOk) {
         yield { type: "tool_call_end", toolName: "record_chapter_state", result: { success: true } };
+      } else {
+        yield {
+          type: "auto_status", state: "error", remaining,
+          doneChapters: [...doneChapters], currentChapter: next,
+        };
+        return;
       }
     }
 

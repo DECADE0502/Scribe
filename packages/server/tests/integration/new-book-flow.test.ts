@@ -14,6 +14,7 @@ import { createChaptersRepo } from "../../src/db/repositories/chapters.js";
 import { runNewBookConversation } from "../../src/ai/orchestrator/new-book.js";
 import { loadBookSnapshot } from "../../src/ai/context-builder/snapshot.js";
 import { isOnboardComplete } from "../../src/ai/orchestrator/onboard-completeness.js";
+import { NEW_BOOK_ONBOARD_PROMPT } from "../../src/ai/prompts/new-book-onboard.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -101,8 +102,21 @@ async function consume<T>(iter: AsyncIterable<T>): Promise<T[]> {
 }
 
 describe("新建书完整流程集成测试", () => {
+  it("onboard prompt 要求 AI 自主建模通用记录,不依赖题材清单", () => {
+    expect(NEW_BOOK_ONBOARD_PROMPT).toContain("长期保持一致");
+    expect(NEW_BOOK_ONBOARD_PROMPT).toContain("create_record_collection");
+    expect(NEW_BOOK_ONBOARD_PROMPT).toContain("update_record_collection_schema");
+    expect(NEW_BOOK_ONBOARD_PROMPT).toContain("upsert_record_item");
+    expect(NEW_BOOK_ONBOARD_PROMPT).toContain("identityFields");
+    expect(NEW_BOOK_ONBOARD_PROMPT).toContain("displayFields");
+    expect(NEW_BOOK_ONBOARD_PROMPT).toContain("searchFields");
+    expect(NEW_BOOK_ONBOARD_PROMPT).not.toContain("create_genre_section");
+    expect(NEW_BOOK_ONBOARD_PROMPT).not.toContain("修仙/玄幻 →");
+    expect(NEW_BOOK_ONBOARD_PROMPT).not.toContain("都市/异能 →");
+  });
+
   it("三轮对话后基础设定齐全,isOnboardComplete=true", async () => {
-    // 轮 1:set_book_meta(genre, premise) + create_genre_section x 3 → 文本
+    // 轮 1:set_book_meta(genre, premise) + create_record_collection x 3 → 文本
     const turn1Model = makeMultiTurnStub((t) => {
       if (t === 0)
         return [
@@ -128,10 +142,13 @@ describe("新建书完整流程集成测试", () => {
             type: "tool-call",
             toolCallType: "function",
             toolCallId: "t1b",
-            toolName: "create_genre_section",
+            toolName: "create_record_collection",
             args: JSON.stringify({
-              name: "功法体系",
-              schema: [{ name: "name", type: "string", required: true }],
+              name: "长期对象A",
+              identityFields: ["name"],
+              displayFields: ["name"],
+              searchFields: ["name"],
+              schema: [{ name: "name", type: "string", required: true, role: "identity" }],
             }),
           },
           {
@@ -146,10 +163,13 @@ describe("新建书完整流程集成测试", () => {
             type: "tool-call",
             toolCallType: "function",
             toolCallId: "t1c",
-            toolName: "create_genre_section",
+            toolName: "create_record_collection",
             args: JSON.stringify({
-              name: "境界",
-              schema: [{ name: "name", type: "string", required: true }],
+              name: "长期对象B",
+              identityFields: ["name"],
+              displayFields: ["name"],
+              searchFields: ["name"],
+              schema: [{ name: "name", type: "string", required: true, role: "identity" }],
             }),
           },
           {
@@ -164,10 +184,13 @@ describe("新建书完整流程集成测试", () => {
             type: "tool-call",
             toolCallType: "function",
             toolCallId: "t1d",
-            toolName: "create_genre_section",
+            toolName: "create_record_collection",
             args: JSON.stringify({
-              name: "法器丹药",
-              schema: [{ name: "name", type: "string", required: true }],
+              name: "长期对象C",
+              identityFields: ["name"],
+              displayFields: ["name"],
+              searchFields: ["name"],
+              schema: [{ name: "name", type: "string", required: true, role: "identity" }],
             }),
           },
           {

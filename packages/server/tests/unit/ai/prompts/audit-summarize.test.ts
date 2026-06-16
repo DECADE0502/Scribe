@@ -38,6 +38,12 @@ describe("AUDIT_SUMMARIZE_PROMPT", () => {
     expect(AUDIT_SUMMARIZE_PROMPT).toContain("setting_consistency");
     expect(AUDIT_SUMMARIZE_PROMPT).toContain("aesthetic_quality");
   });
+
+  it("requires reader-continuity checks for POV and narrative perspective drift", () => {
+    expect(AUDIT_SUMMARIZE_PROMPT).toContain("reader continuity");
+    expect(AUDIT_SUMMARIZE_PROMPT).toContain("POV drift");
+    expect(AUDIT_SUMMARIZE_PROMPT).toContain("narrative perspective");
+  });
 });
 
 describe("parseAuditOutput", () => {

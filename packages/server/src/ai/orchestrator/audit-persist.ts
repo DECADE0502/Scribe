@@ -1,4 +1,5 @@
 import type { AuditResult } from "./audit-chapter.js";
+import type { ReaderIssueType } from "@scribe/shared";
 
 /**
  * Audit/Summary 落盘所需的 chapters repo 子集。
@@ -34,6 +35,37 @@ export interface ChaptersRepoAuditLike {
   }): void;
 }
 
+export interface ReaderIssuesRepoAuditLike {
+  create(input: {
+    chapterNo: number;
+    type: ReaderIssueType;
+    severity: "warning" | "critical";
+    note: string;
+    evidence?: string | null;
+    suggestedAction?: string | null;
+    status: "open";
+  }): unknown;
+}
+
+function readerIssueTypeForDimension(dimension: string): ReaderIssueType {
+  switch (dimension) {
+    case "setting_consistency":
+      return "setting_consistency";
+    case "character_behavior":
+      return "character_behavior";
+    case "foreshadowing":
+      return "foreshadowing";
+    case "pacing":
+    case "hook_strength":
+      return "pacing";
+    case "narrative_coherence":
+      return "narrative_perspective";
+    case "aesthetic_quality":
+    default:
+      return "style_drift";
+  }
+}
+
 /**
  * 把 audit_chapter 编排器输出的 ChapterAuditOutput 拆成 ChapterAudit + ChapterSummary
  * 两组持久化数据,分别落盘。
@@ -48,6 +80,7 @@ export function persistAuditResult(
   chapterNo: number,
   result: AuditResult,
   auditModel: string,
+  readerIssuesRepo?: ReaderIssuesRepoAuditLike,
 ): void {
   const now = Date.now();
   // 1. 保存 audit(把 LLM output 的 issues 转成 ChapterAudit 的 AuditIssue)
@@ -73,4 +106,19 @@ export function persistAuditResult(
     generatedAt: now,
     reasoningContent: result.reasoningText ?? null,
   });
+
+  if (readerIssuesRepo) {
+    for (const issue of result.output.issues) {
+      if (issue.severity === "ok") continue;
+      readerIssuesRepo.create({
+        chapterNo,
+        type: readerIssueTypeForDimension(issue.dimension),
+        severity: issue.severity,
+        note: issue.note,
+        evidence: issue.excerpt ?? null,
+        suggestedAction: "Address this before or during the next chapter.",
+        status: "open",
+      });
+    }
+  }
 }

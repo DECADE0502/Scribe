@@ -79,6 +79,18 @@ describe("POST /api/books", () => {
     expect(fs.existsSync(path.posix.join(tmp, "books", id, "workspace.db"))).toBe(true);
     expect(fs.existsSync(path.posix.join(tmp, "books", id, "chapters"))).toBe(true);
   });
+
+  it("initializes book_meta used by AI writing context when creating a book", async () => {
+    const res = await app.request("/api/books", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "潮汐回路", genre: "近未来科幻悬疑" }),
+    });
+    const { id } = await json<BookCreated>(res);
+    const handle = registry.open(id);
+    expect(handle.bookMetaRepo.get("title")).toBe("潮汐回路");
+    expect(handle.bookMetaRepo.get("genre")).toBe("近未来科幻悬疑");
+  });
 });
 
 describe("GET /api/books", () => {

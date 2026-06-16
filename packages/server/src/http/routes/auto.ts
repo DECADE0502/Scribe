@@ -8,8 +8,11 @@ import { computeUsageCost } from "../../ai/usage-tracker.js";
 import { resolveDeepestPrompt } from "../../ai/prompts/deepest-prompt.js";
 import {
   buildBookPromptContext,
+  buildChapterAuditContext,
   buildChapterWriteMessages,
 } from "../../ai/context-builder/book-context.js";
+import { loadBookSnapshot } from "../../ai/context-builder/snapshot.js";
+import { isOnboardComplete } from "../../ai/orchestrator/onboard-completeness.js";
 import {
   recordChapterState,
   buildArchiveSummary,
@@ -50,6 +53,36 @@ export function autoRoutes(deps: AutoRoutesDeps) {
     }
 
     const handle = deps.registry.open(bookId);
+    const snapshot = loadBookSnapshot(
+      bookId,
+      {
+        charactersRepo: handle.charactersRepo,
+        outlineRepo: handle.outlineRepo,
+        foreshadowingRepo: handle.foreshadowingRepo,
+        chaptersRepo: handle.chaptersRepo,
+        genreSectionsRepo: handle.genreSectionsRepo,
+        worldbookRepo: handle.worldbookRepo,
+        promptPresetsRepo: handle.promptPresetsRepo,
+        readerIssuesRepo: handle.readerIssuesRepo,
+        bookMetaRepo: handle.bookMetaRepo,
+      },
+      { rulesMd: handle.rulesMdPath },
+    );
+    const completeness = isOnboardComplete(snapshot);
+    const hasSubstantialWorldbook = snapshot.worldbookEntries.some((entry) => {
+      const isSeed = entry.metadata?.seed === true;
+      return entry.enabled && entry.constant && !isSeed && entry.content.trim().length >= 80;
+    });
+    if (!completeness.ok && !hasSubstantialWorldbook) {
+      return c.json(
+        {
+          error: "建书信息不足，自动写作已阻止",
+          errorClass: "onboarding_incomplete",
+          missing: completeness.missing,
+        },
+        409,
+      );
+    }
     const controller = new AbortController();
     running.set(bookId, controller);
     // 客户端断连也触发取消
@@ -130,6 +163,7 @@ export function autoRoutes(deps: AutoRoutesDeps) {
             auditModelId: auditModelInfo.id,
             chaptersRepo: handle.chaptersRepo,
             chapterFiles: handle.chapterFiles,
+            readerIssuesRepo: handle.readerIssuesRepo,
             maxChapterNo: () => handle.chaptersRepo.maxChapterNo(),
             getVerdict: (no) => handle.chaptersRepo.getAudit(no)?.verdict,
             budgetLimitUsd: deps.budgetLimitUsd ?? 5,
@@ -137,9 +171,11 @@ export function autoRoutes(deps: AutoRoutesDeps) {
             auditModelInfo,
             abortSignal: controller.signal,
             recordState: makeRecordState,
-            // spec §6.1:逐章组装召回+最近摘要+题材板块+伏笔的完整防漂移上下文
+            // spec §6.1:逐章组装召回+最近摘要+通用记录集合+伏笔的完整防漂移上下文
             buildWriteMessages: (chapterNo) =>
               buildChapterWriteMessages(handle, chapterNo, "").messages,
+            buildAuditCtx: (chapterNo) =>
+              buildChapterAuditContext(handle, chapterNo, "").auditCtx,
             deepestPrompt,
           },
           { n, writeCtx: promptCtx.writeCtx, auditCtx: promptCtx.auditCtx },

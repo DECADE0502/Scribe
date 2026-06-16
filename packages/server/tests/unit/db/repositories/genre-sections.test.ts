@@ -48,6 +48,26 @@ describe("genre-sections repo", () => {
     expect(repo.getSection(s.id)?.schema).toHaveLength(2);
   });
 
+  it("updateSectionSchema 保留 identity/display/search 声明", () => {
+    const s = repo.createSection({
+      name: "任意集合",
+      schema: [{ name: "代号", type: "string", role: "identity", required: true }],
+      identityFields: ["代号"],
+      displayFields: ["代号"],
+      searchFields: ["代号"],
+      createdBy: "ai",
+    });
+
+    const updated = repo.updateSectionSchema(s.id, [
+      { name: "代号", type: "string", role: "identity", required: true },
+      { name: "摘要", type: "text", role: "summary" },
+    ]);
+
+    expect(updated.identityFields).toEqual(["代号"]);
+    expect(updated.displayFields).toEqual(["代号"]);
+    expect(updated.searchFields).toEqual(["代号"]);
+  });
+
   it("addItem + getItem + listItems", () => {
     const s = repo.createSection({ name: "X", schema: minimalSchema, createdBy: "ai" });
     const i1 = repo.addItem(s.id, { foo: "bar" });
@@ -55,6 +75,23 @@ describe("genre-sections repo", () => {
     expect(repo.getItem(i1.id)?.data).toEqual({ foo: "bar" });
     expect(repo.listItems(s.id)).toHaveLength(2);
     expect(i2.sectionId).toBe(s.id);
+  });
+
+  it("findItemByIdentity 按声明 identityFields 查找条目", () => {
+    const s = repo.createSection({
+      name: "任意集合",
+      schema: [
+        { name: "代号", type: "string", role: "identity", required: true },
+        { name: "名称", type: "string", role: "label" },
+      ],
+      identityFields: ["代号"],
+      displayFields: ["名称"],
+      createdBy: "ai",
+    });
+    const item = repo.addItem(s.id, { 代号: "A-1", 名称: "一号" });
+
+    expect(repo.findItemByIdentity(s, { 代号: "A-1" })?.id).toBe(item.id);
+    expect(repo.findItemByIdentity(s, { 代号: "A-2" })).toBeUndefined();
   });
 
   it("updateItem 修改 data 并刷新 updatedAt", async () => {

@@ -122,6 +122,40 @@ describe("GenreSectionPanel", () => {
     expect(screen.getByTestId("genre-item-i1")).toHaveTextContent("上品");
   });
 
+  it("按通用 displayFields 渲染条目标题,不靠第一个字段", async () => {
+    const genericPayload = {
+      sections: [{
+        section: {
+          id: "s1",
+          name: "任意集合",
+          identityFields: ["代号"],
+          displayFields: ["展示"],
+          searchFields: ["代号", "展示", "说明"],
+          schema: [
+            { name: "代号", type: "string", required: true, role: "identity" },
+            { name: "展示", type: "string" },
+            { name: "说明", type: "text", role: "summary" },
+          ],
+        },
+        items: [
+          { id: "i1", sectionId: "s1", data: { 代号: "A-1", 展示: "一号", 说明: "说明文本" } },
+        ],
+      }],
+    };
+    fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).includes("/genre-sections")) return jsonResponse(genericPayload);
+      if (String(url).includes("/characters")) return jsonResponse({ characters: [] });
+      return jsonResponse({}, 404);
+    });
+
+    render(<GenreSectionPanel bookId="b1" sectionId="s1" />);
+
+    await waitFor(() => expect(screen.getByText("一号")).toBeInTheDocument());
+    const item = screen.getByTestId("genre-item-i1");
+    expect(item.querySelector("strong")?.textContent).toBe("一号");
+    expect(item).toHaveTextContent("说明文本");
+  });
+
   it("点添加显示动态表单,提交发 POST", async () => {
     mockInitialLoad();
     render(<GenreSectionPanel bookId="b1" sectionId="s1" />);

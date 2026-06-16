@@ -50,6 +50,19 @@ function findCharacter(deps: StateToolsDeps, name: string) {
   return c;
 }
 
+const stateRecordSchema = z.union([z.record(z.unknown()), z.string()]);
+
+function parseStateRecord(value: z.infer<typeof stateRecordSchema>): Record<string, unknown> {
+  if (typeof value !== "string") return value;
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {}
+  throw new Error("state 必须是对象,或可解析为对象的 JSON 字符串");
+}
+
 /** 章末状态记录工具集(spec §6.3):角色状态 / 出场 / 伏笔 / 时间线 */
 export function makeStateTools(deps: StateToolsDeps): Record<string, Tool> {
   return {
@@ -75,14 +88,15 @@ export function makeStateTools(deps: StateToolsDeps): Record<string, Tool> {
     }),
 
     update_character_state: tool({
-      description: "更新角色的当前状态(位置/伤势/心境/修为/持有物等),merge 到现有状态。本章中角色发生重要变化时调用。",
+      description: "更新角色的当前状态(位置/伤势/心境/能力/持有物/关系等),merge 到现有状态。本章中角色发生重要变化时调用。",
       parameters: z.object({
         name: z.string().describe("角色名"),
-        state: z.record(z.unknown()).describe("状态字段,如 {位置:'云岚宗外',修为:'练气一层',持有:'黑色剑灵碎片'}"),
+        state: stateRecordSchema.describe("状态字段,如 {位置:'某地',能力:'已知能力',持有:'关键物品'}。若模型误传 JSON 字符串,本地会解析。"),
       }),
       execute: async ({ name, state }) => {
         const c = findCharacter(deps, name);
-        const merged = { ...c.currentState, ...state };
+        const parsedState = parseStateRecord(state);
+        const merged = { ...c.currentState, ...parsedState };
         deps.charactersRepo.update(c.id, { currentState: merged });
         return { updated: name, state: merged };
       },

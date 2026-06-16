@@ -1,10 +1,16 @@
 import * as fs from "node:fs";
 import type { CoreMessage } from "ai";
+import type { ChapterSummary } from "@scribe/shared";
+import {
+  resolveItemIdentityKey,
+  resolveItemLabel,
+  resolveItemSearchText,
+} from "@scribe/shared";
 import type { BookHandle } from "../../http/book-registry.js";
 import type { WriteChapterContext } from "../prompts/write-chapter.js";
 import type { AuditContext } from "../orchestrator/audit-chapter.js";
 import { loadBookSnapshot } from "./snapshot.js";
-import { buildWriteContext } from "./builder.js";
+import { buildWriteContext, type BuildResult } from "./builder.js";
 
 export interface BookPromptContext {
   writeCtx: Partial<WriteChapterContext>;
@@ -74,6 +80,175 @@ export interface ChapterWriteContext {
   messages: CoreMessage[];
   recalledChapterNos: number[];
   recentChapterNos: number[];
+  diagnostics?: BuildResult["diagnostics"];
+}
+
+export interface ChapterAuditPromptContext {
+  auditCtx: Partial<Omit<AuditContext, "chapterNo" | "chapterContent">>;
+  recalledChapterNos: number[];
+  recentChapterNos: number[];
+}
+
+export interface RequiredOutputSection {
+  kind: "status_section";
+  label: string;
+  requiredTerms: string[];
+  source: "preset" | "worldbook" | "scribe";
+}
+
+export function extractRequiredOutputSections(
+  blocks: Array<{ content: string }>,
+): RequiredOutputSection[] {
+  const joined = blocks
+    .map((block) => block.content)
+    .join("\n");
+  if (!/(状态栏|狀態欄|status\s*bar|面板)/i.test(joined)) return [];
+  const statusLines = joined
+    .split(/\r?\n|[。！？]/)
+    .map((line) => line.trim())
+    .filter((line) => /(状态栏|狀態欄|status\s*bar|面板)/i.test(line))
+    .filter((line) => /(必须|必須|必填|包含|包括|输出|輸出|格式|字段|欄位|include|required)/i.test(line))
+    .filter((line) => !/(不是|无需|無需|不必|不要|非必填|not required)/i.test(line));
+  const sourceText = statusLines.join("\n") || joined;
+  const requiredTerms = ["HP", "SP", "MP", "契约", "捕捉球", "等级", "时间", "倒计时"]
+    .filter((term) => sourceText.includes(term) || new RegExp(term, "i").test(sourceText));
+  return [{
+    kind: "status_section",
+    label: "状态栏",
+    requiredTerms: requiredTerms.length ? requiredTerms : ["状态栏"],
+    source: "preset",
+  }];
+}
+
+export function renderRequiredOutputSections(sections: RequiredOutputSection[]): string {
+  if (!sections.length) return "";
+  return [
+    "## Required Output Sections",
+    ...sections.map((section) =>
+      `- ${section.label} is required by imported ${section.source}. It must appear as diegetic novel text and include: ${section.requiredTerms.join(", ")}.`,
+    ),
+  ].join("\n");
+}
+
+export function detectMissingRequiredSections(
+  text: string,
+  sections: RequiredOutputSection[],
+): string[] {
+  return sections
+    .filter((section) => section.kind === "status_section")
+    .map((section) => ({
+      section,
+      missingTerms: section.requiredTerms.filter((term) => !text.includes(term)),
+    }))
+    .filter(({ missingTerms }) => missingTerms.length > 0)
+    .map(({ section, missingTerms }) =>
+      `${section.label} missing required terms: ${missingTerms.join(", ")}`,
+    );
+}
+
+const HARD_CONTINUITY_PATTERNS = [
+  /无[^。！？\n]{0,24}(?:可用|剩余|持有|库存|宠物球|普通球)/,
+  /(?:宠物球|普通球|契约|状态栏|HP|SP|服从度|好感度|成功率|剩余|库存|持有|代价|冷却|整合)[^。！？\n]{0,48}/,
+  /[^。！？\n]{0,24}(?:仅|只剩|剩余|没有|不能|无法)[^。！？\n]{0,48}/,
+];
+
+function splitSentences(text: string): string[] {
+  return text
+    .split(/(?<=[。！？!?])|\n+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+const HARD_STATE_TERMS = [
+  "\u5ba0\u7269\u7403",
+  "\u666e\u901a\u7403",
+  "\u9ad8\u7ea7\u7403",
+  "\u6355\u6349\u7403",
+  "\u5951\u7ea6",
+  "\u72b6\u6001\u680f",
+  "\u9635\u8425",
+  "\u5f3a\u5236\u89e6\u53d1",
+  "\u5012\u8ba1\u65f6",
+  "\u5c0f\u65f6",
+  "\u5929\u540e",
+  "\u65f6\u95f4",
+  "HP",
+  "SP",
+  "MP",
+  "\u670d\u4ece\u5ea6",
+  "\u597d\u611f\u5ea6",
+  "\u6210\u529f\u7387",
+  "\u5269\u4f59",
+  "\u8fd8\u5269",
+  "\u8ddd\u79bb",
+  "\u5e93\u5b58",
+  "\u6301\u6709",
+  "\u4ee3\u4ef7",
+  "\u51b7\u5374",
+  "\u6574\u5408",
+  "\u83b7\u5f97",
+  "\u7528\u5c3d",
+];
+
+const HARD_NEGATION_TERMS = [
+  "\u65e0",
+  "\u6ca1\u6709",
+  "\u4e0d\u80fd",
+  "\u65e0\u6cd5",
+  "\u4ec5",
+  "\u53ea\u5269",
+];
+
+function isHardContinuitySentence(sentence: string): boolean {
+  const hasStateTerm = HARD_STATE_TERMS.some((term) => sentence.includes(term));
+  if (!hasStateTerm) return false;
+  return (
+    /[0-9]/.test(sentence) ||
+    HARD_NEGATION_TERMS.some((term) => sentence.includes(term)) ||
+    sentence.includes("\u53ef\u7528") ||
+    sentence.includes("\u5269\u4f59") ||
+    sentence.includes("\u8fd8\u5269") ||
+    sentence.includes("\u83b7\u5f97") ||
+    sentence.includes("\u7528\u5c3d")
+  );
+}
+
+export function renderHardContinuityConstraints(
+  summaries: Pick<ChapterSummary, "chapterNo" | "oneLiner" | "paragraph" | "keyEvents">[],
+): string {
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  for (const summary of summaries) {
+    const candidates = [
+      summary.oneLiner,
+      ...splitSentences(summary.paragraph),
+      ...summary.keyEvents.flatMap((event) => splitSentences(event.event)),
+    ];
+    for (const sentence of candidates) {
+      if (!isHardContinuitySentence(sentence)) continue;
+      const normalized = sentence.replace(/\s+/g, " ").trim();
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      lines.push(`- Chapter ${summary.chapterNo}: ${normalized}`);
+      if (lines.length >= 12) break;
+    }
+    if (lines.length >= 12) break;
+  }
+  if (!lines.length) return "";
+  return [
+    "## Hard Continuity Constraints",
+    "Treat these as current hard facts. Do not contradict resource counts, timers, deadlines, availability, status values, contracts, inventory, or cooldowns unless the chapter explicitly shows the cause of the change.",
+    ...lines,
+  ].join("\n");
+}
+
+function extractMessageBlock(messages: CoreMessage[], heading: string): string | undefined {
+  const text = messages.map((message) => String(message.content)).join("\n");
+  const start = text.indexOf(heading);
+  if (start < 0) return undefined;
+  const rest = text.slice(start + heading.length).trimStart();
+  const nextHeading = rest.search(/\n## /);
+  return (nextHeading >= 0 ? rest.slice(0, nextHeading) : rest).trim() || undefined;
 }
 
 /**
@@ -88,11 +263,23 @@ export interface ChapterWriteContext {
 function deriveRecallIntent(
   snapshot: ReturnType<typeof loadBookSnapshot>,
   userIntent: string,
-): { characters: string[]; foreshadowing: string[] } {
+): { characters: string[]; foreshadowing: string[]; records: string[] } {
   const chars = new Set<string>();
   const fore = new Set<string>();
+  const records = new Set<string>();
 
   const latest = snapshot.recentSummaries[0]; // recentSummaries 按 chapterNo desc
+  const latestText = latest
+    ? [
+        latest.oneLiner,
+        latest.paragraph,
+        ...latest.keyEvents.flatMap((ev) => [
+          ev.event,
+          ...ev.characters,
+          ...ev.foreshadowingRefs,
+        ]),
+      ].join("\n")
+    : "";
   if (latest) {
     for (const ev of latest.keyEvents) {
       for (const c of ev.characters) chars.add(c);
@@ -106,15 +293,34 @@ function deriveRecallIntent(
   for (const f of snapshot.activeForeshadowing) {
     if (f.label && userIntent.includes(f.label)) fore.add(f.label);
   }
+  for (const { section, items } of snapshot.genreSections) {
+    for (const item of items) {
+      const terms = [
+        resolveItemLabel(section, item.data, ""),
+        resolveItemIdentityKey(section, item.data) ?? "",
+        ...resolveItemSearchText(section, item.data).split(/\s+/),
+      ].filter((term) => term && term.trim());
+      for (const term of terms) {
+        if (userIntent.includes(term) || latestText.includes(term)) {
+          records.add(term);
+        }
+      }
+    }
+  }
 
-  if (chars.size === 0 && fore.size === 0) {
+  if (chars.size === 0 && fore.size === 0 && records.size === 0) {
     // 无续写线索(如开篇):退回全部,召回本就基本无历史
     return {
       characters: snapshot.characters.map(c => c.name),
       foreshadowing: snapshot.activeForeshadowing.map(f => f.label),
+      records: snapshot.genreSections.flatMap(({ section, items }) =>
+        items
+          .map((item) => resolveItemLabel(section, item.data, ""))
+          .filter(Boolean),
+      ),
     };
   }
-  return { characters: [...chars], foreshadowing: [...fore] };
+  return { characters: [...chars], foreshadowing: [...fore], records: [...records] };
 }
 
 /**
@@ -139,6 +345,9 @@ export function buildChapterWriteMessages(
       foreshadowingRepo: handle.foreshadowingRepo,
       chaptersRepo: handle.chaptersRepo,
       genreSectionsRepo: handle.genreSectionsRepo,
+      worldbookRepo: handle.worldbookRepo,
+      promptPresetsRepo: handle.promptPresetsRepo,
+      readerIssuesRepo: handle.readerIssuesRepo,
       bookMetaRepo: handle.bookMetaRepo,
     },
     { rulesMd: handle.rulesMdPath },
@@ -151,13 +360,29 @@ export function buildChapterWriteMessages(
     intent: {
       characters: recallIntent.characters,
       foreshadowing: recallIntent.foreshadowing,
+      records: recallIntent.records,
       userMessage: userIntent,
     },
   });
+  const hardContinuity = renderHardContinuityConstraints([
+    ...snapshot.recentSummaries,
+    ...snapshot.allSummaries
+      .filter((summary) => result.recalledChapterNos.includes(summary.chapterNo))
+      .slice(-5),
+  ]);
+  const requiredOutputSections = renderRequiredOutputSections(
+    extractRequiredOutputSections(snapshot.promptBlocks),
+  );
 
   // 追加明确的产出指令(buildWriteContext 的动态块已含用户意图,这里固定任务框架)
   const messages: CoreMessage[] = [
     ...result.messages,
+    ...(hardContinuity
+      ? [{ role: "user" as const, content: hardContinuity }]
+      : []),
+    ...(requiredOutputSections
+      ? [{ role: "user" as const, content: requiredOutputSections }]
+      : []),
     {
       role: "user",
       content:
@@ -168,6 +393,66 @@ export function buildChapterWriteMessages(
 
   return {
     messages,
+    recalledChapterNos: result.recalledChapterNos,
+    recentChapterNos: result.recentChapterNos,
+    diagnostics: result.diagnostics,
+  };
+}
+
+export function buildChapterAuditContext(
+  handle: BookHandle,
+  chapterNo: number,
+  userIntent: string,
+  chapterPlan?: string,
+): ChapterAuditPromptContext {
+  const base = buildBookPromptContext(handle).auditCtx;
+  const snapshot = loadBookSnapshot(
+    handle.bookId,
+    {
+      charactersRepo: handle.charactersRepo,
+      outlineRepo: handle.outlineRepo,
+      foreshadowingRepo: handle.foreshadowingRepo,
+      chaptersRepo: handle.chaptersRepo,
+      genreSectionsRepo: handle.genreSectionsRepo,
+      worldbookRepo: handle.worldbookRepo,
+      promptPresetsRepo: handle.promptPresetsRepo,
+      readerIssuesRepo: handle.readerIssuesRepo,
+      bookMetaRepo: handle.bookMetaRepo,
+    },
+    { rulesMd: handle.rulesMdPath },
+  );
+
+  const recallIntent = deriveRecallIntent(snapshot, userIntent);
+  const result = buildWriteContext({
+    snapshot,
+    currentChapterNo: chapterNo,
+    intent: {
+      characters: recallIntent.characters,
+      foreshadowing: recallIntent.foreshadowing,
+      records: recallIntent.records,
+      userMessage: userIntent,
+      chapterPlan,
+    },
+  });
+
+  const recalled = new Set(result.recalledChapterNos);
+  const recent = new Set(result.recentChapterNos);
+  const hardContinuityContext = renderHardContinuityConstraints([
+    ...snapshot.recentSummaries,
+    ...snapshot.allSummaries
+      .filter((summary) => result.recalledChapterNos.includes(summary.chapterNo))
+      .slice(-5),
+  ]);
+  return {
+    auditCtx: {
+      ...base,
+      chapterPlan,
+      worldbookContext: extractMessageBlock(result.messages, "## Worldbook"),
+      readerIssuesContext: extractMessageBlock(result.messages, "## Reader Continuity Issues"),
+      hardContinuityContext,
+      recentSummaries: snapshot.recentSummaries.filter((s) => recent.has(s.chapterNo)),
+      recalledSummaries: snapshot.allSummaries.filter((s) => recalled.has(s.chapterNo)),
+    },
     recalledChapterNos: result.recalledChapterNos,
     recentChapterNos: result.recentChapterNos,
   };

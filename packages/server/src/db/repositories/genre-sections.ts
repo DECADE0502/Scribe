@@ -6,24 +6,45 @@ import {
   type GenreSectionItem,
   GenreSectionSchema,
   GenreSectionItemSchema,
+  resolveItemIdentityKey,
 } from "@scribe/shared";
-import { parseJsonArray, parseJsonField } from "../json-utils.js";
+import { parseJsonField } from "../json-utils.js";
 
 export interface NewGenreSectionInput {
   name: string;
   schema: GenreField[];
+  identityFields?: string[];
+  displayFields?: string[];
+  searchFields?: string[];
   createdBy: "ai" | "user";
 }
 
 export function createGenreSectionsRepo(db: Database) {
-  const rowToSection = (r: any): GenreSection =>
-    GenreSectionSchema.parse({
+  const rowToSection = (r: any): GenreSection => {
+    const rawSchema = parseJsonField<unknown>(r.schema, []);
+    const fields = Array.isArray(rawSchema)
+      ? rawSchema
+      : Array.isArray((rawSchema as any)?.fields)
+        ? (rawSchema as any).fields
+        : [];
+    const meta = !Array.isArray(rawSchema) && rawSchema && typeof rawSchema === "object"
+      ? (rawSchema as {
+          identityFields?: string[];
+          displayFields?: string[];
+          searchFields?: string[];
+        })
+      : {};
+    return GenreSectionSchema.parse({
       id: r.id,
       name: r.name,
-      schema: parseJsonArray<GenreField>(r.schema),
+      schema: fields,
+      identityFields: meta.identityFields,
+      displayFields: meta.displayFields,
+      searchFields: meta.searchFields,
       createdBy: r.created_by,
       createdAt: r.created_at,
     });
+  };
   const rowToItem = (r: any): GenreSectionItem =>
     GenreSectionItemSchema.parse({
       id: r.id,
@@ -36,10 +57,22 @@ export function createGenreSectionsRepo(db: Database) {
     createSection(input: NewGenreSectionInput): GenreSection {
       const id = randomUUID();
       const now = Date.now();
+      const schemaPayload = input.schema;
       db.prepare(
         `INSERT INTO genre_sections(id,name,schema,created_by,created_at)
                   VALUES(?,?,?,?,?)`
-      ).run(id, input.name, JSON.stringify(input.schema), input.createdBy, now);
+      ).run(
+        id,
+        input.name,
+        JSON.stringify({
+          fields: schemaPayload,
+          identityFields: input.identityFields,
+          displayFields: input.displayFields,
+          searchFields: input.searchFields,
+        }),
+        input.createdBy,
+        now,
+      );
       return this.getSection(id)!;
     },
     getSection(id: string): GenreSection | undefined {
@@ -58,9 +91,23 @@ export function createGenreSectionsRepo(db: Database) {
         .all()
         .map(rowToSection);
     },
-    updateSectionSchema(id: string, schema: GenreField[]): GenreSection {
+    updateSectionSchema(
+      id: string,
+      schema: GenreField[],
+      metadata?: {
+        identityFields?: string[];
+        displayFields?: string[];
+        searchFields?: string[];
+      },
+    ): GenreSection {
+      const current = this.getSection(id);
       db.prepare("UPDATE genre_sections SET schema=? WHERE id=?").run(
-        JSON.stringify(schema),
+        JSON.stringify({
+          fields: schema,
+          identityFields: metadata?.identityFields ?? current?.identityFields,
+          displayFields: metadata?.displayFields ?? current?.displayFields,
+          searchFields: metadata?.searchFields ?? current?.searchFields,
+        }),
         id
       );
       return this.getSection(id)!;
@@ -92,6 +139,16 @@ export function createGenreSectionsRepo(db: Database) {
         )
         .all(sectionId)
         .map(rowToItem);
+    },
+    findItemByIdentity(
+      section: GenreSection,
+      data: Record<string, unknown>,
+    ): GenreSectionItem | undefined {
+      const targetKey = resolveItemIdentityKey(section, data);
+      if (!targetKey) return undefined;
+      return this.listItems(section.id).find(
+        (item) => resolveItemIdentityKey(section, item.data) === targetKey,
+      );
     },
     updateItem(itemId: string, data: Record<string, unknown>): GenreSectionItem {
       const now = Date.now();

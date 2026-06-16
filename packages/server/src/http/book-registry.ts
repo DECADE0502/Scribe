@@ -9,6 +9,10 @@ import { createOutlineRepo } from "../db/repositories/outline.js";
 import { createForeshadowingRepo } from "../db/repositories/foreshadowing.js";
 import { createTimelineRepo } from "../db/repositories/timeline.js";
 import { createGenreSectionsRepo } from "../db/repositories/genre-sections.js";
+import { createWorldbookRepo } from "../db/repositories/worldbook.js";
+import { createImportArtifactsRepo } from "../db/repositories/import-artifacts.js";
+import { createPromptPresetsRepo } from "../db/repositories/prompt-presets.js";
+import { createReaderIssuesRepo } from "../db/repositories/reader-issues.js";
 import { createChaptersRepo } from "../db/repositories/chapters.js";
 import { createConversationsRepo } from "../db/repositories/conversations.js";
 import { createTokenUsageRepo } from "../db/repositories/token-usage.js";
@@ -24,6 +28,10 @@ export interface BookHandle {
   foreshadowingRepo: ReturnType<typeof createForeshadowingRepo>;
   timelineRepo: ReturnType<typeof createTimelineRepo>;
   genreSectionsRepo: ReturnType<typeof createGenreSectionsRepo>;
+  worldbookRepo: ReturnType<typeof createWorldbookRepo>;
+  importArtifactsRepo: ReturnType<typeof createImportArtifactsRepo>;
+  promptPresetsRepo: ReturnType<typeof createPromptPresetsRepo>;
+  readerIssuesRepo: ReturnType<typeof createReaderIssuesRepo>;
   chaptersRepo: ReturnType<typeof createChaptersRepo>;
   conversationsRepo: ReturnType<typeof createConversationsRepo>;
   tokenUsageRepo: ReturnType<typeof createTokenUsageRepo>;
@@ -69,6 +77,10 @@ export function createBookRegistry(opts: BookRegistryOpts): BookRegistry {
       foreshadowingRepo: createForeshadowingRepo(ws),
       timelineRepo: createTimelineRepo(ws),
       genreSectionsRepo: createGenreSectionsRepo(ws),
+      worldbookRepo: createWorldbookRepo(ws),
+      importArtifactsRepo: createImportArtifactsRepo(ws, bookId),
+      promptPresetsRepo: createPromptPresetsRepo(ws, bookId),
+      readerIssuesRepo: createReaderIssuesRepo(ws),
       chaptersRepo: createChaptersRepo(ws),
       conversationsRepo: createConversationsRepo(ws),
       tokenUsageRepo: createTokenUsageRepo(ws),

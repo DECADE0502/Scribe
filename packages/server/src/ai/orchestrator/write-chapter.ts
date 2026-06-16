@@ -7,6 +7,7 @@ import {
   buildWriteChapterPrompt,
   type WriteChapterContext,
 } from "../prompts/write-chapter.js";
+import { sanitizeChapterOutput } from "./output-sanitize.js";
 
 export interface ChapterFilesLike {
   save(input: {
@@ -36,15 +37,8 @@ export interface WriteChapterInput {
   chapterNo: number;
   userIntent: string;
   ctx?: Partial<WriteChapterContext>;
-  /**
-   * 防漂移完整上下文(spec §6.1):由 buildChapterWriteMessages 用 BookSnapshot +
-   * 召回算法组装好的 messages(含最近 3 章摘要、召回 5 章、题材板块、活跃伏笔、
-   * 角色卡、规则)。提供时优先使用,忽略 ctx 模板;不提供时退回 ctx 模板。
-   */
   prebuiltMessages?: CoreMessage[];
-  /** 落盘版本来源标记,默认 ai_write;/rewrite 传 ai_rewrite */
   source?: "ai_write" | "ai_rewrite";
-  /** 用户最深处提示词,原文拼到最前端 */
   deepestPrompt?: string;
   abortSignal?: AbortSignal;
 }
@@ -64,9 +58,9 @@ export async function* writeChapterSimple(
       }),
     },
   ];
-  // 用户最深处提示词:原文拼到所有内置提示词最前端
   const messages = prependDeepestPrompt(baseMessages, input.deepestPrompt);
   let buffer = "";
+
   for await (const ev of streamLlm({
     model: deps.model,
     messages,
@@ -74,44 +68,33 @@ export async function* writeChapterSimple(
   })) {
     if (ev.type === "text_delta") buffer += ev.delta;
     if (ev.type === "done") {
-      // 在 yield done 之前落盘,确保 SSE 终结事件契约:
-      // - 落盘成功:正常 yield done(消费者据此 break)
-      // - 落盘失败:yield error 替代 done,避免 done 之后再追 error
-      //   破坏"done 是终结事件"的协议;同时早 return 不再 yield 后续事件。
-      // 错误路径(LLM 直接 yield error)天然不会进入此分支,buffer 不落盘。
-      // 原子性:DB 与文件双写,任意一侧失败都需要保持外部观察一致 ——
-      // saveVersion 失败不会写文件;chapterFiles.save 失败需回滚已写入的
-      // version 行,避免留下"DB 有 version、磁盘无 .md"的半成品。
-      if (buffer.trim()) {
+      const content = sanitizeChapterOutput(buffer);
+      if (content.trim()) {
         let saved: { versionNo: number } | undefined;
         try {
           saved = deps.chaptersRepo.saveVersion({
             chapterNo: input.chapterNo,
             source: input.source ?? "ai_write",
-            contentMd: buffer,
+            contentMd: content,
           });
           deps.chapterFiles.save({
             chapterNo: input.chapterNo,
-            title: `第${input.chapterNo}章`,
-            content: buffer,
+            title: `第 ${input.chapterNo} 章`,
+            content,
             versionNo: saved.versionNo,
           });
-        } catch (e) {
-          // 文件侧失败时,回滚已插入的 version 行,保持 DB/FS 一致
+        } catch (error) {
           if (saved) {
             try {
-              deps.chaptersRepo.deleteVersion(
-                input.chapterNo,
-                saved.versionNo,
-              );
+              deps.chaptersRepo.deleteVersion(input.chapterNo, saved.versionNo);
             } catch {
-              // 回滚失败暂无 logger,先吞;后续接入日志后补充
+              // Keep the original save error as the reported failure.
             }
           }
           yield {
             type: "error",
             errorClass: "save_failed",
-            message: String((e as Error)?.message ?? e),
+            message: String((error as Error)?.message ?? error),
           };
           return;
         }

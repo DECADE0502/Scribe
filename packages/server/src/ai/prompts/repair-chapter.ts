@@ -6,10 +6,11 @@ export const REPAIR_PROMPT = `你正在修复一段已经写好的章节。
 
 请只输出修复后的完整章节正文(不输出标题、不输出说明)。
 修复原则:
-- 仅修复 critical / warning 标出的问题,**不要重写整章**
+- 仅修复 critical / warning 标出的问题,不要重写整章
 - 保持原作叙述视角与节奏不变
 - 涉及伏笔或角色状态时,严格遵循上下文,不要新增设定
 - 如果某 issue 是审美质量类(aesthetic_quality),仅替换有问题的局部句子或段落
+- 修复时必须删除所有非小说正文的元文本，包括聊天记录、进度标签、事件卡片、任务总结、模型说明、调试说明，以及 <progress>、<current_event>、<konatan_chat>、<analysis>、<thinking> 等场外 XML/标签块。保留角色在剧情中看到的系统面板或状态栏，但要把它写成故事内的呈现。
 `;
 
 export interface RepairContext {
@@ -35,10 +36,10 @@ export function buildRepairUserPrompt(ctx: RepairContext): string {
   sections.push("## 原章节正文");
   sections.push(ctx.chapterContent);
   sections.push("## 审查报告(待修复问题)");
-  for (const i of ctx.issues) {
-    if (i.severity === "ok") continue;
-    const ex = i.excerpt ? `\n  原文:${i.excerpt}` : "";
-    sections.push(`- [${i.severity}] ${i.dimension}:${i.note}${ex}`);
+  for (const issue of ctx.issues) {
+    if (issue.severity === "ok") continue;
+    const excerpt = issue.excerpt ? `\n  原文:${issue.excerpt}` : "";
+    sections.push(`- [${issue.severity}] ${issue.dimension}:${issue.note}${excerpt}`);
   }
   if (ctx.premise) {
     sections.push("## 故事前提");
@@ -50,22 +51,24 @@ export function buildRepairUserPrompt(ctx: RepairContext): string {
   }
   if (ctx.characters?.length) {
     sections.push("## 主要角色");
-    for (const c of ctx.characters) {
-      const b = c.baseData as Record<string, unknown> | undefined;
+    for (const character of ctx.characters) {
+      const baseData = character.baseData as Record<string, unknown> | undefined;
       const items: string[] = [];
-      if (b && typeof b.background === "string")
-        items.push(`背景:${b.background}`);
-      if (b && typeof b.motivation === "string")
-        items.push(`动机:${b.motivation}`);
+      if (baseData && typeof baseData.background === "string") {
+        items.push(`背景:${baseData.background}`);
+      }
+      if (baseData && typeof baseData.motivation === "string") {
+        items.push(`动机:${baseData.motivation}`);
+      }
       sections.push(
-        `${c.name}${items.length ? "(" + items.join(";") + ")" : ""}`,
+        `${character.name}${items.length ? `(${items.join(";")})` : ""}`,
       );
     }
   }
   if (ctx.activeForeshadowing?.length) {
     sections.push("## 活跃伏笔");
-    for (const f of ctx.activeForeshadowing) {
-      sections.push(`[${f.label}] ${f.description ?? ""}(状态:${f.status})`);
+    for (const item of ctx.activeForeshadowing) {
+      sections.push(`[${item.label}] ${item.description ?? ""}(状态:${item.status})`);
     }
   }
   return sections.join("\n\n");

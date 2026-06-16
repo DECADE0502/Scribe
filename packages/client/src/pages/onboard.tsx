@@ -104,9 +104,14 @@ export function OnboardPage() {
       create_outline_node: "添加大纲",
       update_outline_node: "更新大纲",
       set_rules_md: "更新写作规则",
-      create_genre_section: "创建题材板块",
-      add_genre_section_item: "添加资料条目",
-      update_genre_section_schema: "调整板块结构",
+      create_record_collection: "创建记录集合",
+      update_record_collection_schema: "调整记录结构",
+      upsert_record_item: "写入记录条目",
+      link_record_items: "链接记录关系",
+      create_genre_section: "创建记录集合",
+      add_genre_section_item: "写入记录条目",
+      update_genre_section_schema: "调整记录结构",
+      upsert_genre_section_item: "写入记录条目",
     };
     return map[name] ?? name;
   };

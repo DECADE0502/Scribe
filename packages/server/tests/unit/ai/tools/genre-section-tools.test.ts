@@ -24,7 +24,7 @@ beforeEach(() => {
   runMigrations(db, [{ name: "001_init.sql", sql: initSql }]);
   repo = createGenreSectionsRepo(db);
   charactersRepo = createCharactersRepo(db);
-  tools = makeGenreSectionTools({ repo, charactersRepo });
+  tools = makeGenreSectionTools({ repo, charactersRepo, includeLegacyNames: true });
 });
 
 afterEach(() => {
@@ -37,7 +37,23 @@ async function exec(toolName: string, args: any): Promise<any> {
   const t = tools[toolName];
   if (!t || !t.execute) throw new Error(`tool ${toolName} 缺少 execute`);
   // Vercel AI SDK 5 要求工具入参先经过 zod 校验,这里手动跑一遍以模拟真实调用路径。
-  const parsed = t.parameters.parse(args);
+  const normalizedArgs =
+    toolName === "create_genre_section" &&
+    Array.isArray(args.schema) &&
+    args.schema.length > 0 &&
+    !args.identityFields
+      ? {
+          ...args,
+          identityFields: [args.schema[0].name],
+          displayFields: [args.schema[0].name],
+          schema: args.schema.map((field: any, index: number) =>
+            index === 0
+              ? { ...field, role: field.role ?? "identity", required: field.required ?? true }
+              : field,
+          ),
+        }
+      : args;
+  const parsed = t.parameters.parse(normalizedArgs);
   return await t.execute(parsed, {
     toolCallId: "test",
     messages: [],
@@ -45,14 +61,69 @@ async function exec(toolName: string, args: any): Promise<any> {
 }
 
 describe("create_genre_section", () => {
+  it("exposes generic record tool aliases while keeping legacy names", () => {
+    const publicTools = makeGenreSectionTools({ repo, charactersRepo });
+    expect(publicTools.create_record_collection?.execute).toBeDefined();
+    expect(publicTools.update_record_collection_schema?.execute).toBeDefined();
+    expect(publicTools.upsert_record_item?.execute).toBeDefined();
+    expect(publicTools.link_record_items?.execute).toBeDefined();
+    expect(publicTools.create_genre_section).toBeUndefined();
+    expect(publicTools.upsert_genre_section_item).toBeUndefined();
+
+    expect(tools.create_record_collection?.execute).toBeDefined();
+    expect(tools.update_record_collection_schema?.execute).toBeDefined();
+    expect(tools.upsert_record_item?.execute).toBeDefined();
+    expect(tools.link_record_items?.execute).toBeDefined();
+    expect(tools.create_genre_section?.execute).toBeDefined();
+    expect(tools.upsert_genre_section_item?.execute).toBeDefined();
+  });
+
   it("happy:创建板块返回 GenreSection", async () => {
     const r = await exec("create_genre_section", {
-      name: "功法体系",
+      name: "任意集合",
       schema: [{ name: "name", type: "string", required: true }],
     });
     expect(r.id).toBeTruthy();
-    expect(r.name).toBe("功法体系");
+    expect(r.name).toBe("任意集合");
     expect(r.createdBy).toBe("ai");
+    expect(r.identityFields).toEqual(["name"]);
+  });
+
+  it("create_record_collection accepts shorthand ref to another collection", async () => {
+    await exec("create_record_collection", {
+      name: "合同条款",
+      identityFields: ["条款编号"],
+      displayFields: ["条款编号"],
+      searchFields: ["条款编号"],
+      schema: [
+        { name: "条款编号", type: "string", role: "identity", required: true },
+      ],
+    });
+
+    const result = await exec("create_record_collection", {
+      name: "风险事项",
+      identityFields: ["风险编号"],
+      displayFields: ["风险编号", "涉及合同"],
+      searchFields: ["风险编号"],
+      schema: [
+        { name: "风险编号", type: "string", role: "identity", required: true },
+        { name: "涉及合同", type: "ref:合同条款", role: "relation" },
+      ],
+    });
+
+    expect(result.schema.find((field: any) => field.name === "涉及合同").type).toBe("ref:section:合同条款");
+  });
+
+  it("error:新建集合缺少 identity 声明时抛错,不猜字段", async () => {
+    const t = tools.create_genre_section;
+    const parsed = t.parameters.parse({
+      name: "缺声明集合",
+      schema: [{ name: "名称", type: "string", required: true }],
+    });
+
+    await expect(
+      t.execute(parsed, { toolCallId: "test", messages: [] } as any),
+    ).rejects.toThrow(/identity/);
   });
 
   it("isLabel:AI 显式声明的字段被保留为唯一显示名字段", async () => {
@@ -69,17 +140,18 @@ describe("create_genre_section", () => {
     expect(labels[0].name).toBe("功法名");
   });
 
-  it("isLabel:AI 没声明时自动把第一个必填字段提为显示名(落盘必有恰好一个 isLabel)", async () => {
+  it("displayFields:显式显示字段决定显示名,不靠第一个字段猜", async () => {
     const r = await exec("create_genre_section", {
-      name: "法器",
+      name: "显示字段集合",
+      identityFields: ["名称"],
+      displayFields: ["名称"],
       schema: [
         { name: "描述", type: "string" },
-        { name: "名称", type: "string", required: true },
+        { name: "名称", type: "string", required: true, role: "identity" },
       ],
     });
-    const labels = r.schema.filter((f: any) => f.isLabel);
-    expect(labels).toHaveLength(1);
-    expect(labels[0].name).toBe("名称");
+    expect(r.identityFields).toEqual(["名称"]);
+    expect(r.displayFields).toEqual(["名称"]);
   });
 
   it("isLabel:AI 误标多个时只保留第一个", async () => {
@@ -109,6 +181,38 @@ describe("create_genre_section", () => {
 });
 
 describe("add_genre_section_item", () => {
+  it("upsert:相同 identity 更新旧条目,不重复新增", async () => {
+    await exec("create_genre_section", {
+      name: "任意集合",
+      identityFields: ["代号"],
+      displayFields: ["名称"],
+      searchFields: ["代号", "名称", "状态"],
+      schema: [
+        { name: "代号", type: "string", required: true, role: "identity" },
+        { name: "名称", type: "string", role: "label" },
+        { name: "状态", type: "string", role: "status" },
+      ],
+    });
+    const first = await exec("upsert_genre_section_item", {
+      sectionName: "任意集合",
+      data: { 代号: "A-1", 名称: "一号", 状态: "初始" },
+    });
+    const second = await exec("upsert_genre_section_item", {
+      sectionName: "任意集合",
+      data: { 代号: "A-1", 状态: "变化" },
+    });
+    const section = repo.getByName("任意集合");
+
+    expect(repo.listItems(section.id)).toHaveLength(1);
+    expect(first.created).toBe(true);
+    expect(second.updated).toBe(true);
+    expect(repo.getItem(first.item.id).data).toMatchObject({
+      代号: "A-1",
+      名称: "一号",
+      状态: "变化",
+    });
+  });
+
   it("happy:有板块 + 数据合法 → 添加成功", async () => {
     const sec = await exec("create_genre_section", {
       name: "境界",
@@ -173,6 +277,182 @@ describe("add_genre_section_item", () => {
       }),
     ).rejects.toThrow(/不存在/);
   });
+  it("ref:character field accepts character name and stores character id", async () => {
+    const alan = charactersRepo.create({
+      name: "阿澜",
+      role: "protagonist",
+      baseData: {},
+      currentState: {},
+    });
+    await exec("create_genre_section", {
+      name: "Relics",
+      identityFields: ["name"],
+      displayFields: ["name"],
+      schema: [
+        { name: "name", type: "string", required: true, role: "identity" },
+        { name: "holder", type: "ref:character", role: "relation" },
+      ],
+    });
+
+    const result = await exec("upsert_record_item", {
+      sectionName: "Relics",
+      data: { name: "Black Root", holder: "阿澜" },
+    });
+
+    expect(result.created).toBe(true);
+    expect(result.item.data.holder).toBe(alan.id);
+  });
+
+  it("upsert expands enum declarations when AI writes a new generic value", async () => {
+    await exec("create_genre_section", {
+      name: "Islands",
+      identityFields: ["name"],
+      displayFields: ["name", "status"],
+      schema: [
+        { name: "name", type: "string", required: true, role: "identity" },
+        {
+          name: "status",
+          type: { kind: "enum", values: ["稳定", "未知"] },
+          role: "status",
+        },
+      ],
+    });
+
+    const result = await exec("upsert_record_item", {
+      sectionName: "Islands",
+      data: { name: "潮汐岩", status: "已探明" },
+    });
+
+    expect(result.created).toBe(true);
+    expect(result.item.data.status).toBe("已探明");
+    const section = repo.getByName("Islands");
+    const status = section.schema.find((field: any) => field.name === "status");
+    expect(status.type.values).toContain("已探明");
+  });
+
+  it("upsert_record_item accepts data as a JSON object string from model tool calls", async () => {
+    await exec("create_record_collection", {
+      name: "Artifacts",
+      identityFields: ["name"],
+      displayFields: ["name"],
+      searchFields: ["name", "status"],
+      schema: [
+        { name: "name", type: "string", required: true, role: "identity" },
+        { name: "status", type: "string", role: "status" },
+      ],
+    });
+
+    const result = await exec("upsert_record_item", {
+      sectionName: "Artifacts",
+      data: JSON.stringify({ name: "Compass", status: "active" }),
+    });
+
+    expect(result.created).toBe(true);
+    expect(result.item.data).toMatchObject({
+      name: "Compass",
+      status: "active",
+    });
+  });
+
+  it("upsert_record_item rejects data strings that do not parse to an object", async () => {
+    await exec("create_record_collection", {
+      name: "BadPayloads",
+      identityFields: ["name"],
+      displayFields: ["name"],
+      schema: [
+        { name: "name", type: "string", required: true, role: "identity" },
+      ],
+    });
+
+    await expect(
+      exec("upsert_record_item", {
+        sectionName: "BadPayloads",
+        data: "not-json",
+      }),
+    ).rejects.toThrow();
+  });
+});
+
+describe("link_record_items", () => {
+  it("links two generic record items through a declared relation field", async () => {
+    await exec("create_genre_section", {
+      name: "SourceRecords",
+      identityFields: ["code"],
+      displayFields: ["title"],
+      searchFields: ["code", "title"],
+      schema: [
+        { name: "code", type: "string", required: true, role: "identity" },
+        { name: "title", type: "string", role: "label" },
+        { name: "relatedTargets", type: "list:ref:section:TargetRecords", role: "relation" },
+      ],
+    });
+    await exec("create_genre_section", {
+      name: "TargetRecords",
+      identityFields: ["code"],
+      displayFields: ["title"],
+      searchFields: ["code", "title"],
+      schema: [
+        { name: "code", type: "string", required: true, role: "identity" },
+        { name: "title", type: "string", role: "label" },
+      ],
+    });
+    await exec("upsert_genre_section_item", {
+      sectionName: "SourceRecords",
+      data: { code: "S-1", title: "Source One" },
+    });
+    await exec("upsert_genre_section_item", {
+      sectionName: "TargetRecords",
+      data: { code: "T-1", title: "Target One" },
+    });
+
+    const result = await exec("link_record_items", {
+      sourceSectionName: "SourceRecords",
+      sourceIdentity: { code: "S-1" },
+      relationField: "relatedTargets",
+      targetSectionName: "TargetRecords",
+      targetIdentity: { code: "T-1" },
+    });
+
+    expect(result.linked).toBe(true);
+    const sourceSection = repo.getByName("SourceRecords");
+    const source = repo.findItemByIdentity(sourceSection, { code: "S-1" });
+    expect(source.data.relatedTargets).toEqual([result.targetItemId]);
+  });
+  it("links a generic record item to a character relation field", async () => {
+    const alan = charactersRepo.create({
+      name: "阿澜",
+      role: "protagonist",
+      baseData: {},
+      currentState: {},
+    });
+    await exec("create_genre_section", {
+      name: "Relics",
+      identityFields: ["name"],
+      displayFields: ["name"],
+      schema: [
+        { name: "name", type: "string", required: true, role: "identity" },
+        { name: "holder", type: "ref:character", role: "relation" },
+      ],
+    });
+    await exec("upsert_record_item", {
+      sectionName: "Relics",
+      data: { name: "Black Root" },
+    });
+
+    const result = await exec("link_record_items", {
+      sourceSectionName: "Relics",
+      sourceIdentity: { name: "Black Root" },
+      relationField: "holder",
+      targetSectionName: "characters",
+      targetIdentity: { name: "阿澜" },
+    });
+
+    expect(result.linked).toBe(true);
+    expect(result.targetCharacterId).toBe(alan.id);
+    const section = repo.getByName("Relics");
+    const item = repo.findItemByIdentity(section, { name: "Black Root" });
+    expect(item.data.holder).toBe(alan.id);
+  });
 });
 
 describe("update_genre_section_schema", () => {
@@ -189,6 +469,33 @@ describe("update_genre_section_schema", () => {
       ],
     });
     expect(updated.schema).toHaveLength(2);
+  });
+
+  it("updates declaration metadata when schema evolves", async () => {
+    await exec("create_genre_section", {
+      name: "EvolvingRecords",
+      identityFields: ["code"],
+      displayFields: ["code"],
+      searchFields: ["code"],
+      schema: [
+        { name: "code", type: "string", required: true, role: "identity" },
+      ],
+    });
+
+    const updated = await exec("update_genre_section_schema", {
+      sectionName: "EvolvingRecords",
+      identityFields: ["code"],
+      displayFields: ["title"],
+      searchFields: ["code", "title"],
+      schema: [
+        { name: "code", type: "string", required: true, role: "identity" },
+        { name: "title", type: "string", role: "label" },
+      ],
+    });
+
+    expect(updated.identityFields).toEqual(["code"]);
+    expect(updated.displayFields).toEqual(["title"]);
+    expect(updated.searchFields).toEqual(["code", "title"]);
   });
 
   it("error:板块不存在", async () => {

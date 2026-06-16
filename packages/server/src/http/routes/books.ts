@@ -26,7 +26,24 @@ export function bookRoutes(deps: BookRoutesDeps) {
     const genreRaw = (body as Record<string, unknown> | null)?.genre;
     const genre = typeof genreRaw === "string" ? genreRaw : null;
     const book = deps.registry.booksRepo.create({ title, genre });
-    deps.registry.open(book.id);
+    const handle = deps.registry.open(book.id);
+    handle.bookMetaRepo.set("title", title);
+    if (genre) handle.bookMetaRepo.set("genre", genre);
+    const seedContent = [
+      `Title: ${title}`,
+      genre ? `Genre: ${genre}` : "",
+    ].filter(Boolean).join("\n");
+    if (seedContent.trim()) {
+      handle.worldbookRepo.create({
+        title: "Core book seed",
+        content: seedContent,
+        activation: "constant",
+        constant: true,
+        priority: 100,
+        category: "core",
+        metadata: { seed: true, source: "create_book" },
+      });
+    }
     return c.json(
       { id: book.id, title: book.title, genre: book.genre, createdAt: book.createdAt },
       201,

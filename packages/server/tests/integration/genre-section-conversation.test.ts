@@ -8,6 +8,7 @@ import { createGenreSectionsRepo } from "../../src/db/repositories/genre-section
 import { createCharactersRepo } from "../../src/db/repositories/characters.js";
 import { makeGenreSectionTools } from "../../src/ai/tools/genre-section-tools.js";
 import { streamLlm } from "../../src/ai/llm-call.js";
+import { RECORD_STATE_PROMPT } from "../../src/ai/orchestrator/record-state.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -69,6 +70,18 @@ async function consume<T>(iter: AsyncIterable<T>): Promise<T[]> {
 }
 
 describe("AI 自创板块对话集成", () => {
+  it("record-state prompt 使用通用 upsert 记录,不写死题材条目清单", () => {
+    expect(RECORD_STATE_PROMPT).toContain("upsert_record_item");
+    expect(RECORD_STATE_PROMPT).toContain("create_record_collection");
+    expect(RECORD_STATE_PROMPT).toContain("update_record_collection_schema");
+    expect(RECORD_STATE_PROMPT).toContain("link_record_items");
+    expect(RECORD_STATE_PROMPT).toContain("role=relation");
+    expect(RECORD_STATE_PROMPT).toContain("如果已有集合不能表达新信息");
+    expect(RECORD_STATE_PROMPT).toContain("identityFields");
+    expect(RECORD_STATE_PROMPT).not.toContain("upsert_genre_section_item");
+    expect(RECORD_STATE_PROMPT).not.toContain("功法、法器、丹药、势力、境界、异能");
+  });
+
   it("LLM 多步 tool_call 序列:create × 2 + add_item × 1 + 文本回复", async () => {
     const tools = makeGenreSectionTools({ repo, charactersRepo });
 
@@ -79,10 +92,13 @@ describe("AI 自创板块对话集成", () => {
             type: "tool-call",
             toolCallType: "function",
             toolCallId: "tc1",
-            toolName: "create_genre_section",
+            toolName: "create_record_collection",
             args: JSON.stringify({
-              name: "功法体系",
-              schema: [{ name: "name", type: "string", required: true }],
+              name: "长期对象A",
+              identityFields: ["name"],
+              displayFields: ["name"],
+              searchFields: ["name"],
+              schema: [{ name: "name", type: "string", required: true, role: "identity" }],
             }),
           },
           {
@@ -98,11 +114,14 @@ describe("AI 自创板块对话集成", () => {
             type: "tool-call",
             toolCallType: "function",
             toolCallId: "tc2",
-            toolName: "create_genre_section",
+            toolName: "create_record_collection",
             args: JSON.stringify({
-              name: "境界",
+              name: "长期对象B",
+              identityFields: ["name"],
+              displayFields: ["name"],
+              searchFields: ["name", "order"],
               schema: [
-                { name: "name", type: "string", required: true },
+                { name: "name", type: "string", required: true, role: "identity" },
                 { name: "order", type: "number" },
               ],
             }),
@@ -120,9 +139,9 @@ describe("AI 自创板块对话集成", () => {
             type: "tool-call",
             toolCallType: "function",
             toolCallId: "tc3",
-            toolName: "add_genre_section_item",
+            toolName: "upsert_record_item",
             args: JSON.stringify({
-              sectionName: "境界",
+              sectionName: "长期对象B",
               data: { name: "炼气", order: 1 },
             }),
           },
@@ -135,7 +154,7 @@ describe("AI 自创板块对话集成", () => {
       }
       return [
         { type: "text-delta", textDelta: "我建了" },
-        { type: "text-delta", textDelta: "功法体系和境界两个板块" },
+        { type: "text-delta", textDelta: "长期对象A和长期对象B两个集合" },
         {
           type: "finish",
           finishReason: "stop",
@@ -159,12 +178,12 @@ describe("AI 自创板块对话集成", () => {
     const sections = repo.listSections();
     expect(sections).toHaveLength(2);
     expect(sections.map((s: any) => s.name).sort()).toEqual([
-      "功法体系",
-      "境界",
+      "长期对象A",
+      "长期对象B",
     ]);
-    const jingjie = repo.getByName("境界");
-    expect(jingjie).toBeDefined();
-    const items = repo.listItems(jingjie!.id);
+    const sectionB = repo.getByName("长期对象B");
+    expect(sectionB).toBeDefined();
+    const items = repo.listItems(sectionB!.id);
     expect(items).toHaveLength(1);
     expect(items[0].data.name).toBe("炼气");
 
@@ -174,15 +193,15 @@ describe("AI 自创板块对话集成", () => {
     expect(toolStarts).toHaveLength(3);
     expect(toolEnds).toHaveLength(3);
     expect(toolStarts.map((e: any) => e.toolName).sort()).toEqual([
-      "add_genre_section_item",
-      "create_genre_section",
-      "create_genre_section",
+      "create_record_collection",
+      "create_record_collection",
+      "upsert_record_item",
     ]);
     const textDeltas = events
       .filter((e) => e.type === "text_delta")
       .map((e: any) => e.delta)
       .join("");
-    expect(textDeltas).toContain("功法体系和境界");
+    expect(textDeltas).toContain("长期对象A和长期对象B");
     expect(events.find((e) => e.type === "done")).toBeDefined();
   });
 

@@ -5,7 +5,7 @@ import {
   parseAuditOutput,
 } from "../prompts/audit-summarize.js";
 import { prependDeepestPrompt } from "../prompts/deepest-prompt.js";
-import type { ChapterAuditOutput } from "@scribe/shared";
+import type { ChapterAuditOutput, ChapterSummary } from "@scribe/shared";
 
 export interface AuditContext {
   chapterNo: number;
@@ -23,7 +23,12 @@ export interface AuditContext {
     description?: string | null;
     status: string;
   }>;
+  recentSummaries?: ChapterSummary[];
+  recalledSummaries?: ChapterSummary[];
   chapterPlan?: string;
+  worldbookContext?: string;
+  readerIssuesContext?: string;
+  hardContinuityContext?: string;
 }
 
 export interface AuditDeps {
@@ -135,9 +140,52 @@ export function buildAuditUserPrompt(ctx: AuditContext): string {
       sections.push(`[${f.label}] ${f.description ?? ""}(状态:${f.status})`);
     }
   }
+  if (ctx.worldbookContext?.trim()) {
+    sections.push("## Worldbook Context");
+    sections.push(ctx.worldbookContext);
+  }
+  if (ctx.readerIssuesContext?.trim()) {
+    sections.push("## Reader Continuity Issues");
+    sections.push(ctx.readerIssuesContext);
+  }
+  if (ctx.hardContinuityContext?.trim()) {
+    sections.push("## Hard Continuity Constraints");
+    sections.push(ctx.hardContinuityContext);
+  }
+  if (ctx.recentSummaries?.length) {
+    sections.push("## Recent Chapter Summaries");
+    sections.push(renderSummaries(ctx.recentSummaries));
+  }
+  if (ctx.recalledSummaries?.length) {
+    sections.push("## Recalled Historical Summaries");
+    sections.push(renderSummaries(ctx.recalledSummaries));
+  }
   if (ctx.chapterPlan) {
     sections.push("## 本章计划");
     sections.push(ctx.chapterPlan);
   }
   return sections.join("\n\n");
+}
+
+function renderSummaries(summaries: ChapterSummary[]): string {
+  return summaries
+    .map((summary) => {
+      const events = summary.keyEvents
+        .map((event) => {
+          const chars = event.characters.length
+            ? ` characters:${event.characters.join(",")}`
+            : "";
+          const foreshadowing = event.foreshadowingRefs.length
+            ? ` foreshadowing:${event.foreshadowingRefs.join(",")}`
+            : "";
+          return `- ${event.event}${chars}${foreshadowing}`;
+        })
+        .join("\n");
+      return [
+        `### Chapter ${summary.chapterNo}: ${summary.oneLiner}`,
+        summary.paragraph,
+        events,
+      ].filter(Boolean).join("\n");
+    })
+    .join("\n\n");
 }

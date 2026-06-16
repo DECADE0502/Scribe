@@ -65,7 +65,7 @@ export function makeBookMetaTools(
         genre: z
           .string()
           .optional()
-          .describe("题材,如 '仙侠' / '都市' / '科幻'"),
+          .describe("题材或类型,按用户原话或书籍实际设定记录"),
         lengthTarget: z
           .string()
           .optional()

@@ -83,7 +83,18 @@ function makeAuditModel(sequence: string[]) {
       i++;
       return { text, finishReason: "stop", usage: { promptTokens: 10, completionTokens: 5 }, rawCall: { rawPrompt: null, rawSettings: {} } };
     },
-    async doStream() { throw new Error("not used"); },
+    async doStream() {
+      return {
+        stream: new ReadableStream({
+          start(ctrl) {
+            ctrl.enqueue({ type: "text-delta", textDelta: "记录完成。" });
+            ctrl.enqueue({ type: "finish", finishReason: "stop", usage: { promptTokens: 10, completionTokens: 5 } });
+            ctrl.close();
+          },
+        }),
+        rawCall: { rawPrompt: null, rawSettings: {} },
+      };
+    },
   };
 }
 
@@ -129,7 +140,44 @@ describe("budget-check 单元", () => {
   });
 });
 
+function completeOnboarding(bookId: string): void {
+  const handle = registry.open(bookId);
+  handle.bookMetaRepo.set("genre", "测试题材");
+  handle.bookMetaRepo.set("premise", "测试 premise");
+  handle.bookMetaRepo.set("tone", "测试调性");
+  handle.charactersRepo.create({
+    name: "测试主角",
+    role: "protagonist",
+    baseData: {},
+    currentState: {},
+  });
+  handle.outlineRepo.create({
+    parentId: null,
+    level: "volume",
+    title: "第一卷",
+    summary: "测试大纲",
+    status: "planned",
+    sortOrder: 0,
+    metadata: null,
+  });
+}
+
 describe("POST /api/books/:id/auto", () => {
+  it("rejects auto writing when onboarding is incomplete", async () => {
+    const app = makeApp();
+    const id = await createBook(app);
+    const res = await app.request(`/api/books/${id}/auto`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ n: 1 }),
+    });
+    expect(res.status).toBe(409);
+    const j = await res.json() as { error: string; missing: string[] };
+    expect(j.error).toContain("建书");
+    expect(j.missing).toContain("主角");
+    expect(registry.open(id).chaptersRepo.maxChapterNo()).toBe(0);
+  });
+
   function makeApp() {
     return createApp({
       bookRegistry: registry,
@@ -144,6 +192,7 @@ describe("POST /api/books/:id/auto", () => {
   it("第 1 章 ok 第 2 章 critical → 只完成 1 章,paused_by_critical", async () => {
     const app = makeApp();
     const id = await createBook(app);
+    completeOnboarding(id);
     const res = await app.request(`/api/books/${id}/auto`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -170,6 +219,7 @@ describe("POST /api/books/:id/auto", () => {
       auditModelInfo: dsFlash,
     });
     const id = await createBook(app);
+    completeOnboarding(id);
     const res = await app.request(`/api/books/${id}/auto`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -217,6 +267,7 @@ describe("POST /api/books/:id/auto", () => {
       auditModelInfo: dsFlash,
     });
     const id = await createBook(app);
+    completeOnboarding(id);
     const res = await app.request(`/api/books/${id}/auto`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

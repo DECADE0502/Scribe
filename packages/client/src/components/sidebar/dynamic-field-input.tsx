@@ -3,6 +3,7 @@ import { useState } from "react";
 export interface GenreFieldDef {
   name: string;
   type: unknown; // string 字面量 | { kind: "enum", values: string[] }
+  role?: "identity" | "label" | "summary" | "description" | "status" | "rank" | "relation" | "tag" | "evidence";
   required?: boolean;
   isLabel?: boolean;
   values?: string[];

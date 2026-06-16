@@ -14,8 +14,10 @@ import {
 import {
   persistAuditResult,
   type ChaptersRepoAuditLike,
+  type ReaderIssuesRepoAuditLike,
 } from "./audit-persist.js";
 import { repairChapter, type RepairDeps } from "./repair-chapter.js";
+import { sanitizeChapterOutput } from "./output-sanitize.js";
 
 /**
  * 端到端依赖。chaptersRepo 必须同时满足 write/repair 路径(saveVersion/
@@ -30,6 +32,7 @@ export interface WriteWithAuditDeps {
   auditModel: LanguageModel;
   /** 落盘 audit 行时记录的模型 ID,便于后续追溯 */
   auditModelId: string;
+  readerIssuesRepo?: ReaderIssuesRepoAuditLike;
 }
 
 export interface WriteWithAuditInput extends WriteChapterInput {
@@ -80,7 +83,8 @@ export async function* writeWithAudit(
   // 写阶段汇报 done 但实际未产出任何文本时,流必须以终结事件收尾。
   // writeChapterSimple 在 buffer 为空时不会落盘,这里也不会产出任何下游
   // 工件,直接以 error(empty_response) 结束,让客户端可观察终结状态。
-  if (!writtenContent.trim()) {
+  const finalWrittenContent = sanitizeChapterOutput(writtenContent);
+  if (!finalWrittenContent.trim()) {
     yield {
       type: "error",
       errorClass: "empty_response",
@@ -96,7 +100,7 @@ export async function* writeWithAudit(
       { model: deps.auditModel, abortSignal: input.abortSignal, deepestPrompt: input.deepestPrompt },
       {
         chapterNo: input.chapterNo,
-        chapterContent: writtenContent,
+        chapterContent: finalWrittenContent,
         ...input.auditCtx,
       },
     );
@@ -115,6 +119,7 @@ export async function* writeWithAudit(
     input.chapterNo,
     auditResult,
     deps.auditModelId,
+    deps.readerIssuesRepo,
   );
 
   yield {
@@ -163,7 +168,7 @@ export async function* writeWithAudit(
     for await (const ev of repairChapter(repairDeps, {
       chapterNo: input.chapterNo,
       ctx: {
-        chapterContent: writtenContent,
+        chapterContent: finalWrittenContent,
         issues: auditResult.output.issues,
         ...(input.auditCtx as Partial<AuditContext>),
       },
@@ -187,13 +192,14 @@ export async function* writeWithAudit(
     // 上面 return 不会走到这里;此处是为了让类型/控制流显式
     if (repairStreamErrored) return;
 
-    if (repairOk && repairContent.trim()) {
+    const finalRepairContent = sanitizeChapterOutput(repairContent);
+    if (repairOk && finalRepairContent.trim()) {
       try {
         const reAudit = await auditChapter(
           { model: deps.auditModel, abortSignal: input.abortSignal, deepestPrompt: input.deepestPrompt },
           {
             chapterNo: input.chapterNo,
-            chapterContent: repairContent,
+            chapterContent: finalRepairContent,
             ...input.auditCtx,
           },
         );
@@ -202,6 +208,7 @@ export async function* writeWithAudit(
           input.chapterNo,
           reAudit,
           deps.auditModelId,
+          deps.readerIssuesRepo,
         );
         yield repairEnd(true);
         yield {

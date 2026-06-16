@@ -51,6 +51,28 @@ describe("recallChapters", () => {
     expect(top.map((x) => x.chapterNo)).toEqual([1]); // 子串命中成功召回
   });
 
+  it("通用记录实体命中即可召回,不依赖角色或伏笔", () => {
+    const s: ChapterSummary = {
+      chapterNo: 1,
+      oneLiner: "A-1 首次出现",
+      paragraph: "这里记录了 A-1 的早期线索。",
+      keyEvents: [{ event: "A-1 出现", characters: [], foreshadowingRefs: [] }],
+      generatedAt: 1000,
+      reasoningContent: null,
+    };
+
+    const top = recallChapters({
+      allSummaries: [s],
+      currentChapterNo: 10,
+      intentCharacters: [],
+      intentForeshadowing: [],
+      intentRecords: ["A-1"],
+      topK: 5,
+    });
+
+    expect(top.map((x) => x.chapterNo)).toEqual([1]);
+  });
+
   it("排除最近 3 章 (currentChapterNo - 3 之内)", () => {
     const summaries = [
       sum(8, ["林"], []),

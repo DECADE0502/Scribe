@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { resolveItemLabel, resolveLabelFieldName } from "@scribe/shared";
+import { resolveDisplayFieldNames, resolveItemLabel, resolveLabelFieldName } from "@scribe/shared";
 import { t } from "../../i18n/zh-CN.js";
 import { DynamicFieldInput, type GenreFieldDef, type RefOptions } from "./dynamic-field-input.js";
 
@@ -7,6 +7,9 @@ interface GenreSection {
   id: string;
   name: string;
   schema: GenreFieldDef[];
+  identityFields?: string[];
+  displayFields?: string[];
+  searchFields?: string[];
 }
 
 interface GenreSectionItem {
@@ -52,6 +55,17 @@ export function GenreSectionPanel(props: { bookId: string; sectionId: string }) 
     return <p data-testid="genre-section-missing" style={{ color: "#999" }}>{t.common.empty}</p>;
   }
   const { section, items } = current;
+  const displayFieldNames = (s: GenreSection): string[] => {
+    const hasDeclaredDisplay =
+      Boolean(s.displayFields?.length) ||
+      s.schema.some((field) => field.role === "label");
+    if (!hasDeclaredDisplay) {
+      const legacy = resolveLabelFieldName(s.schema);
+      return legacy ? [legacy] : [];
+    }
+    const declared = resolveDisplayFieldNames(s);
+    return declared.length ? declared : [];
+  };
 
   const refOptions: RefOptions = {
     characters,
@@ -60,7 +74,7 @@ export function GenreSectionPanel(props: { bookId: string; sectionId: string }) 
         s.section.name,
         s.items.map(i => ({
           id: i.id,
-          label: resolveItemLabel(s.section.schema, i.data, i.id),
+          label: resolveItemLabel(s.section, i.data, i.id),
         })),
       ]),
     ),
@@ -172,7 +186,7 @@ export function GenreSectionPanel(props: { bookId: string; sectionId: string }) 
           {editingItem === item.id ? renderForm() : (
             <>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <strong>{resolveItemLabel(section.schema, item.data)}</strong>
+                <strong>{resolveItemLabel(section, item.data)}</strong>
                 <span style={{ display: "flex", gap: 4 }}>
                   <button
                     data-testid={`genre-item-edit-${item.id}`}
@@ -191,7 +205,7 @@ export function GenreSectionPanel(props: { bookId: string; sectionId: string }) 
                 </span>
               </div>
               {section.schema
-                .filter(f => f.name !== resolveLabelFieldName(section.schema) && item.data[f.name] !== undefined && item.data[f.name] !== null)
+                .filter(f => !displayFieldNames(section).includes(f.name) && item.data[f.name] !== undefined && item.data[f.name] !== null)
                 .map(f => (
                   <p key={f.name} style={{ margin: "2px 0", color: "#666" }}>
                     <span style={{ color: "#999" }}>{f.name}:</span>

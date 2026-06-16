@@ -34,6 +34,96 @@ export interface OnboardStatus {
   missing: string[];
 }
 
+export interface WorldbookEntry {
+  id: string;
+  title: string;
+  content: string;
+  enabled: boolean;
+  activation: "constant" | "triggered";
+  keys: string[];
+  secondaryKeys: string[];
+  constant: boolean;
+  priority: number;
+  insertionDepth: number;
+  recursive: boolean;
+  recursionLimit: number;
+  tokenBudget: number | null;
+  category: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type NewWorldbookEntryInput = Omit<
+  WorldbookEntry,
+  "id" | "createdAt" | "updatedAt"
+>;
+
+export interface ImportPreview {
+  sourceType: string;
+  sourceName: string;
+  stats: Record<string, unknown>;
+  warnings: Array<{ code: string; message: string; path?: string }>;
+}
+
+export interface ImportResult {
+  sourceType: string;
+  imported: {
+    promptPresets: number;
+    promptBlocks: number;
+    worldbookEntries: number;
+  };
+}
+
+export interface PromptBlock {
+  id: string;
+  name: string;
+  sourceIdentifier: string;
+  role: "system" | "user" | "assistant";
+  content: string;
+  enabled: boolean;
+  stackIndex: number | null;
+  sourcePromptEnabled: boolean | null;
+  sourceOrderEnabled: boolean | null;
+}
+
+export interface PromptPreset {
+  id: string;
+  name: string;
+  enabled: boolean;
+  regexScriptsEnabled: boolean;
+  generationSettings: Record<string, unknown>;
+  extensions: Record<string, unknown>;
+  blocks: PromptBlock[];
+}
+
+export interface WorldbookPreviewDiagnostic {
+  entryId: string;
+  title: string;
+  matchedKeys: string[];
+  reason: string;
+  recursionDepth: number;
+  decision: "selected" | "dropped";
+  notes: string[];
+}
+
+export interface WorldbookPreviewResult {
+  selected: Array<{
+    entry: WorldbookEntry;
+    matchedKeys: string[];
+    reason: string;
+    recursionDepth: number;
+  }>;
+  dropped: Array<{
+    entry: WorldbookEntry;
+    matchedKeys: string[];
+    reason: string;
+    recursionDepth: number;
+  }>;
+  diagnostics?: WorldbookPreviewDiagnostic[];
+  rendered: string;
+}
+
 export interface SseEventBase { type: string }
 
 export class ApiError extends Error {
@@ -92,6 +182,95 @@ export const api = {
   async deleteBook(bookId: string): Promise<void> {
     // 当前 server 还没暴露 DELETE,留接口位
     await jsonFetch(`/api/books/${encodeURIComponent(bookId)}`, { method: "DELETE" });
+  },
+  async listWorldbook(bookId: string): Promise<WorldbookEntry[]> {
+    const r = await jsonFetch<{ entries: WorldbookEntry[] }>(
+      `/api/books/${encodeURIComponent(bookId)}/worldbook`,
+    );
+    return r.entries;
+  },
+  async createWorldbookEntry(
+    bookId: string,
+    input: Partial<NewWorldbookEntryInput> & { title: string; content: string },
+  ): Promise<WorldbookEntry> {
+    const r = await jsonFetch<{ entry: WorldbookEntry }>(
+      `/api/books/${encodeURIComponent(bookId)}/worldbook`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+    return r.entry;
+  },
+  async updateWorldbookEntry(
+    bookId: string,
+    entryId: string,
+    patch: Partial<NewWorldbookEntryInput>,
+  ): Promise<WorldbookEntry> {
+    const r = await jsonFetch<{ entry: WorldbookEntry }>(
+      `/api/books/${encodeURIComponent(bookId)}/worldbook/${encodeURIComponent(entryId)}`,
+      { method: "PUT", body: JSON.stringify(patch) },
+    );
+    return r.entry;
+  },
+  async deleteWorldbookEntry(bookId: string, entryId: string): Promise<void> {
+    await fetch(
+      `/api/books/${encodeURIComponent(bookId)}/worldbook/${encodeURIComponent(entryId)}`,
+      { method: "DELETE" },
+    );
+  },
+  async previewImport(
+    bookId: string,
+    input: { filename: string; json: unknown },
+  ): Promise<ImportPreview> {
+    return jsonFetch<ImportPreview>(
+      `/api/books/${encodeURIComponent(bookId)}/imports/preview`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+  async importJson(
+    bookId: string,
+    input: { filename: string; json: unknown },
+  ): Promise<ImportResult> {
+    return jsonFetch<ImportResult>(
+      `/api/books/${encodeURIComponent(bookId)}/imports`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+  async listPresets(bookId: string): Promise<PromptPreset[]> {
+    const r = await jsonFetch<{ presets: PromptPreset[] }>(
+      `/api/books/${encodeURIComponent(bookId)}/presets`,
+    );
+    return r.presets;
+  },
+  async updatePreset(
+    bookId: string,
+    presetId: string,
+    patch: Partial<PromptPreset> & { regexScripts?: unknown[] },
+  ): Promise<PromptPreset> {
+    const r = await jsonFetch<{ preset: PromptPreset }>(
+      `/api/books/${encodeURIComponent(bookId)}/presets/${encodeURIComponent(presetId)}`,
+      { method: "PUT", body: JSON.stringify(patch) },
+    );
+    return r.preset;
+  },
+  async updatePromptBlock(
+    bookId: string,
+    presetId: string,
+    blockId: string,
+    patch: Partial<PromptBlock>,
+  ): Promise<PromptBlock> {
+    const r = await jsonFetch<{ block: PromptBlock }>(
+      `/api/books/${encodeURIComponent(bookId)}/presets/${encodeURIComponent(presetId)}/blocks/${encodeURIComponent(blockId)}`,
+      { method: "PUT", body: JSON.stringify(patch) },
+    );
+    return r.block;
+  },
+  async previewWorldbook(
+    bookId: string,
+    input: { query: string; extraText?: string[]; tokenBudget?: number },
+  ): Promise<WorldbookPreviewResult> {
+    return jsonFetch<WorldbookPreviewResult>(
+      `/api/books/${encodeURIComponent(bookId)}/worldbook/preview`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
   },
 };
 

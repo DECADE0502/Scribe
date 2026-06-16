@@ -56,6 +56,16 @@ function makeAuditModel() {
   };
 }
 
+function makeFailingAuditModel() {
+  return {
+    specificationVersion: "v1" as const, provider: "stub", modelId: "stub-audit",
+    async doGenerate() {
+      throw new Error("audit boom");
+    },
+    async doStream() { throw new Error("not used"); },
+  };
+}
+
 let db: any, tmpDir: string, chaptersRepo: any, chapterFiles: any;
 
 beforeEach(() => {
@@ -111,5 +121,57 @@ describe("runAutoMode 写作瞬时断流重试", () => {
     expect(final.state).toBe("error");
     expect(chaptersRepo.maxChapterNo()).toBe(0);
     expect(evs.some(e => e.type === "error")).toBe(true);
+  });
+
+  it("正文已落盘但审查失败时不应把章节计入完成或继续下一章", async () => {
+    const write = makeFlakyWriteModel(0);
+    const evs = await collect(runAutoMode(
+      {
+        model: write as never, auditModel: makeFailingAuditModel() as never, auditModelId: "m",
+        chaptersRepo, chapterFiles,
+        maxChapterNo: () => chaptersRepo.maxChapterNo(),
+        getVerdict: (no: number) => chaptersRepo.getAudit(no)?.verdict,
+        budgetLimitUsd: 50, writeModelInfo: info, auditModelInfo: info,
+      },
+      { n: 2 },
+    ));
+
+    const final = evs.filter(e => e.type === "auto_status").at(-1);
+    expect(final.state).toBe("error");
+    expect(final.doneChapters).toEqual([]);
+    expect(chaptersRepo.maxChapterNo()).toBe(1);
+    expect(chaptersRepo.getAudit(1)).toBeUndefined();
+    expect(chapterFiles.read(2)).toBeUndefined();
+    expect(evs.some(e => e.type === "error" && e.errorClass === "audit_failed")).toBe(true);
+  });
+
+  it("章节记录失败时不应静默继续下一章", async () => {
+    const write = makeFlakyWriteModel(0);
+    const evs = await collect(runAutoMode(
+      {
+        model: write as never, auditModel: makeAuditModel() as never, auditModelId: "m",
+        chaptersRepo, chapterFiles,
+        maxChapterNo: () => chaptersRepo.maxChapterNo(),
+        getVerdict: (no: number) => chaptersRepo.getAudit(no)?.verdict,
+        budgetLimitUsd: 50, writeModelInfo: info, auditModelInfo: info,
+        recordState: async function* () {
+          yield { type: "error", errorClass: "record_failed", message: "record boom" };
+        },
+      },
+      { n: 2 },
+    ));
+
+    const final = evs.filter(e => e.type === "auto_status").at(-1);
+    expect(final.state).toBe("error");
+    expect(final.doneChapters).toEqual([]);
+    expect(chaptersRepo.maxChapterNo()).toBe(1);
+    expect(chapterFiles.read(2)).toBeUndefined();
+    expect(
+      evs.some(e =>
+        e.type === "tool_call_end" &&
+        e.toolName === "record_chapter_state" &&
+        (e.result as any).success === false,
+      ),
+    ).toBe(true);
   });
 });
