@@ -438,6 +438,9 @@ async function runLiveChapter(input: {
   let repairStillCritical: boolean | undefined;
   let writeError: string | undefined;
   const auditCtx = buildChapterAuditContext(input.handle, input.chapterNo, userIntent).auditCtx;
+  const requiredSections = extractRequiredOutputSections(writeContext.messages.map((message) => ({
+    content: String(message.content),
+  })));
 
   await runWithTimeout(`chapter ${input.chapterNo}`, input.timeoutMs, async (signal) => {
     for await (const ev of writeWithAudit(
@@ -455,6 +458,18 @@ async function runLiveChapter(input: {
         prebuiltMessages: writeContext.messages,
         auditCtx,
         enableRepair: true,
+        qualityGate: ({ chapterContent }) => [
+          ...detectMissingRequiredSections(chapterContent, requiredSections).map((note) => ({
+            dimension: "required_output_section",
+            severity: "critical" as const,
+            note,
+          })),
+          ...detectMetaOutputLeakage(chapterContent).map((issue) => ({
+            dimension: "meta_output_leakage",
+            severity: "critical" as const,
+            note: `meta output leakage: ${issue}`,
+          })),
+        ],
         abortSignal: signal,
         deepestPrompt: input.deepestPrompt,
       },
@@ -541,9 +556,6 @@ async function runLiveChapter(input: {
   if (report.wordCount < 500) {
     report.styleNotes.push(`chapter too short for longform validation: ${report.wordCount}`);
   }
-  const requiredSections = extractRequiredOutputSections(writeContext.messages.map((message) => ({
-    content: String(message.content),
-  })));
   for (const missing of detectMissingRequiredSections(text, requiredSections)) {
     report.styleNotes.push(missing);
   }
@@ -615,8 +627,11 @@ async function runLiveMonitor(input: {
     );
     input.onProgress?.(reports);
     if (
-      report.auditVerdict === "critical" &&
-      (!report.repairAttempted || report.repairVerdict === "critical" || report.repairStillCritical)
+      (
+        report.auditVerdict === "critical" &&
+        (!report.repairAttempted || report.repairVerdict === "critical" || report.repairStillCritical)
+      ) ||
+      report.repairStillCritical
     ) {
       report.stoppedAfterChapter = true;
       input.onProgress?.(reports);

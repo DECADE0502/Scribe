@@ -9,6 +9,10 @@ import {
   isOnboardComplete,
   formatCompletenessHint,
 } from "../../ai/orchestrator/onboard-completeness.js";
+import {
+  seedPetCaptureDemo,
+  shouldSeedPetCaptureDemo,
+} from "../../ai/demo-seeds/pet-capture-demo.js";
 
 export interface BookRoutesDeps {
   registry: BookRegistry;
@@ -43,6 +47,9 @@ export function bookRoutes(deps: BookRoutesDeps) {
         category: "core",
         metadata: { seed: true, source: "create_book" },
       });
+    }
+    if (shouldSeedPetCaptureDemo(genre)) {
+      seedPetCaptureDemo(handle);
     }
     return c.json(
       { id: book.id, title: book.title, genre: book.genre, createdAt: book.createdAt },

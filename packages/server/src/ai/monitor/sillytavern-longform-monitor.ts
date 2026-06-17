@@ -170,6 +170,15 @@ export function buildSillyTavernLongformVerdict(input: {
       failureReasons.push(`chapter ${report.chapterNo}: unresolved critical after repair`);
     }
   }
+  for (const report of input.reports) {
+    if (
+      report.auditVerdict !== "critical" &&
+      report.repairAttempted &&
+      report.repairStillCritical
+    ) {
+      failureReasons.push(`chapter ${report.chapterNo}: unresolved quality gate after repair`);
+    }
+  }
   const continuityFailures = input.reports.flatMap((report) =>
     report.continuityNotes
       .filter((note) => {

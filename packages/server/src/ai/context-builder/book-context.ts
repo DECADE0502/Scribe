@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import type { CoreMessage } from "ai";
-import type { ChapterSummary } from "@scribe/shared";
+import type { ChapterSummary, Character, TimelineEvent } from "@scribe/shared";
 import {
   resolveItemIdentityKey,
   resolveItemLabel,
@@ -242,6 +242,38 @@ export function renderHardContinuityConstraints(
   ].join("\n");
 }
 
+export function renderCharacterStateContinuity(
+  characters: Pick<Character, "name" | "currentState">[],
+): string {
+  const lines = characters
+    .map((character) => {
+      const state = character.currentState;
+      if (!state || Object.keys(state).length === 0) return "";
+      return `- ${character.name}: ${JSON.stringify(state)}`;
+    })
+    .filter(Boolean)
+    .slice(0, 8);
+  if (!lines.length) return "";
+  return [
+    "## Current Structured State",
+    "Treat this as the latest durable state. Do not contradict inventory, contracts, location, time, tasks, HP, SP, or status values unless the chapter explicitly shows the cause of the change.",
+    ...lines,
+  ].join("\n");
+}
+
+export function renderTimelineContinuity(events: TimelineEvent[]): string {
+  const lines = events
+    .filter((event) => isHardContinuitySentence(event.event))
+    .slice(-12)
+    .map((event) => `- Chapter ${event.chapterNo}${event.storyTime ? ` ${event.storyTime}` : ""}: ${event.event}`);
+  if (!lines.length) return "";
+  return [
+    "## Timeline Hard Facts",
+    "These are recorded timeline facts. Preserve resource changes, deadlines, locations, status values, and contract outcomes.",
+    ...lines,
+  ].join("\n");
+}
+
 function extractMessageBlock(messages: CoreMessage[], heading: string): string | undefined {
   const text = messages.map((message) => String(message.content)).join("\n");
   const start = text.indexOf(heading);
@@ -370,6 +402,8 @@ export function buildChapterWriteMessages(
       .filter((summary) => result.recalledChapterNos.includes(summary.chapterNo))
       .slice(-5),
   ]);
+  const structuredContinuity = renderCharacterStateContinuity(snapshot.characters);
+  const timelineContinuity = renderTimelineContinuity(handle.timelineRepo?.listAll?.() ?? []);
   const requiredOutputSections = renderRequiredOutputSections(
     extractRequiredOutputSections(snapshot.promptBlocks),
   );
@@ -379,6 +413,12 @@ export function buildChapterWriteMessages(
     ...result.messages,
     ...(hardContinuity
       ? [{ role: "user" as const, content: hardContinuity }]
+      : []),
+    ...(structuredContinuity
+      ? [{ role: "user" as const, content: structuredContinuity }]
+      : []),
+    ...(timelineContinuity
+      ? [{ role: "user" as const, content: timelineContinuity }]
       : []),
     ...(requiredOutputSections
       ? [{ role: "user" as const, content: requiredOutputSections }]
@@ -443,13 +483,19 @@ export function buildChapterAuditContext(
       .filter((summary) => result.recalledChapterNos.includes(summary.chapterNo))
       .slice(-5),
   ]);
+  const structuredContinuity = renderCharacterStateContinuity(snapshot.characters);
+  const timelineContinuity = renderTimelineContinuity(handle.timelineRepo?.listAll?.() ?? []);
   return {
     auditCtx: {
       ...base,
       chapterPlan,
       worldbookContext: extractMessageBlock(result.messages, "## Worldbook"),
       readerIssuesContext: extractMessageBlock(result.messages, "## Reader Continuity Issues"),
-      hardContinuityContext,
+      hardContinuityContext: [
+        hardContinuityContext,
+        structuredContinuity,
+        timelineContinuity,
+      ].filter(Boolean).join("\n\n"),
       recentSummaries: snapshot.recentSummaries.filter((s) => recent.has(s.chapterNo)),
       recalledSummaries: snapshot.allSummaries.filter((s) => recalled.has(s.chapterNo)),
     },

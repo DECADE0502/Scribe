@@ -119,6 +119,38 @@ function makeCapturingAuditModel(text: string): any {
   };
 }
 
+function makeSequencedStreamModel(chunksByCall: string[][]): any {
+  let callCount = 0;
+  return {
+    specificationVersion: "v1",
+    provider: "stub",
+    modelId: "stub-sequenced-stream",
+    async doGenerate() {
+      throw new Error("not used");
+    },
+    async doStream() {
+      const chunks = chunksByCall[Math.min(callCount, chunksByCall.length - 1)] ?? [];
+      callCount += 1;
+      return {
+        stream: new ReadableStream({
+          start(ctrl) {
+            for (const ch of chunks) {
+              ctrl.enqueue({ type: "text-delta", textDelta: ch });
+            }
+            ctrl.enqueue({
+              type: "finish",
+              finishReason: "stop",
+              usage: { promptTokens: 5, completionTokens: chunks.length },
+            });
+            ctrl.close();
+          },
+        }),
+        rawCall: { rawPrompt: null, rawSettings: {} },
+      };
+    },
+  };
+}
+
 let tmp: string;
 let db: any;
 let chaptersRepo: any;
@@ -227,6 +259,55 @@ describe("writeWithAudit", () => {
       "ai_rewrite",
       "ai_write",
     ]);
+    expect(chaptersRepo.getAudit(1)?.verdict).toBe("ok");
+  });
+
+  it("verdict=ok 但质量门禁失败时触发 repair 并再审", async () => {
+    const evs = await consume(
+      writeWithAudit(
+        {
+          model: makeSequencedStreamModel([
+            ["状态栏：HP 10/10。正文继续。"],
+            ["状态栏：HP 10/10，契约 1。正文继续。"],
+          ]),
+          chaptersRepo,
+          chapterFiles,
+          auditModel: makeSequencedAuditModel([
+            JSON.stringify(okAudit),
+            JSON.stringify(okAudit),
+          ]),
+          auditModelId: "deepseek-v4-flash",
+        },
+        {
+          chapterNo: 1,
+          userIntent: "测试",
+          qualityGate: ({ chapterContent }) =>
+            chapterContent.includes("契约")
+              ? []
+              : [{
+                dimension: "required_output_section",
+                severity: "critical",
+                note: "状态栏 missing required terms: 契约",
+              }],
+        },
+      ),
+    );
+
+    expect(evs.find((e: any) => e.type === "done")).toBeDefined();
+    const repairStart = evs.find(
+      (e: any) => e.type === "tool_call_start" && e.toolName === "chapter_repair",
+    );
+    expect(repairStart).toBeDefined();
+    expect((repairStart as any).args.reason).toBe("quality gate failed");
+    const reAudit = evs.find(
+      (e: any) => e.type === "tool_call_end" && e.toolName === "chapter_repair_audit",
+    );
+    expect((reAudit as any).result.verdict).toBe("ok");
+    expect((reAudit as any).result.stillCritical).toBe(false);
+
+    expect(chaptersRepo.listVersions(1)).toHaveLength(2);
+    const md = fs.readFileSync(path.join(tmp, "chapters", "0001.md"), "utf-8");
+    expect(md).toContain("契约 1");
     expect(chaptersRepo.getAudit(1)?.verdict).toBe("ok");
   });
 

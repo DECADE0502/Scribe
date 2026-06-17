@@ -91,6 +91,52 @@ describe("POST /api/books", () => {
     expect(handle.bookMetaRepo.get("title")).toBe("潮汐回路");
     expect(handle.bookMetaRepo.get("genre")).toBe("近未来科幻悬疑");
   });
+
+  it("seeds a curated pet-capture demo without SillyTavern chat format conflicts", async () => {
+    const res = await app.request("/api/books", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "契约末土", genre: "宠物捕捉系统" }),
+    });
+    const { id } = await json<BookCreated>(res);
+    const handle = registry.open(id);
+
+    const presets = handle.promptPresetsRepo.listPresets();
+    const demoPreset = presets.find((preset) => preset.name.includes("宠物捕捉系统 Demo"));
+    expect(demoPreset).toBeDefined();
+    const blocks = handle.promptPresetsRepo.listBlocks(demoPreset!.id);
+    expect(blocks.map((block) => block.sourceIdentifier)).toEqual([
+      "demo-writing-style",
+      "demo-status-continuity",
+    ]);
+    const promptText = blocks.map((block) => block.content).join("\n");
+    expect(promptText).toContain("只输出小说正文");
+    expect(promptText).toContain("不要写成 HTML");
+    expect(promptText).not.toMatch(/<konatan|<Master_input|<user>|<Output_format|<Chain_of_Thought/i);
+
+    const entries = handle.worldbookRepo
+      .list()
+      .filter((entry) => entry.metadata?.source === "pet_capture_demo");
+    expect(entries.length).toBeGreaterThanOrEqual(6);
+    const worldText = entries.map((entry) => entry.content).join("\n");
+    expect(worldText).toContain("系统降临");
+    expect(worldText).toContain("捕捉前提");
+    expect(worldText).not.toMatch(/NSFW|HTML 状态栏|<style>|精液|繁殖屋/);
+  });
+
+  it("does not seed pet-capture demo for unrelated genres", async () => {
+    const res = await app.request("/api/books", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "潮汐回路", genre: "近未来科幻悬疑" }),
+    });
+    const { id } = await json<BookCreated>(res);
+    const handle = registry.open(id);
+
+    expect(handle.promptPresetsRepo.listPresets()).toHaveLength(0);
+    expect(handle.worldbookRepo.list().filter((entry) => entry.metadata?.source === "pet_capture_demo"))
+      .toHaveLength(0);
+  });
 });
 
 describe("GET /api/books", () => {

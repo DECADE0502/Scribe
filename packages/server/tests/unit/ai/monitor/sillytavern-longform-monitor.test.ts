@@ -147,6 +147,36 @@ describe("sillytavern longform monitor helpers", () => {
     expect(verdict.failureReasons).not.toContain("chapter 9: unresolved critical after repair");
   });
 
+  test("fails when a non-critical chapter still violates quality gates after repair", () => {
+    const reports = Array.from({ length: 15 }, (_, index) => ({
+      chapterNo: index + 1,
+      wordCount: 1800,
+      presetBlockCount: 52,
+      regexScriptsApplied: ["cleanup"],
+      worldbookEntryCount: 8,
+      readerIssueIds: index > 4 ? ["issue-1"] : [],
+      recordStateAttempted: true,
+      recordStateSucceeded: true,
+      containsWorldbook: true,
+      continuityNotes: [],
+      styleNotes: [],
+      auditVerdict: "ok",
+      repairAttempted: index === 4,
+      repairVerdict: index === 4 ? "ok" : undefined,
+      repairStillCritical: index === 4,
+    }));
+
+    const verdict = buildSillyTavernLongformVerdict({
+      expectedChapterCount: 15,
+      live: true,
+      readerIssueCreated: true,
+      reports,
+    });
+
+    expect(verdict.passed).toBe(false);
+    expect(verdict.failureReasons).toContain("chapter 5: unresolved quality gate after repair");
+  });
+
   test("detects non-novel meta output labels without banning diegetic system text", () => {
     expect(detectMetaOutputLeakage("【进度】：任务完成\n正文继续")).toContain("progress label");
     expect(detectMetaOutputLeakage("AI：我会继续写这一章")).toContain("ai chat log");

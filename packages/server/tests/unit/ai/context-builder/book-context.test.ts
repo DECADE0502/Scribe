@@ -16,7 +16,9 @@ import {
   buildChapterWriteMessages,
   detectMissingRequiredSections,
   extractRequiredOutputSections,
+  renderCharacterStateContinuity,
   renderHardContinuityConstraints,
+  renderTimelineContinuity,
 } from "../../../../src/ai/context-builder/book-context.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -129,6 +131,69 @@ describe("hard continuity timer/resource facts", () => {
     expect(constraints).toContain("36小时");
     expect(constraints).toContain("普通捕捉球已经用尽");
     expect(constraints).toContain("高级捕捉球");
+  });
+});
+
+describe("structured and timeline hard continuity", () => {
+  it("renders latest character inventory state as hard facts", () => {
+    const constraints = renderCharacterStateContinuity([
+      {
+        name: "林澈",
+        currentState: {
+          inventory: { normalCaptureBalls: 2, brokenCaptureBalls: 1, sp: 89, hp: 100 },
+          contracts: [],
+          location: "便利店",
+        },
+      } as never,
+    ]);
+
+    expect(constraints).toContain("Current Structured State");
+    expect(constraints).toContain('"normalCaptureBalls":2');
+    expect(constraints).toContain('"sp":89');
+  });
+
+  it("renders resource-changing timeline events as hard facts", () => {
+    const constraints = renderTimelineContinuity([
+      {
+        id: "event-1",
+        chapterNo: 1,
+        storyTime: "凌晨三点半",
+        event: "林澈首次捕捉失败，一颗捕捉球损毁，SP降至89",
+        participants: ["林澈"],
+      },
+    ]);
+
+    expect(constraints).toContain("Timeline Hard Facts");
+    expect(constraints).toContain("一颗捕捉球损毁");
+    expect(constraints).toContain("SP降至89");
+  });
+
+  it("injects structured and timeline continuity into chapter write messages", () => {
+    handle.charactersRepo.create({
+      name: "林澈",
+      role: "protagonist",
+      currentState: {
+        inventory: { normalCaptureBalls: 2, brokenCaptureBalls: 1, sp: 89, hp: 100 },
+        contracts: [],
+      },
+    });
+    handle.timelineRepo = {
+      listAll: () => [{
+        id: "event-1",
+        chapterNo: 1,
+        storyTime: "凌晨三点半",
+        event: "林澈首次捕捉失败，一颗捕捉球损毁，SP降至89",
+        participants: ["林澈"],
+      }],
+    };
+
+    const result = buildChapterWriteMessages(handle as never, 2, "继续第2章");
+    const text = result.messages.map((message) => String(message.content)).join("\n");
+
+    expect(text).toContain("Current Structured State");
+    expect(text).toContain('"normalCaptureBalls":2');
+    expect(text).toContain("Timeline Hard Facts");
+    expect(text).toContain("SP降至89");
   });
 });
 

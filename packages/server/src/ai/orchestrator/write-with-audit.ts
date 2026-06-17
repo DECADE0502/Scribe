@@ -16,6 +16,7 @@ import {
   type ChaptersRepoAuditLike,
   type ReaderIssuesRepoAuditLike,
 } from "./audit-persist.js";
+import type { RepairContext } from "../prompts/repair-chapter.js";
 import { repairChapter, type RepairDeps } from "./repair-chapter.js";
 import { sanitizeChapterOutput } from "./output-sanitize.js";
 
@@ -40,6 +41,16 @@ export interface WriteWithAuditInput extends WriteChapterInput {
   auditCtx?: Partial<Omit<AuditContext, "chapterNo" | "chapterContent">>;
   /** verdict=critical 时是否触发 repair,默认 true */
   enableRepair?: boolean;
+  /**
+   * 调用方提供的机器质量门禁。用于捕捉 audit 模型可能漏掉的硬约束,
+   * 例如导入预设要求的固定输出段落或非小说 meta 泄漏。
+   */
+  qualityGate?: (input: {
+    chapterNo: number;
+    chapterContent: string;
+    stage: "draft" | "repair";
+    auditVerdict: string;
+  }) => RepairContext["issues"] | Promise<RepairContext["issues"]>;
 }
 
 /**
@@ -134,11 +145,34 @@ export async function* writeWithAudit(
 
   // ---- 阶段 4: 可选 repair ----
   const enableRepair = input.enableRepair ?? true;
-  if (enableRepair && auditResult.output.verdict === "critical") {
+  const draftQualityIssues = await runQualityGate(input, {
+    chapterNo: input.chapterNo,
+    chapterContent: finalWrittenContent,
+    stage: "draft",
+    auditVerdict: auditResult.output.verdict,
+  });
+  if (draftQualityIssues.error) {
+    yield draftQualityIssues.error;
+    return;
+  }
+  const shouldRepair =
+    enableRepair &&
+    (auditResult.output.verdict === "critical" || draftQualityIssues.issues.length > 0);
+  if (shouldRepair) {
+    const repairIssues =
+      auditResult.output.verdict === "critical"
+        ? [...auditResult.output.issues, ...draftQualityIssues.issues]
+        : draftQualityIssues.issues;
     yield {
       type: "tool_call_start",
       toolName: "chapter_repair",
-      args: { chapterNo: input.chapterNo, reason: "critical issues found" },
+      args: {
+        chapterNo: input.chapterNo,
+        reason: auditResult.output.verdict === "critical"
+          ? "critical issues found"
+          : "quality gate failed",
+        qualityIssueCount: draftQualityIssues.issues.length,
+      },
     };
 
     /**
@@ -169,7 +203,7 @@ export async function* writeWithAudit(
       chapterNo: input.chapterNo,
       ctx: {
         chapterContent: finalWrittenContent,
-        issues: auditResult.output.issues,
+        issues: repairIssues,
         ...(input.auditCtx as Partial<AuditContext>),
       },
     })) {
@@ -210,13 +244,27 @@ export async function* writeWithAudit(
           deps.auditModelId,
           deps.readerIssuesRepo,
         );
+        const repairQualityIssues = await runQualityGate(input, {
+          chapterNo: input.chapterNo,
+          chapterContent: finalRepairContent,
+          stage: "repair",
+          auditVerdict: reAudit.output.verdict,
+        });
+        if (repairQualityIssues.error) {
+          yield repairQualityIssues.error;
+          yield repairEnd(true, { reason: "repair_done_but_quality_gate_failed" });
+          return;
+        }
         yield repairEnd(true);
         yield {
           type: "tool_call_end",
           toolName: "chapter_repair_audit",
           result: {
             verdict: reAudit.output.verdict,
-            stillCritical: reAudit.output.verdict === "critical",
+            stillCritical:
+              reAudit.output.verdict === "critical" ||
+              repairQualityIssues.issues.length > 0,
+            qualityIssues: repairQualityIssues.issues.map((issue) => issue.note),
           },
         };
       } catch (e) {
@@ -238,4 +286,31 @@ export async function* writeWithAudit(
   }
 
   yield { type: "done" };
+}
+
+async function runQualityGate(
+  input: WriteWithAuditInput,
+  gateInput: {
+    chapterNo: number;
+    chapterContent: string;
+    stage: "draft" | "repair";
+    auditVerdict: string;
+  },
+): Promise<{
+  issues: RepairContext["issues"];
+  error?: SseEvent;
+}> {
+  if (!input.qualityGate) return { issues: [] };
+  try {
+    return { issues: await input.qualityGate(gateInput) };
+  } catch (e) {
+    return {
+      issues: [],
+      error: {
+        type: "error",
+        errorClass: "quality_gate_failed",
+        message: `质量门禁失败:${(e as Error).message}`,
+      },
+    };
+  }
 }

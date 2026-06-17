@@ -1,6 +1,81 @@
 # Codex Handoff: SillyTavern Import, Worldbook Runtime, and Long-Form Continuity
 
-Last updated: 2026-06-16 19:46 Asia/Shanghai
+Last updated: 2026-06-17 17:45 Asia/Shanghai
+
+## 2026-06-17 Urgent Handoff Addendum
+
+This branch now contains partial work from a live pet-capture demo run, but the user explicitly corrected the direction: do **not** continue optimizing for that one book. Use the exposed failure to fix the generic architecture.
+
+Latest user direction:
+
+- "我咋感觉你又开始做针对这本小说的专属优化了呢"
+- "我要的是你从单本小说暴露的问题找到真正通用问题所在"
+- "保证后面写什么小说都不出问题"
+
+The live run created a seeded demo book and generated two chapters before network/DNS failure stopped chapter 3:
+
+- Book id: `54e51c3f-52aa-4ba1-9355-df988982ae0a`
+- Report: `packages/server/tmp/pet-capture-demo-live-2026-06-17T09-05-31-454Z.json`
+- Generated local chapters:
+  - `~/.config/scribe/books/54e51c3f-52aa-4ba1-9355-df988982ae0a/chapters/0001.md`
+  - `~/.config/scribe/books/54e51c3f-52aa-4ba1-9355-df988982ae0a/chapters/0002.md`
+
+Observed quality bug:
+
+- Chapter 1 established 3 initial capture balls, then one failed capture consumed one, leaving 2.
+- Chapter 2 incorrectly changed the status to `捕捉球（基础款）：0/3` and treated capture balls as depleted.
+- The audit still returned `ok`.
+- State recording then persisted the wrong memory (`normalCaptureBalls: 0`), which would poison later chapters.
+
+Generic diagnosis:
+
+- This is a hard-fact contradiction problem, not a pet-capture problem.
+- Any genre can have the same failure: money, ammo, spell slots, medicine, clues, alibis, injuries, relationships, contracts, locations, deadlines, ownership, promises, cooldowns, task states, realm levels, ship fuel, political offices, etc.
+- The current audit is too semantic/free-form to reliably protect hard facts.
+- State recording must not trust a chapter that has unresolved hard-fact contradictions, because bad memory is worse than missing memory.
+
+Current partial implementation in this branch:
+
+- `writeWithAudit()` has a generic `qualityGate` hook so deterministic or model-assisted checks can trigger repair even when the audit verdict is `ok`.
+- The SillyTavern monitor uses that hook for required-section and meta-output leakage checks.
+- `book-context.ts` now injects structured character state and timeline hard facts into write/audit context. This is generic in code shape, but the tests/examples currently use pet-capture vocabulary; next agent should either generalize tests across genres or refactor into a clearer hard-fact module.
+- A curated pet-capture demo seed was added from the user's two local JSON samples. It intentionally keeps only writing/personality/runtime-safe worldbook material and avoids Izumi chat/HTML/output-format conflicts. This is a demo seed, not the main fix.
+
+Required next architectural step:
+
+Build a generic hard-fact consistency gate that runs after draft/repair and before `recordChapterState()`.
+
+Recommended shape:
+
+1. Gather prior hard facts from structured character state, generic records, recent timeline events, recent summaries, worldbook entries, and reader issues.
+2. Extract current chapter hard-fact claims using a genre-agnostic schema: entity, fact type, attribute, value, quantity, unit, scope, chapter evidence, operation/change cause, confidence.
+3. Compare the current chapter against prior facts and allowed in-chapter changes.
+4. Classify contradictions such as unexplained quantity changes, impossible location/time jumps, reversed irreversible outcomes, lost contracts/relationships, missing injuries, reset cooldowns, or ownership changes without cause.
+5. Feed contradictions into `qualityGate` as repair issues.
+6. If repair still contradicts hard facts, stop and do not record state.
+7. Only after the final chapter passes the hard-fact gate should `recordChapterState()` update memory.
+
+Do not hardcode terms like `捕捉球`, `SP`, `宠物`, `契约`, or this book's character names in the detector. Tests should demonstrate the same mechanism with multiple genres, for example:
+
+- Urban system: resource count contradiction.
+- Xianxia: spirit stones / realm / injury contradiction.
+- Mystery: evidence location / alibi time contradiction.
+- Sci-fi: fuel / ammo / damaged module contradiction.
+
+Verification already completed before this handoff:
+
+- `corepack pnpm --filter @scribe/server test` passed: 82 files, 460 tests.
+- `corepack pnpm -r run typecheck` passed.
+- Focused tests passed:
+  - `packages/server/tests/integration/books-routes.test.ts`
+  - `packages/server/tests/integration/write-then-audit.test.ts`
+  - `packages/server/tests/unit/ai/monitor/sillytavern-longform-monitor.test.ts`
+
+Local config note:
+
+- MiMo API config was written under `~/.config/scribe/`, outside this repo.
+- The user provided the key in chat and said local plaintext is acceptable, but do not commit secrets.
+- The two root JSON files are user-provided SillyTavern samples. They are currently untracked in this handoff state unless intentionally added later.
 
 ## 0. Read This First
 
