@@ -101,7 +101,7 @@ describe("compareHardFacts", () => {
     const issues = hardFactContradictionsToRepairIssues(result.contradictions);
     expect(issues).toContainEqual(expect.objectContaining({
       severity: "critical",
-      category: "continuity",
+      dimension: "continuity",
     }));
     expect(issues[0]!.note).toContain("ship.fuel");
   });

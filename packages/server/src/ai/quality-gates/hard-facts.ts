@@ -147,12 +147,12 @@ export function hardFactContradictionsToRepairIssues(
 ): RepairContext["issues"] {
   return contradictions.map((contradiction) => ({
     severity: "critical" as const,
-    category: "continuity" as const,
+    dimension: "continuity",
     note: contradiction.message,
-    evidence: [
+    excerpt: [
       `prior: ${contradiction.prior.evidence}`,
       `current: ${contradiction.current.evidence}`,
+      `suggestion: revise the chapter so ${contradiction.entity}.${contradiction.attribute} either keeps the prior value (${normalizeFactValue(contradiction.prior.value)}) or clearly shows the cause of changing to ${normalizeFactValue(contradiction.current.value)}.`,
     ].join("\n"),
-    suggestion: `Revise the chapter so ${contradiction.entity}.${contradiction.attribute} either keeps the prior value (${normalizeFactValue(contradiction.prior.value)}) or clearly shows the cause of changing to ${normalizeFactValue(contradiction.current.value)}.`,
   }));
 }
