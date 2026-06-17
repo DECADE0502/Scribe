@@ -50,6 +50,8 @@ export interface RecordStateInput {
   chapterContent: string;
   /** 当前档案概要(板块 schema + 已有条目名 + 角色 + 活跃伏笔),由调用方组装 */
   archiveSummary: string;
+  /** If present and failed, durable state recording must not run. */
+  qualityGateResult?: { passed: boolean; blockingIssues: string[] };
 }
 
 function hasGenericCollections(archiveSummary: string): boolean {
@@ -93,6 +95,18 @@ export async function* recordChapterState(
   deps: RecordStateDeps,
   input: RecordStateInput,
 ): AsyncIterable<SseEvent> {
+  if (input.qualityGateResult && !input.qualityGateResult.passed) {
+    yield {
+      type: "error",
+      errorClass: "quality_gate_blocked_state_recording",
+      message: [
+        "质量门禁未通过,本章不会写入长期记忆。",
+        ...input.qualityGateResult.blockingIssues.map((issue) => `- ${issue}`),
+      ].join("\n"),
+    };
+    return;
+  }
+
   const tools = {
     ...makeStateTools(deps.stateDeps),
     ...makeGenreSectionTools(deps.genreDeps),

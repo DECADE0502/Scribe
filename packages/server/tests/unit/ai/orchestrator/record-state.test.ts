@@ -101,6 +101,52 @@ describe("buildArchiveSummary", () => {
 });
 
 describe("recordChapterState", () => {
+  it("does not run state tools when quality gate failed", async () => {
+    const repos = createRepos();
+    try {
+      const archiveSummary = buildArchiveSummary({
+        genreSections: [],
+        characters: repos.charactersRepo.list(),
+        activeForeshadowing: [],
+      });
+
+      const events = await consume(recordChapterState(
+        {
+          model: makeMultiTurnStub(() => {
+            throw new Error("model should not be called when quality gate failed");
+          }),
+          stateDeps: {
+            charactersRepo: repos.charactersRepo,
+            foreshadowingRepo: repos.foreshadowingRepo,
+            timelineRepo: repos.timelineRepo,
+            chapterNo: 3,
+          },
+          genreDeps: {
+            repo: repos.genreSectionsRepo,
+            charactersRepo: repos.charactersRepo,
+          },
+        },
+        {
+          chapterNo: 3,
+          chapterContent: "正文里有错误事实。",
+          archiveSummary,
+          qualityGateResult: {
+            passed: false,
+            blockingIssues: ["ship.fuel changed from 18 percent to 72 percent without an explicit in-chapter cause"],
+          },
+        },
+      ));
+
+      expect(events).toContainEqual(expect.objectContaining({
+        type: "error",
+        errorClass: "quality_gate_blocked_state_recording",
+      }));
+      expect(repos.timelineRepo.listAll()).toEqual([]);
+    } finally {
+      repos.db.close();
+    }
+  });
+
   it("有通用集合且首轮未写条目时,自动补一次记录落库", async () => {
     const repos = createRepos();
     try {
