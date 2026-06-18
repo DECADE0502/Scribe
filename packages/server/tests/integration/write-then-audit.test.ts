@@ -311,6 +311,52 @@ describe("writeWithAudit", () => {
     expect(chaptersRepo.getAudit(1)?.verdict).toBe("ok");
   });
 
+  it("repairs when generic quality gate returns hard-fact issues even if audit is ok", async () => {
+    const evs = await consume(
+      writeWithAudit(
+        {
+          model: makeSequencedStreamModel([
+            ["飞船燃料显示为 72%。"],
+            ["飞船燃料仍为 18%，舰桥没有进行任何补给。"],
+          ]),
+          chaptersRepo,
+          chapterFiles,
+          auditModel: makeSequencedAuditModel([
+            JSON.stringify(okAudit),
+            JSON.stringify(okAudit),
+          ]),
+          auditModelId: "deepseek-v4-flash",
+        },
+        {
+          chapterNo: 12,
+          userIntent: "continue",
+          ctx: { premise: "sci-fi ship story" },
+          auditCtx: { premise: "sci-fi ship story" },
+          qualityGate: ({ stage }) => stage === "draft"
+            ? [{
+              dimension: "continuity",
+              severity: "critical",
+              note: "ship.fuel changed from 18 percent to 72 percent without an explicit in-chapter cause",
+              excerpt: "prior: ship fuel 18%\ncurrent: ship fuel 72%",
+            }]
+            : [],
+        },
+      ),
+    );
+
+    expect(evs).toContainEqual(expect.objectContaining({
+      type: "tool_call_start",
+      toolName: "chapter_repair",
+    }));
+    expect(evs).toContainEqual(expect.objectContaining({
+      type: "tool_call_end",
+      toolName: "chapter_repair_audit",
+    }));
+    expect(evs.at(-1)).toEqual({ type: "done" });
+    const md = fs.readFileSync(path.join(tmp, "chapters", "0012.md"), "utf-8");
+    expect(md).toContain("18%");
+  });
+
   it("verdict=critical,enableRepair=false:保留 critical,只 1 version", async () => {
     const evs = await consume(
       writeWithAudit(
