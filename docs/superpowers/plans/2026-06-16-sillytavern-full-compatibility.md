@@ -1,4 +1,4 @@
-# SillyTavern Full Compatibility Implementation Plan
+﻿# SillyTavern Full Compatibility Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -61,7 +61,7 @@
 
 - [ ] **Step 1: Add real-file assertions for the provided preset**
 
-Add a test that loads `C:/Users/Administrator/Desktop/novel/Izumi 0503.json` and asserts:
+Add a test that loads `samples/sillytavern/Izumi 0503.json` and asserts:
 
 ```ts
 expect(result.preset.name).toContain("Izumi");
@@ -74,7 +74,7 @@ expect(result.blocks.every((block) => typeof block.sourceIdentifier === "string"
 
 - [ ] **Step 2: Add real-file assertions for the provided worldbook**
 
-Add a test that loads `C:/Users/Administrator/Desktop/novel/宠物捕捉系统-世界书.json` and asserts:
+Add a test that loads `samples/sillytavern/宠物捕捉系统-世界书.json` and asserts:
 
 ```ts
 expect(entries).toHaveLength(38);
@@ -395,7 +395,7 @@ expect(joinedPrompt).toContain("Worldbook");
 Run:
 
 ```bash
-pnpm --filter @scribe/server exec tsx tools/verify-sillytavern-import.ts "C:/Users/Administrator/Desktop/novel/Izumi 0503.json" "C:/Users/Administrator/Desktop/novel/宠物捕捉系统-世界书.json"
+pnpm --filter @scribe/server exec tsx tools/verify-sillytavern-import.ts "samples/sillytavern/Izumi 0503.json" "samples/sillytavern/宠物捕捉系统-世界书.json"
 ```
 
 Expected: all booleans are `true` and counts match the source files.
@@ -420,7 +420,7 @@ The monitor creates a fresh book, imports both real files, generates 15 chapters
   "readerIssueInjectionCount": 0,
   "continuityFailures": [],
   "styleDriftFailures": [],
-  "reportPath": "packages/server/tmp/sillytavern-longform-<timestamp>.json"
+  "reportPath": "reports/live-runs/sillytavern-longform-<timestamp>.json"
 }
 ```
 
@@ -471,7 +471,7 @@ Report each chapter with:
 Run:
 
 ```bash
-pnpm --filter @scribe/server exec tsx tools/monitor-sillytavern-longform.ts "C:/Users/Administrator/Desktop/novel/Izumi 0503.json" "C:/Users/Administrator/Desktop/novel/宠物捕捉系统-世界书.json"
+pnpm --filter @scribe/server exec tsx tools/monitor-sillytavern-longform.ts "samples/sillytavern/Izumi 0503.json" "samples/sillytavern/宠物捕捉系统-世界书.json"
 ```
 
 Expected: PASS with a report path and no fatal continuity failures.

@@ -56,7 +56,7 @@ describe("normalizeSillyTavernPreset", () => {
   });
 
   it("normalizes the real exported Izumi preset without losing runtime controls", () => {
-    const filePath = path.resolve(process.cwd(), "../../Izumi 0503.json");
+    const filePath = path.resolve(process.cwd(), "../../samples/sillytavern/Izumi 0503.json");
     const raw = JSON.parse(fs.readFileSync(filePath, "utf8"));
     const result = normalizeSillyTavernPreset(raw, "Izumi 0503.json");
 

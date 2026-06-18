@@ -9,8 +9,9 @@ import { loadBookSnapshot } from "../src/ai/context-builder/snapshot.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../../..");
-const presetPath = process.argv[2] ?? path.join(repoRoot, "Izumi 0503.json");
-const worldbookPath = process.argv[3] ?? findWorldbookPath(repoRoot);
+const sampleDir = path.join(repoRoot, "samples", "sillytavern");
+const presetPath = process.argv[2] ?? path.join(sampleDir, "Izumi 0503.json");
+const worldbookPath = process.argv[3] ?? findWorldbookPath(sampleDir);
 
 function findWorldbookPath(root: string): string {
   for (const file of fs.readdirSync(root)) {

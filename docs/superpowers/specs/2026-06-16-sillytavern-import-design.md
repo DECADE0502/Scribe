@@ -1,4 +1,4 @@
-# SillyTavern Import Design
+﻿# SillyTavern Import Design
 
 ## Goal
 
@@ -25,8 +25,8 @@ writing call.
 
 Two real exports were inspected:
 
-- `C:\Users\Administrator\Desktop\novel\Izumi 0503.json`
-- `C:\Users\Administrator\Desktop\novel\宠物捕捉系统-世界书.json`
+- `samples\sillytavern\Izumi 0503.json`
+- `samples\sillytavern\宠物捕捉系统-世界书.json`
 
 ### Preset File
 

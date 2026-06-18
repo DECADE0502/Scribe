@@ -1,6 +1,6 @@
-# Scribe 小说引擎
+# Scribe
 
-对话式的本地 Web 小说创作引擎:跟 AI 像跟编辑聊天一样推动剧情,AI 负责把意图变成有质感的章节,并通过自动审查和长程记忆机制保障质量与连续性。
+本地优先的 AI 长篇小说创作工作台。Scribe 的目标不是单章生成器,而是把设定、世界书、预设、对话意图、章节正文、审查结果和长期记忆组织成一个可持续推进的写作项目。
 
 ## 环境要求
 
@@ -45,11 +45,13 @@ pnpm typecheck     # 全包类型检查
 
 ```
 packages/
-  shared/    前后端共享类型(Zod schema、SSE 事件、斜杠命令表)
-  server/    Node 后端(Hono + SQLite + DeepSeek adapter + 编排器)
-  client/    Vite + React 前端(三栏工作台:对话 / TipTap 编辑器 / 资料)
-e2e/         Playwright 端到端测试
-docs/        设计规格、实施计划、实现期 backlog
+  shared/       前后端共享类型、Zod schema、SSE 事件、斜杠命令表
+  server/       Node 后端、SQLite、本地文件、AI 编排、质量门禁
+  client/       Vite + React 前端、三栏写作工作台
+e2e/            Playwright 端到端测试和截图证据
+docs/           规格、计划、路线图、交接文档
+samples/        可复现导入样例,目前存放 SillyTavern 预设和世界书
+reports/        历史验证报告和 live-run 证据
 ```
 
 ## 数据存放

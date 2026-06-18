@@ -1,4 +1,4 @@
-# SillyTavern Quality Continuity Implementation Plan
+﻿# SillyTavern Quality Continuity Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -781,7 +781,7 @@ Expected: imported settings are freely editable in the app.
 Run:
 
 ```bash
-pnpm --filter @scribe/server exec tsx tools/verify-sillytavern-import.ts "C:/Users/Administrator/Desktop/novel/Izumi 0503.json" "C:/Users/Administrator/Desktop/novel/宠物捕捉系统-世界书.json"
+pnpm --filter @scribe/server exec tsx tools/verify-sillytavern-import.ts "samples/sillytavern/Izumi 0503.json" "samples/sillytavern/宠物捕捉系统-世界书.json"
 ```
 
 Expected:
@@ -808,7 +808,7 @@ Do not remove user files by default. For fresh proof, the monitor should create 
 Run:
 
 ```bash
-pnpm --filter @scribe/server exec tsx tools/monitor-sillytavern-longform.ts --live --chapters 15 --chapter-timeout-ms 420000 "C:/Users/Administrator/Desktop/novel/Izumi 0503.json" "C:/Users/Administrator/Desktop/novel/宠物捕捉系统-世界书.json"
+pnpm --filter @scribe/server exec tsx tools/monitor-sillytavern-longform.ts --live --chapters 15 --chapter-timeout-ms 420000 "samples/sillytavern/Izumi 0503.json" "samples/sillytavern/宠物捕捉系统-世界书.json"
 ```
 
 Expected:

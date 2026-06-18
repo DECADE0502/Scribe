@@ -1,6 +1,25 @@
-# Codex Handoff: SillyTavern Import, Worldbook Runtime, and Long-Form Continuity
+﻿# Codex Handoff: SillyTavern Import, Worldbook Runtime, and Long-Form Continuity
 
 Last updated: 2026-06-17 17:45 Asia/Shanghai
+
+## 2026-06-18 Project Rename And Directory Reset
+
+The project is now uniformly named **Scribe**.
+
+Current controlling documents:
+
+- Product goal: `docs/superpowers/specs/2026-06-17-scribe-ultimate-product-goal.md`
+- Phase 1 plan: `docs/superpowers/plans/2026-06-17-scribe-phase1-generic-continuity-gates.md`
+- Final roadmap: `docs/superpowers/plans/2026-06-17-scribe-final-roadmap.md`
+- Documentation index: `docs/README.md`
+
+Directory reset:
+
+- SillyTavern sample inputs now live in `samples/sillytavern/`.
+- Live-run evidence now lives in `reports/live-runs/`.
+- Source remains in `packages/`; e2e tests remain in `e2e/`.
+
+The code package names remain lowercase `scribe` / `@scribe/*` because npm package names must be lowercase. The product name and local project directory should be `Scribe`.
 
 ## 2026-06-17 Urgent Handoff Addendum
 
@@ -15,7 +34,7 @@ Latest user direction:
 The live run created a seeded demo book and generated two chapters before network/DNS failure stopped chapter 3:
 
 - Book id: `54e51c3f-52aa-4ba1-9355-df988982ae0a`
-- Report: `packages/server/tmp/pet-capture-demo-live-2026-06-17T09-05-31-454Z.json`
+- Report: `reports/live-runs/pet-capture-demo-live-2026-06-17T09-05-31-454Z.json`
 - Generated local chapters:
   - `~/.config/scribe/books/54e51c3f-52aa-4ba1-9355-df988982ae0a/chapters/0001.md`
   - `~/.config/scribe/books/54e51c3f-52aa-4ba1-9355-df988982ae0a/chapters/0002.md`
@@ -120,7 +139,7 @@ The user also proposed a SillyTavern-like "worldbook / core setting interaction 
 Repo root:
 
 ```text
-C:\Users\Administrator\Desktop\novel
+D:\DESKTOP\Scribe
 ```
 
 Main packages:
@@ -169,8 +188,8 @@ This has now been partially fixed for the monitor path.
 The user provided two real SillyTavern exports:
 
 ```text
-C:\Users\Administrator\Desktop\novel\Izumi 0503.json
-C:\Users\Administrator\Desktop\novel\宠物捕捉系统-世界书.json
+samples\sillytavern\Izumi 0503.json
+samples\sillytavern\宠物捕捉系统-世界书.json
 ```
 
 Do not assume these should be committed to GitHub. They may contain private prompts/settings. Use them locally for verification.
@@ -326,7 +345,7 @@ Live smoke tests:
 
 ```text
 Book: c599485c-781d-4a27-b364-76729d4b8cb2
-Report: packages/server/tmp/sillytavern-longform-live-2026-06-16T10-35-59-174Z.json
+Report: reports/live-runs/sillytavern-longform-live-2026-06-16T10-35-59-174Z.json
 Verdict: passed=true
 ```
 
@@ -349,7 +368,7 @@ Evidence from report:
 
 ```text
 Book: bb9a71ec-2b8c-4d52-bb6d-90ce7a877408
-Report: packages/server/tmp/sillytavern-longform-live-2026-06-16T10-38-53-535Z.json
+Report: reports/live-runs/sillytavern-longform-live-2026-06-16T10-38-53-535Z.json
 Verdict: passed=true
 ```
 
@@ -400,7 +419,7 @@ A 5-chapter live monitor was run after the state-recording integration:
 
 ```text
 Book: 22128208-3e29-41ce-8138-3aa83c786db5
-Report: packages/server/tmp/sillytavern-longform-live-2026-06-16T11-35-31-586Z.json
+Report: reports/live-runs/sillytavern-longform-live-2026-06-16T11-35-31-586Z.json
 Verdict: passed=false
 Failure: chapter 5: status bar missing required terms: contract
 ```
@@ -497,18 +516,22 @@ packages/client/tests/components/preset-panel.test.tsx
 packages/client/tests/components/worldbook-panel.test.tsx
 ```
 
-### 8.5 Generated report/temp files should not be committed
+### 8.5 Runtime Files And Evidence Reports
 
-Local runtime artifacts live under:
+Committed evidence reports live under:
+
+```text
+reports/live-runs/
+```
+
+Local throwaway runtime artifacts should stay uncommitted:
 
 ```text
 packages/server/tmp/
 tmp/
 ```
 
-These are useful evidence locally, but should not be pushed unless the user explicitly asks for artifacts.
-
-The two SillyTavern JSON samples are also local inputs and may be private. Do not commit them by default.
+The two SillyTavern JSON samples intentionally live under `samples/sillytavern/` for reproducible import tests. Do not add unrelated private exports outside that directory.
 
 ## 9. Next Best Steps
 
@@ -524,7 +547,7 @@ pnpm --filter @scribe/server typecheck
 This gives a faster signal after latest state-recording changes:
 
 ```powershell
-pnpm --filter @scribe/server exec tsx tools/monitor-sillytavern-longform.ts --live --chapters 5 --chapter-timeout-ms 420000 "C:/Users/Administrator/Desktop/novel/Izumi 0503.json" "C:/Users/Administrator/Desktop/novel/宠物捕捉系统-世界书.json"
+pnpm --filter @scribe/server exec tsx tools/monitor-sillytavern-longform.ts --live --chapters 5 --chapter-timeout-ms 420000 "samples/sillytavern/Izumi 0503.json" "samples/sillytavern/宠物捕捉系统-世界书.json"
 ```
 
 Check:
@@ -540,7 +563,7 @@ Check:
 ### Step 3: Run the full 15-chapter acceptance monitor
 
 ```powershell
-pnpm --filter @scribe/server exec tsx tools/monitor-sillytavern-longform.ts --live --chapters 15 --chapter-timeout-ms 420000 "C:/Users/Administrator/Desktop/novel/Izumi 0503.json" "C:/Users/Administrator/Desktop/novel/宠物捕捉系统-世界书.json"
+pnpm --filter @scribe/server exec tsx tools/monitor-sillytavern-longform.ts --live --chapters 15 --chapter-timeout-ms 420000 "samples/sillytavern/Izumi 0503.json" "samples/sillytavern/宠物捕捉系统-世界书.json"
 ```
 
 Acceptance is not just `verdict.passed=true`. Also manually skim chapters 1, 5, 10, and 15 as a reader:
@@ -568,19 +591,19 @@ Do not skip runtime semantics. UI editability is not enough unless edited settin
 Verify import:
 
 ```powershell
-pnpm --filter @scribe/server exec tsx tools/verify-sillytavern-import.ts "C:/Users/Administrator/Desktop/novel/Izumi 0503.json" "C:/Users/Administrator/Desktop/novel/宠物捕捉系统-世界书.json"
+pnpm --filter @scribe/server exec tsx tools/verify-sillytavern-import.ts "samples/sillytavern/Izumi 0503.json" "samples/sillytavern/宠物捕捉系统-世界书.json"
 ```
 
 Run context-only monitor:
 
 ```powershell
-pnpm --filter @scribe/server exec tsx tools/monitor-sillytavern-longform.ts --chapters 15 "C:/Users/Administrator/Desktop/novel/Izumi 0503.json" "C:/Users/Administrator/Desktop/novel/宠物捕捉系统-世界书.json"
+pnpm --filter @scribe/server exec tsx tools/monitor-sillytavern-longform.ts --chapters 15 "samples/sillytavern/Izumi 0503.json" "samples/sillytavern/宠物捕捉系统-世界书.json"
 ```
 
 Run live monitor:
 
 ```powershell
-pnpm --filter @scribe/server exec tsx tools/monitor-sillytavern-longform.ts --live --chapters 15 --chapter-timeout-ms 420000 "C:/Users/Administrator/Desktop/novel/Izumi 0503.json" "C:/Users/Administrator/Desktop/novel/宠物捕捉系统-世界书.json"
+pnpm --filter @scribe/server exec tsx tools/monitor-sillytavern-longform.ts --live --chapters 15 --chapter-timeout-ms 420000 "samples/sillytavern/Izumi 0503.json" "samples/sillytavern/宠物捕捉系统-世界书.json"
 ```
 
 Focused server tests:
@@ -616,20 +639,19 @@ codex/generic-record-architecture
 At the moment this document was written, there was no configured git remote in the local repo. The user asked to send the pack to:
 
 ```text
-https://github.com/DECADE0502/st_novel
+https://github.com/DECADE0502/Scribe
 ```
 
 Recommended push target:
 
 ```powershell
-git remote add origin https://github.com/DECADE0502/st_novel.git
+git remote add origin https://github.com/DECADE0502/Scribe.git
 git push -u origin codex/generic-record-architecture
 ```
 
 Before pushing, avoid committing:
 
-- `Izumi 0503.json`
-- `宠物捕捉系统-世界书.json`
+- local secrets or unrelated private exports outside `samples/`
 - `packages/server/tmp/`
 - `tmp/`
 - secrets or local `.env` files

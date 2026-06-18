@@ -1,4 +1,4 @@
-# SillyTavern Import Implementation Plan
+﻿# SillyTavern Import Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -2513,8 +2513,8 @@ import { createApp } from "../src/http/server.js";
 import { buildWriteContext } from "../src/ai/context-builder/builder.js";
 import { loadBookSnapshot } from "../src/ai/context-builder/snapshot.js";
 
-const presetPath = process.argv[2] ?? "C:/Users/Administrator/Desktop/novel/Izumi 0503.json";
-const worldbookPath = process.argv[3] ?? "C:/Users/Administrator/Desktop/novel/宠物捕捉系统-世界书.json";
+const presetPath = process.argv[2] ?? "samples/sillytavern/Izumi 0503.json";
+const worldbookPath = process.argv[3] ?? "samples/sillytavern/宠物捕捉系统-世界书.json";
 
 function makePaths(root: string) {
   return {
@@ -2623,7 +2623,7 @@ Expected: all PASS.
 Run:
 
 ```bash
-pnpm --filter @scribe/server exec tsx tools/verify-sillytavern-import.ts "C:/Users/Administrator/Desktop/novel/Izumi 0503.json" "C:/Users/Administrator/Desktop/novel/宠物捕捉系统-世界书.json"
+pnpm --filter @scribe/server exec tsx tools/verify-sillytavern-import.ts "samples/sillytavern/Izumi 0503.json" "samples/sillytavern/宠物捕捉系统-世界书.json"
 ```
 
 Expected JSON:
@@ -2655,7 +2655,7 @@ Required behavior:
   - whether preset prompt blocks were included;
   - audit verdict and reader issues;
   - chapter summaries and generic records;
-- write a JSON report under `packages/server/tmp/sillytavern-longform-<timestamp>.json`;
+- write a JSON report under `reports/live-runs/sillytavern-longform-<timestamp>.json`;
 - fail the process if fewer than 15 chapters are generated, if imported preset
   blocks are absent from writing context, if zero worldbook entries trigger
   across the run, or if reader issues are not injected after being created.
@@ -2663,7 +2663,7 @@ Required behavior:
 Run:
 
 ```bash
-pnpm --filter @scribe/server exec tsx tools/monitor-sillytavern-longform.ts "C:/Users/Administrator/Desktop/novel/Izumi 0503.json" "C:/Users/Administrator/Desktop/novel/宠物捕捉系统-世界书.json"
+pnpm --filter @scribe/server exec tsx tools/monitor-sillytavern-longform.ts "samples/sillytavern/Izumi 0503.json" "samples/sillytavern/宠物捕捉系统-世界书.json"
 ```
 
 Expected: PASS report with `chapterCount >= 15`, `presetInjected: true`,

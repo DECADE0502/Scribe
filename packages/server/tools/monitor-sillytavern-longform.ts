@@ -31,6 +31,7 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../../..");
+const sampleDir = path.join(repoRoot, "samples", "sillytavern");
 
 interface ChapterMonitorReport extends SillyTavernMonitorChapterEvidence {
   userIntent: string;
@@ -794,8 +795,8 @@ function buildOutput(input: {
 
 async function main() {
   const args = parseSillyTavernMonitorArgs(process.argv.slice(2), {
-    defaultPresetPath: path.join(repoRoot, "Izumi 0503.json"),
-    defaultWorldbookPath: findWorldbookPath(repoRoot),
+    defaultPresetPath: path.join(sampleDir, "Izumi 0503.json"),
+    defaultWorldbookPath: findWorldbookPath(sampleDir),
   });
   const root = args.live
     ? resolveAppPaths({ env: process.env }).appRoot
@@ -834,7 +835,7 @@ async function main() {
     );
     handle.bookMetaRepo.set("genre", "宠物捕捉系统");
 
-    const outDir = path.join(repoRoot, "packages", "server", "tmp");
+    const outDir = path.join(repoRoot, "reports", "live-runs");
     fs.mkdirSync(outDir, { recursive: true });
     reportPath = path.join(
       outDir,

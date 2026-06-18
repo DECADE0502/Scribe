@@ -1,4 +1,4 @@
-# Scribe(小说引擎)实施计划
+﻿# Scribe(小说引擎)实施计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -14,7 +14,7 @@
 - 测试用 Vitest,E2E 用 Playwright
 - 每个 Task 完成后必须 commit,commit message 用中文动词开头(如"添加 X / 修复 Y")
 - 路径使用 POSIX 风格(`/`),Windows 上 Node fs 自动处理
-- 项目代号 `scribe`,根目录 `C:/Users/Administrator/Desktop/novel/`
+- 项目代号 `scribe`,根目录 `D:/DESKTOP/Scribe/`
 
 **参考项目对照(实现时随时查阅):**
 

@@ -62,7 +62,7 @@ describe("normalizeSillyTavernWorldbook", () => {
   });
 
   it("normalizes the real exported SillyTavern worldbook without losing source fields", () => {
-    const filePath = path.resolve(process.cwd(), "../../宠物捕捉系统-世界书.json");
+    const filePath = path.resolve(process.cwd(), "../../samples/sillytavern/宠物捕捉系统-世界书.json");
     const raw = JSON.parse(fs.readFileSync(filePath, "utf8"));
     const result = normalizeSillyTavernWorldbook(raw);
 
