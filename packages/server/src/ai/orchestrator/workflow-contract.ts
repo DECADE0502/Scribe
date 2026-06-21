@@ -31,6 +31,7 @@ export function buildWriteIntentContract(input: {
     taskType: "write",
     mustDo: [
       `Generate ${count} chapter bodies`,
+      `Target chapters: ${input.chapterNos.join(", ")}`,
       "Keep draft prose hidden from ordinary chat until persistence finishes",
       "Write via chapter operations",
       "Show visible workflow status",
@@ -55,6 +56,7 @@ export function makeExecutionSteps(actions: IntendedAction[]): ExecutionStep[] {
     actionType: action.type,
     riskLevel: classifyActionRisk(action.type, action.riskHint),
     status: "pending",
+    argsSummary: makeArgsSummary(action),
   }));
 }
 
@@ -91,8 +93,10 @@ export function makeAcceptanceReport(input: {
   const writeSteps = getWriteSteps(input.trace);
   const expectedWriteCount =
     getExpectedWriteCount(input.contract.acceptanceCriteria) ?? writeSteps.length;
+  const expectedWriteTargets =
+    getExpectedWriteTargets(input.contract) ?? getExpectedWriteTargetsFromSteps(writeSteps);
   const userCriteria = input.contract.acceptanceCriteria.map(criterion =>
-    evaluateUserCriterion(criterion, input.trace, expectedWriteCount),
+    evaluateUserCriterion(criterion, input.trace, expectedWriteCount, expectedWriteTargets),
   );
   const processCriteria: CheckResult[] = [
     {
@@ -121,28 +125,41 @@ function evaluateUserCriterion(
   criterion: string,
   trace: ExecutionTrace,
   expectedWriteCount: number,
+  expectedWriteTargets?: number[],
 ): CheckResult {
   if (criterion.includes("successful chapter write steps")) {
     const verifiedWriteCount = getVerifiedWriteSteps(trace).length;
-    const passed = verifiedWriteCount === expectedWriteCount;
+    const countMatch = verifiedWriteCount === expectedWriteCount;
+    const verifiedTargets = getVerifiedWriteTargets(trace, expectedWriteTargets);
+    const targetMatch = expectedWriteTargets
+      ? sameNumberSet(verifiedTargets, expectedWriteTargets)
+      : true;
+    const passed = countMatch && targetMatch;
     return {
       criterion,
       status: passed ? "pass" : "fail",
-      evidence: passed
-        ? `Expected ${expectedWriteCount} verified chapter write steps, found ${verifiedWriteCount}.`
-        : `Expected ${expectedWriteCount} verified chapter write steps, found ${verifiedWriteCount}.`,
+      evidence:
+        countMatch && expectedWriteTargets && !targetMatch
+          ? `Expected verified chapter write targets ${formatTargets(expectedWriteTargets)}, found ${formatTargets(verifiedTargets)}.`
+          : `Expected ${expectedWriteCount} verified chapter write steps, found ${verifiedWriteCount}.`,
     };
   }
 
   if (criterion.includes("Read-back")) {
     const verifiedWriteCount = getVerifiedWriteSteps(trace).length;
-    const passed = expectedWriteCount > 0 && verifiedWriteCount === expectedWriteCount;
+    const countMatch = expectedWriteCount > 0 && verifiedWriteCount === expectedWriteCount;
+    const verifiedTargets = getVerifiedWriteTargets(trace, expectedWriteTargets);
+    const targetMatch = expectedWriteTargets
+      ? sameNumberSet(verifiedTargets, expectedWriteTargets)
+      : true;
+    const passed = countMatch && targetMatch;
     return {
       criterion,
       status: passed ? "pass" : "fail",
-      evidence: passed
-        ? `Expected read-back verification for ${expectedWriteCount} chapter write step${expectedWriteCount === 1 ? "" : "s"}, found ${verifiedWriteCount}.`
-        : `Expected read-back verification for ${expectedWriteCount} chapter write step${expectedWriteCount === 1 ? "" : "s"}, found ${verifiedWriteCount}.`,
+      evidence:
+        countMatch && expectedWriteTargets && !targetMatch
+          ? `Expected read-back verification for chapter targets ${formatTargets(expectedWriteTargets)}, found ${formatTargets(verifiedTargets)}.`
+          : `Expected read-back verification for ${expectedWriteCount} chapter write step${expectedWriteCount === 1 ? "" : "s"}, found ${verifiedWriteCount}.`,
     };
   }
 
@@ -151,6 +168,16 @@ function evaluateUserCriterion(
     status: trace.finalStatus === "succeeded" ? "pass" : "fail",
     evidence: `Trace final status is ${trace.finalStatus}.`,
   };
+}
+
+function makeArgsSummary(action: IntendedAction): string | undefined {
+  const chapterNo = getActionChapterNo(action);
+  return chapterNo === undefined ? undefined : `chapterNo=${chapterNo}`;
+}
+
+function getActionChapterNo(action: IntendedAction): number | undefined {
+  const chapterNo = action.target?.chapterNo;
+  return typeof chapterNo === "number" ? chapterNo : undefined;
 }
 
 function getExpectedWriteCount(criteria: string[]): number | undefined {
@@ -164,6 +191,27 @@ function getExpectedWriteCount(criteria: string[]): number | undefined {
   return undefined;
 }
 
+function getExpectedWriteTargets(contract: IntentContract): number[] | undefined {
+  const parseableItems = [...contract.mustDo, ...contract.acceptanceCriteria];
+
+  for (const item of parseableItems) {
+    const match = item.match(/Target chapters:\s*([\d,\s]+)/);
+    if (match?.[1]) {
+      return uniqueSortedNumbers(match[1].match(/\d+/g)?.map(Number) ?? []);
+    }
+  }
+
+  return undefined;
+}
+
+function getExpectedWriteTargetsFromSteps(steps: ExecutionStep[]): number[] | undefined {
+  const targets = steps
+    .map(step => getStepChapterNo(step))
+    .filter((chapterNo): chapterNo is number => chapterNo !== undefined);
+
+  return targets.length > 0 ? uniqueSortedNumbers(targets) : undefined;
+}
+
 function getWriteSteps(trace: ExecutionTrace): ExecutionStep[] {
   return trace.steps.filter(step => step.actionType.includes("write"));
 }
@@ -172,4 +220,45 @@ function getVerifiedWriteSteps(trace: ExecutionTrace): ExecutionStep[] {
   return getWriteSteps(trace).filter(
     step => step.status === "succeeded" && step.verification?.passed === true,
   );
+}
+
+function getVerifiedWriteTargets(
+  trace: ExecutionTrace,
+  expectedTargets?: number[],
+): number[] {
+  const targets = getVerifiedWriteSteps(trace)
+    .filter(step =>
+      expectedTargets ? expectedTargets.includes(getStepChapterNo(step) ?? Number.NaN) : true,
+    )
+    .map(step => getStepChapterNo(step))
+    .filter((chapterNo): chapterNo is number => chapterNo !== undefined);
+
+  return uniqueSortedNumbers(targets);
+}
+
+function getStepChapterNo(step: ExecutionStep): number | undefined {
+  return [
+    step.argsSummary,
+    step.resultSummary,
+    step.verification?.detail,
+  ]
+    .map(summary => summary?.match(/chapterNo=(\d+)|Chapter\s+(\d+)/i))
+    .map(match => (match ? Number(match[1] ?? match[2]) : undefined))
+    .find((chapterNo): chapterNo is number => chapterNo !== undefined);
+}
+
+function sameNumberSet(left: number[], right: number[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((value, index) => value === right[index]);
+}
+
+function uniqueSortedNumbers(values: number[]): number[] {
+  return [...new Set(values)].sort((left, right) => left - right);
+}
+
+function formatTargets(targets: number[]): string {
+  return `[${targets.join(", ")}]`;
 }

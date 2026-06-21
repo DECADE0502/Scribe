@@ -4,6 +4,7 @@ import {
   buildWriteIntentContract,
   makeAcceptanceReport,
   makeExecutionSteps,
+  makeWriteActions,
   makeWritePolicy,
 } from "../../../../src/ai/orchestrator/workflow-contract.js";
 
@@ -29,6 +30,16 @@ describe("workflow contract helpers", () => {
 
     expect(steps.map(step => step.status)).toEqual(["pending", "pending"]);
     expect(steps.map(step => step.riskLevel)).toEqual(["read", "write"]);
+  });
+
+  it("includes target chapter numbers in execution step argument summaries", () => {
+    const steps = makeExecutionSteps(makeWriteActions([1, 2, 3]));
+
+    expect(steps.map(step => step.argsSummary)).toEqual([
+      "chapterNo=1",
+      "chapterNo=2",
+      "chapterNo=3",
+    ]);
   });
 
   it("passes acceptance when write trace succeeds with read-back verification", () => {
@@ -75,6 +86,83 @@ describe("workflow contract helpers", () => {
       evidence: "Trace final status is succeeded.",
     });
     expect(report.recommendedActions).toEqual([]);
+  });
+
+  it("fails acceptance when verified write targets do not match requested chapters", () => {
+    const contract = buildWriteIntentContract({
+      taskId: "task-write-target-mismatch",
+      userRequest: "直接写前三章",
+      chapterNos: [1, 2, 3],
+    });
+    const trace: ExecutionTrace = {
+      taskId: "task-write-target-mismatch",
+      mode: "low_risk_auto",
+      policy: makeWritePolicy({
+        taskId: "task-write-target-mismatch",
+        chapterNos: [1, 2, 3],
+      }),
+      steps: [1, 1, 1].map((chapterNo, index) => ({
+        id: `step-${index + 1}`,
+        actionType: "multi_chapter_write",
+        riskLevel: "bulk_write",
+        status: "succeeded",
+        argsSummary: `chapterNo=${chapterNo}`,
+        verification: {
+          method: "read_back",
+          passed: true,
+          detail: `Chapter ${chapterNo} was read back after persistence.`,
+        },
+      })),
+      finalStatus: "succeeded",
+    };
+
+    const report = makeAcceptanceReport({ contract, trace });
+
+    expect(report.verdict).toBe("fail");
+    expect(report.userCriteria).toContainEqual({
+      criterion: "There are 3 successful chapter write steps",
+      status: "fail",
+      evidence: "Expected verified chapter write targets [1, 2, 3], found [1].",
+    });
+    expect(report.userCriteria).toContainEqual({
+      criterion: "Read-back verifies every target chapter",
+      status: "fail",
+      evidence: "Expected read-back verification for chapter targets [1, 2, 3], found [1].",
+    });
+  });
+
+  it("passes acceptance when verified write targets match requested chapters", () => {
+    const contract = buildWriteIntentContract({
+      taskId: "task-write-target-match",
+      userRequest: "直接写前三章",
+      chapterNos: [1, 2, 3],
+    });
+    const trace: ExecutionTrace = {
+      taskId: "task-write-target-match",
+      mode: "low_risk_auto",
+      policy: makeWritePolicy({
+        taskId: "task-write-target-match",
+        chapterNos: [1, 2, 3],
+      }),
+      steps: [1, 2, 3].map(chapterNo => ({
+        id: `step-${chapterNo}`,
+        actionType: "multi_chapter_write",
+        riskLevel: "bulk_write",
+        status: "succeeded",
+        argsSummary: `chapterNo=${chapterNo}`,
+        verification: {
+          method: "read_back",
+          passed: true,
+          detail: `Chapter ${chapterNo} was read back after persistence.`,
+        },
+      })),
+      finalStatus: "succeeded",
+    };
+
+    const report = makeAcceptanceReport({ contract, trace });
+
+    expect(report.verdict).toBe("pass");
+    expect(report.userCriteria.every(criterion => criterion.status === "pass")).toBe(true);
   });
 
   it("fails acceptance when requested chapter writes are partial", () => {
