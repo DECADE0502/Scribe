@@ -88,8 +88,11 @@ export function makeAcceptanceReport(input: {
   contract: IntentContract;
   trace: ExecutionTrace;
 }): AcceptanceReport {
+  const writeSteps = getWriteSteps(input.trace);
+  const expectedWriteCount =
+    getExpectedWriteCount(input.contract.acceptanceCriteria) ?? writeSteps.length;
   const userCriteria = input.contract.acceptanceCriteria.map(criterion =>
-    evaluateUserCriterion(criterion, input.trace),
+    evaluateUserCriterion(criterion, input.trace, expectedWriteCount),
   );
   const processCriteria: CheckResult[] = [
     {
@@ -114,27 +117,32 @@ export function makeAcceptanceReport(input: {
   };
 }
 
-function evaluateUserCriterion(criterion: string, trace: ExecutionTrace): CheckResult {
-  if (
-    criterion.includes("successful chapter write steps") ||
-    criterion.includes("Read-back")
-  ) {
-    const writeSteps = trace.steps.filter(step => step.actionType.includes("chapter_write"));
-    const allWriteStepsVerified =
-      writeSteps.length > 0 &&
-      writeSteps.every(
-        step =>
-          step.status === "succeeded" &&
-          step.verification?.method === "read_back" &&
-          step.verification.passed,
-      );
-
+function evaluateUserCriterion(
+  criterion: string,
+  trace: ExecutionTrace,
+  expectedWriteCount: number,
+): CheckResult {
+  if (criterion.includes("successful chapter write steps")) {
+    const verifiedWriteCount = getVerifiedWriteSteps(trace).length;
+    const passed = verifiedWriteCount === expectedWriteCount;
     return {
       criterion,
-      status: allWriteStepsVerified ? "pass" : "fail",
-      evidence: allWriteStepsVerified
-        ? "All chapter write steps succeeded with read-back verification."
-        : "At least one chapter write step is missing success or read-back verification.",
+      status: passed ? "pass" : "fail",
+      evidence: passed
+        ? `Expected ${expectedWriteCount} verified chapter write steps, found ${verifiedWriteCount}.`
+        : `Expected ${expectedWriteCount} verified chapter write steps, found ${verifiedWriteCount}.`,
+    };
+  }
+
+  if (criterion.includes("Read-back")) {
+    const verifiedWriteCount = getVerifiedWriteSteps(trace).length;
+    const passed = expectedWriteCount > 0 && verifiedWriteCount === expectedWriteCount;
+    return {
+      criterion,
+      status: passed ? "pass" : "fail",
+      evidence: passed
+        ? `Expected read-back verification for ${expectedWriteCount} chapter write step${expectedWriteCount === 1 ? "" : "s"}, found ${verifiedWriteCount}.`
+        : `Expected read-back verification for ${expectedWriteCount} chapter write step${expectedWriteCount === 1 ? "" : "s"}, found ${verifiedWriteCount}.`,
     };
   }
 
@@ -143,4 +151,25 @@ function evaluateUserCriterion(criterion: string, trace: ExecutionTrace): CheckR
     status: trace.finalStatus === "succeeded" ? "pass" : "fail",
     evidence: `Trace final status is ${trace.finalStatus}.`,
   };
+}
+
+function getExpectedWriteCount(criteria: string[]): number | undefined {
+  for (const criterion of criteria) {
+    const match = criterion.match(/There are (\d+) successful chapter write steps/);
+    if (match) {
+      return Number(match[1]);
+    }
+  }
+
+  return undefined;
+}
+
+function getWriteSteps(trace: ExecutionTrace): ExecutionStep[] {
+  return trace.steps.filter(step => step.actionType.includes("write"));
+}
+
+function getVerifiedWriteSteps(trace: ExecutionTrace): ExecutionStep[] {
+  return getWriteSteps(trace).filter(
+    step => step.status === "succeeded" && step.verification?.passed === true,
+  );
 }

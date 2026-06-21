@@ -4,6 +4,7 @@ import {
   buildWriteIntentContract,
   makeAcceptanceReport,
   makeExecutionSteps,
+  makeWritePolicy,
 } from "../../../../src/ai/orchestrator/workflow-contract.js";
 
 describe("workflow contract helpers", () => {
@@ -74,5 +75,130 @@ describe("workflow contract helpers", () => {
       evidence: "Trace final status is succeeded.",
     });
     expect(report.recommendedActions).toEqual([]);
+  });
+
+  it("fails acceptance when requested chapter writes are partial", () => {
+    const contract = buildWriteIntentContract({
+      taskId: "task-write-3",
+      userRequest: "鐩存帴鍐欏墠涓夌珷",
+      chapterNos: [1, 2, 3],
+    });
+    const trace: ExecutionTrace = {
+      taskId: "task-write-3",
+      mode: "low_risk_auto",
+      policy: makeWritePolicy({ taskId: "task-write-3", chapterNos: [1, 2, 3] }),
+      steps: [
+        {
+          id: "step-1",
+          actionType: "multi_chapter_write",
+          riskLevel: "bulk_write",
+          status: "succeeded",
+          verification: {
+            method: "read_back",
+            passed: true,
+            detail: "Chapter 1 was read back after persistence.",
+          },
+        },
+      ],
+      finalStatus: "succeeded",
+    };
+
+    const report = makeAcceptanceReport({ contract, trace });
+
+    expect(report.verdict).toBe("fail");
+    expect(report.userCriteria).toContainEqual({
+      criterion: "There are 3 successful chapter write steps",
+      status: "fail",
+      evidence: "Expected 3 verified chapter write steps, found 1.",
+    });
+    expect(report.recommendedActions).toEqual([
+      { type: "stop", reason: "workflow criteria failed" },
+    ]);
+  });
+
+  it("fails acceptance and recommends stop when read-back verification fails", () => {
+    const contract = buildWriteIntentContract({
+      taskId: "task-write-verify",
+      userRequest: "鐩存帴鍐欑涓€绔",
+      chapterNos: [1],
+    });
+    const trace: ExecutionTrace = {
+      taskId: "task-write-verify",
+      mode: "low_risk_auto",
+      policy: makeWritePolicy({ taskId: "task-write-verify", chapterNos: [1] }),
+      steps: [
+        {
+          id: "step-1",
+          actionType: "chapter_write",
+          riskLevel: "write",
+          status: "succeeded",
+          verification: {
+            method: "read_back",
+            passed: false,
+            detail: "Chapter 1 read-back did not match persisted output.",
+          },
+        },
+      ],
+      finalStatus: "succeeded",
+    };
+
+    const report = makeAcceptanceReport({ contract, trace });
+
+    expect(report.verdict).toBe("fail");
+    expect(report.userCriteria).toContainEqual({
+      criterion: "Read-back verifies every target chapter",
+      status: "fail",
+      evidence: "Expected read-back verification for 1 chapter write step, found 0.",
+    });
+    expect(report.recommendedActions).toEqual([
+      { type: "stop", reason: "workflow criteria failed" },
+    ]);
+  });
+
+  it("marks failed final status as a failed process criterion", () => {
+    const contract = buildWriteIntentContract({
+      taskId: "task-write-failed",
+      userRequest: "鐩存帴鍐欑涓€绔",
+      chapterNos: [1],
+    });
+    const trace: ExecutionTrace = {
+      taskId: "task-write-failed",
+      mode: "low_risk_auto",
+      policy: makeWritePolicy({ taskId: "task-write-failed", chapterNos: [1] }),
+      steps: [
+        {
+          id: "step-1",
+          actionType: "chapter_write",
+          riskLevel: "write",
+          status: "succeeded",
+          verification: {
+            method: "read_back",
+            passed: true,
+            detail: "Chapter 1 was read back after persistence.",
+          },
+        },
+      ],
+      finalStatus: "failed",
+    };
+
+    const report = makeAcceptanceReport({ contract, trace });
+
+    expect(report.verdict).toBe("fail");
+    expect(report.processCriteria).toContainEqual({
+      criterion: "Workflow final status is succeeded",
+      status: "fail",
+      evidence: "Trace final status is failed.",
+    });
+  });
+
+  it("preserves the shared low_risk_auto default when write policy mode is omitted", () => {
+    const policy = makeWritePolicy({
+      taskId: "task-write-default-mode",
+      chapterNos: [1],
+    });
+
+    expect(policy.configuredMode).toBe("low_risk_auto");
+    expect(policy.effectiveMode).toBe("confirm");
+    expect(policy.requiresConfirmation).toBe(true);
   });
 });
