@@ -1,4 +1,11 @@
 import { z } from "zod";
+import {
+  AcceptanceReportSchema,
+  ExecutionModeSchema,
+  ExecutionPolicySchema,
+  ExecutionStepSchema,
+  IntentContractSchema,
+} from "./agent-workflow.js";
 
 export const AutoStateSchema = z.enum([
   "idle", "planning", "writing", "auditing",
@@ -34,6 +41,26 @@ export const SseEventSchema = z.discriminatedUnion("type", [
     ]),
     command: z.string().optional(),
   }),
+  z.object({ type: z.literal("workflow_mode"), mode: ExecutionModeSchema }),
+  z.object({
+    type: z.literal("execution_plan"),
+    taskId: z.string(),
+    policy: ExecutionPolicySchema,
+    steps: z.array(ExecutionStepSchema),
+    intentContract: IntentContractSchema.optional(),
+  }),
+  z.object({
+    type: z.literal("execution_step"),
+    taskId: z.string(),
+    step: ExecutionStepSchema,
+  }),
+  z.object({
+    type: z.literal("confirmation_required"),
+    taskId: z.string(),
+    policy: ExecutionPolicySchema,
+    message: z.string(),
+  }),
+  z.object({ type: z.literal("acceptance_report"), report: AcceptanceReportSchema }),
   z.object({ type: z.literal("done") }),
   z.object({ type: z.literal("error"), errorClass: z.string(), message: z.string() }),
 ]);
