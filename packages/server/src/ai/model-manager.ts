@@ -1,17 +1,21 @@
 import type { LanguageModel } from "ai";
 import type { ModelInfo } from "@scribe/shared";
+import { AnyRouterProvider } from "./providers/anyrouter.js";
+import { CustomOpenAICompatibleProvider } from "./providers/custom-openai-compatible.js";
 import { DeepSeekProvider } from "./providers/deepseek.js";
 import { MiMoProvider } from "./providers/mimo.js";
 import type { ProviderAdapter } from "./providers/_interface.js";
 import { lookupLocal } from "./providers/local-model-table.js";
+import type { CustomProviderConfig } from "../config/load.js";
 
-export type ProviderId = "deepseek" | "mimo";
+export type ProviderId = string;
 
 export interface ModelManagerState {
   provider: ProviderId;
   apiKey: string | null;
   writeModelId: string;
   auditModelId: string;
+  customProviders: CustomProviderConfig[];
   /** 全局「最深处提示词」(热配置) */
   masterPrompt: string;
 }
@@ -30,23 +34,33 @@ export interface ModelManager {
   listModels(): Promise<ModelInfo[]>;
 }
 
-const DEFAULT_WRITE_MODEL = "deepseek-v4-pro";
-const DEFAULT_AUDIT_MODEL = "deepseek-v4-flash";
+const DEFAULT_WRITE_MODEL = "gemini-2.5-pro";
+const DEFAULT_AUDIT_MODEL = "gemini-2.5-pro";
 
 export function createModelManager(initial?: Partial<ModelManagerState>): ModelManager {
   const state: ModelManagerState = {
-    provider: initial?.provider ?? "deepseek",
+    provider: initial?.provider ?? "anyrouter",
     apiKey: initial?.apiKey ?? null,
     writeModelId: initial?.writeModelId ?? DEFAULT_WRITE_MODEL,
     auditModelId: initial?.auditModelId ?? DEFAULT_AUDIT_MODEL,
+    customProviders: initial?.customProviders ?? [],
     masterPrompt: initial?.masterPrompt ?? "",
   };
 
   function provider(): ProviderAdapter | undefined {
     if (!state.apiKey) return undefined;
-    return state.provider === "mimo"
-      ? new MiMoProvider({ apiKey: state.apiKey })
-      : new DeepSeekProvider({ apiKey: state.apiKey });
+    if (state.provider === "mimo") return new MiMoProvider({ apiKey: state.apiKey });
+    if (state.provider === "deepseek") return new DeepSeekProvider({ apiKey: state.apiKey });
+    const custom = state.customProviders.find((item) => item.id === state.provider);
+    if (custom) {
+      return new CustomOpenAICompatibleProvider({
+        id: custom.id,
+        baseUrl: custom.baseUrl,
+        auth: custom.auth,
+        apiKey: state.apiKey,
+      });
+    }
+    return new AnyRouterProvider({ apiKey: state.apiKey });
   }
 
   function infoFor(modelId: string): ModelInfo {
@@ -71,6 +85,7 @@ export function createModelManager(initial?: Partial<ModelManagerState>): ModelM
       if (patch.apiKey !== undefined) state.apiKey = patch.apiKey;
       if (patch.writeModelId) state.writeModelId = patch.writeModelId;
       if (patch.auditModelId) state.auditModelId = patch.auditModelId;
+      if (patch.customProviders) state.customProviders = patch.customProviders;
       if (patch.masterPrompt !== undefined) state.masterPrompt = patch.masterPrompt;
     },
     async listModels() {

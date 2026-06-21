@@ -8,28 +8,23 @@ export interface ThreePaneLayoutProps {
 
 export function ThreePaneLayout(props: ThreePaneLayoutProps) {
   return (
-    <div
-      className="three-pane"
-      style={{
-        display: "grid",
-        gridTemplateColumns: "30% 45% 25%",
-        height: "100vh",
-        gap: 0,
-      }}
-    >
+    <div className="three-pane">
       <section
         data-testid="pane-conversation"
-        style={{ borderRight: "0.5px solid var(--ios-sep)", overflow: "auto", background: "var(--ios-bg)" }}
+        className="three-pane__pane three-pane__pane--conversation"
       >
         {props.left}
       </section>
       <section
         data-testid="pane-editor"
-        style={{ borderRight: "0.5px solid var(--ios-sep)", overflow: "auto", background: "var(--ios-card)" }}
+        className="three-pane__pane three-pane__pane--editor"
       >
         {props.center}
       </section>
-      <section data-testid="pane-sidebar" style={{ overflow: "auto", background: "var(--ios-bg)" }}>
+      <section
+        data-testid="pane-sidebar"
+        className="three-pane__pane three-pane__pane--sidebar"
+      >
         {props.right}
       </section>
     </div>

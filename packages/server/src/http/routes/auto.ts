@@ -18,6 +18,7 @@ import {
   recordChapterState,
   buildArchiveSummary,
 } from "../../ai/orchestrator/record-state.js";
+import type { StyleReference } from "../../config/load.js";
 
 export interface AutoRoutesDeps {
   registry: BookRegistry;
@@ -28,6 +29,7 @@ export interface AutoRoutesDeps {
   auditModelInfo?: ModelInfo;
   onChapterCommitted?: (bookId: string) => void;
   getMasterPrompt?: () => string;
+  getStyleReferences?: () => StyleReference[];
 }
 
 export function autoRoutes(deps: AutoRoutesDeps) {
@@ -54,6 +56,7 @@ export function autoRoutes(deps: AutoRoutesDeps) {
     }
 
     const handle = deps.registry.open(bookId);
+    const styleReferences = deps.getStyleReferences?.() ?? [];
     const snapshot = loadBookSnapshot(
       bookId,
       {
@@ -92,7 +95,7 @@ export function autoRoutes(deps: AutoRoutesDeps) {
     const writeModelInfo = deps.writeModelInfo ?? { id: "unknown" };
     const auditModelInfo = deps.auditModelInfo ?? writeModelInfo;
     // B-5-001 修复:把书的设定(premise/角色/大纲/规则)注入写作与审查 prompt
-    const promptCtx = buildBookPromptContext(handle);
+    const promptCtx = buildBookPromptContext(handle, styleReferences);
     // 最深处提示词:每本覆盖 || 全局
     const deepestPrompt = resolveDeepestPrompt({
       perBook: handle.bookMetaRepo.get("master_prompt"),
@@ -184,7 +187,13 @@ export function autoRoutes(deps: AutoRoutesDeps) {
             recordState: makeRecordState,
             // spec §6.1:逐章组装召回+最近摘要+通用记录集合+伏笔的完整防漂移上下文
             buildWriteMessages: (chapterNo) =>
-              buildChapterWriteMessages(handle, chapterNo, enrichUserIntentWithOutline(handle.outlineRepo, chapterNo, "")).messages,
+              buildChapterWriteMessages(
+                handle,
+                chapterNo,
+                enrichUserIntentWithOutline(handle.outlineRepo, chapterNo, ""),
+                undefined,
+                styleReferences,
+              ).messages,
             buildAuditCtx: (chapterNo) =>
               buildChapterAuditContext(handle, chapterNo, "").auditCtx,
             deepestPrompt,

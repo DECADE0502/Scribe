@@ -2,8 +2,12 @@ import {
   ChapterAuditOutputSchema,
   type ChapterAuditOutput,
 } from "@scribe/shared";
+import { SERIAL_CHAPTER_ENDING_RULE } from "./serialized-chapter-ending.js";
 
-export const AUDIT_SUMMARIZE_PROMPT = `你是 Scribe 的章末审读员,同时负责生成本章摘要和硬事实声明。
+export const AUDIT_SUMMARIZE_PROMPT = `${SERIAL_CHAPTER_ENDING_RULE}
+审查章末时,如果连续小说章节用空泛感慨、意犹未尽、待续式旁白、抽象总结或假钩子收尾,必须在 hook_strength 或 aesthetic_quality 中标为 warning;严重影响连续阅读时标为 critical。
+
+你是 Scribe 的章末审读员,同时负责生成本章摘要和硬事实声明。
 你将收到:
 1) 本书 premise + tone + rules.md
 2) 主要角色卡 + 活跃伏笔列表

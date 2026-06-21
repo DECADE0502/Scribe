@@ -123,6 +123,42 @@ describe("runChat 流式", () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
+  it("conversation history is isolated per book", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "scribe-chat-"));
+    const paths = makePaths(tmp);
+    fs.mkdirSync(paths.booksDir, { recursive: true });
+    const registry = createBookRegistry({ paths });
+    const app = createApp({ getModel: () => makeStubModel(["回", "答"]), bookRegistry: registry });
+
+    await app.request("/api/books/book-a/conversation?mode=chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "A 的问题" }),
+    });
+
+    const emptyB = await app.request("/api/books/book-b/conversation?limit=100");
+    expect((await emptyB.json() as { messages: unknown[] }).messages).toEqual([]);
+
+    await app.request("/api/books/book-b/conversation?mode=chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "B 的问题" }),
+    });
+
+    const historyA = await app.request("/api/books/book-a/conversation?limit=100");
+    const historyB = await app.request("/api/books/book-b/conversation?limit=100");
+    const messagesA = (await historyA.json() as { messages: Array<{ content: string }> }).messages;
+    const messagesB = (await historyB.json() as { messages: Array<{ content: string }> }).messages;
+
+    expect(messagesA.map((message) => message.content)).toContain("A 的问题");
+    expect(messagesA.map((message) => message.content)).not.toContain("B 的问题");
+    expect(messagesB.map((message) => message.content)).toContain("B 的问题");
+    expect(messagesB.map((message) => message.content)).not.toContain("A 的问题");
+
+    registry.closeAll();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
   it("无 model 注入或 mode=echo 时走回声", async () => {
     const app = createApp();
     const res = await app.request("/api/books/b1/conversation", {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import type { AcceptanceReport, ExecutionStep } from "@scribe/shared";
 import { t } from "../i18n/zh-CN.js";
 import { startSseStream, type SseStreamHandle } from "../api/streaming.js";
 
@@ -15,6 +16,8 @@ export function OnboardPage() {
   const [messages, setMessages] = useState<Msg[]>([{ role: "system", content: INTRO }]);
   const [streamingText, setStreamingText] = useState("");
   const [tools, setTools] = useState<ToolChip[]>([]);
+  const [workflowSteps, setWorkflowSteps] = useState<ExecutionStep[]>([]);
+  const [acceptanceReport, setAcceptanceReport] = useState<AcceptanceReport | null>(null);
   const [status, setStatus] = useState<{ ok: boolean; missing: string[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -47,12 +50,14 @@ export function OnboardPage() {
     setMessages((prev) => [...prev, { role: "user", content }]);
     setStreamingText("");
     setTools([]);
+    setWorkflowSteps([]);
+    setAcceptanceReport(null);
     setBusy(true);
 
     let buf = "";
     handleRef.current = startSseStream({
       url: `/api/books/${encodeURIComponent(bookId)}/onboard`,
-      body: { message: content, history },
+      body: { message: content, history, executionMode: "trusted_auto" },
       onEvent: (ev) => {
         switch (ev.type) {
           case "text_delta":
@@ -68,6 +73,18 @@ export function OnboardPage() {
               const i = [...prev].reverse().find((x) => x.toolName === String(ev.toolName ?? "") && !x.done);
               return prev.map((x) => (i && x.id === i.id ? { ...x, done: true } : x));
             });
+            break;
+          case "execution_step":
+            setWorkflowSteps((prev) => {
+              const step = ev.step as ExecutionStep;
+              const index = prev.findIndex((item) => item.id === step.id);
+              return index >= 0
+                ? prev.map((item) => item.id === step.id ? step : item)
+                : [...prev, step];
+            });
+            break;
+          case "acceptance_report":
+            setAcceptanceReport(ev.report as AcceptanceReport);
             break;
           case "done":
             if (buf.trim()) setMessages((prev) => [...prev, { role: "assistant", content: buf }]);
@@ -171,6 +188,24 @@ export function OnboardPage() {
                 {tc.done ? "✓ " : "⋯ "}{toolLabel(tc.toolName)}
               </span>
             ))}
+          </div>
+        )}
+        {workflowSteps.length > 0 && (
+          <div data-testid="onboard-workflow" style={{ display: "grid", gap: 6, margin: "4px 0 10px", fontSize: 12.5, color: "#445" }}>
+            {workflowSteps.map((step) => (
+              <div key={step.id} data-testid={`onboard-workflow-step-${step.id}`} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ width: 14, textAlign: "center" }}>
+                  {step.status === "succeeded" ? "✓" : step.status === "failed" ? "×" : "◐"}
+                </span>
+                <span>{toolLabel(step.actionType)}</span>
+                {step.verification?.detail ? <span style={{ color: "#778" }}>{step.verification.detail}</span> : null}
+              </div>
+            ))}
+          </div>
+        )}
+        {acceptanceReport && (
+          <div data-testid="onboard-acceptance" style={{ fontSize: 12.5, color: "#445", margin: "4px 0 10px" }}>
+            验收: {acceptanceReport.verdict}
           </div>
         )}
         {streamingText && (

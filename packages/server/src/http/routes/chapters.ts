@@ -19,6 +19,7 @@ import { sanitizeChapterOutput } from "../../ai/orchestrator/output-sanitize.js"
 import { createHardFactQualityGate } from "../../ai/quality-gates/hard-fact-gate.js";
 import { deleteChaptersFrom, type DeleteResult } from "../../ai/orchestrator/delete-chapter.js";
 import type { BookRegistry } from "../book-registry.js";
+import type { StyleReference } from "../../config/load.js";
 import { log } from "../../logger.js";
 
 export interface ChapterRoutesDeps {
@@ -26,6 +27,7 @@ export interface ChapterRoutesDeps {
   registry?: BookRegistry;
   onChapterCommitted?: (bookId: string) => void;
   getMasterPrompt?: () => string;
+  getStyleReferences?: () => StyleReference[];
   /** 审查模型(用于 audit + recordState);如果不提供则回退到写作模型 */
   getAuditModel?: () => LanguageModel | undefined;
   /** 审查模型信息 */
@@ -51,12 +53,13 @@ export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
       return c.json({ error: "服务未就绪" }, 503);
     }
     const handle = deps.registry.open(bookId);
+    const styleReferences = deps.getStyleReferences?.() ?? [];
     const userIntent = enrichUserIntentWithOutline(handle.outlineRepo, no, rawIntent);
     const auditModel = deps.getAuditModel?.() ?? wcDeps.model;
     const auditModelId = deps.auditModelInfo?.id ?? "unknown";
 
     // spec §6.1:注入完整防漂移上下文(召回+最近摘要+通用记录集合+伏笔)
-    const writeContext = buildChapterWriteMessages(handle, no, userIntent);
+    const writeContext = buildChapterWriteMessages(handle, no, userIntent, undefined, styleReferences);
     const auditCtx = buildChapterAuditContext(handle, no, userIntent).auditCtx;
     const deepestPrompt = resolveDeepestPrompt({
       perBook: handle.bookMetaRepo.get("master_prompt"),
@@ -175,8 +178,9 @@ export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
     if (!wcDeps) return c.json({ error: "未配置模型,请先在设置中配置 API Key" }, 503);
     if (!deps.registry) return c.json({ error: "服务未就绪" }, 503);
     const handle = deps.registry.open(bookId);
+    const styleReferences = deps.getStyleReferences?.() ?? [];
     const userIntent = enrichUserIntentWithOutline(handle.outlineRepo, no, rawIntent);
-    const writeContext = buildChapterWriteMessages(handle, no, userIntent);
+    const writeContext = buildChapterWriteMessages(handle, no, userIntent, undefined, styleReferences);
     const deepestPrompt = resolveDeepestPrompt({
       perBook: handle.bookMetaRepo.get("master_prompt"),
       global: deps.getMasterPrompt?.() ?? "",

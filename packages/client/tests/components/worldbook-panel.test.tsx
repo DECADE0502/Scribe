@@ -137,7 +137,7 @@ describe("WorldbookPanel", () => {
 
     render(<WorldbookPanel bookId="book-1" />);
     await waitFor(() => expect(screen.getByText("Capture rule")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("Edit"));
+    fireEvent.click(screen.getByText("编辑"));
     fireEvent.click(screen.getByTestId("worldbook-st-selective"));
     fireEvent.change(screen.getByTestId("worldbook-st-probability"), {
       target: { value: "80" },

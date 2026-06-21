@@ -120,6 +120,112 @@ code {
   color: var(--ios-text-2);
 }
 
+.three-pane {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.84fr) minmax(440px, 1.55fr) minmax(280px, 0.95fr);
+  height: 100vh;
+  min-width: 0;
+  gap: 0;
+  overflow: hidden;
+}
+
+.three-pane__pane {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.three-pane__pane--conversation {
+  border-right: 0.5px solid var(--ios-sep);
+  background: var(--ios-bg);
+}
+
+.three-pane__pane--editor {
+  border-right: 0.5px solid var(--ios-sep);
+  background: var(--ios-card);
+}
+
+.three-pane__pane--sidebar {
+  background: var(--ios-bg);
+  overflow: hidden;
+}
+
+.side-panel-shell {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.side-tab-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-height: 0;
+  padding: 10px 6px;
+  overflow-y: auto;
+  border-right: 0.5px solid var(--ios-sep);
+  background: rgba(255, 255, 255, 0.58);
+  scrollbar-width: thin;
+}
+
+.side-tab-button {
+  width: 40px;
+  min-height: 38px;
+  padding: 5px 3px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ios-text-2);
+  font-size: 12px;
+  line-height: 1.1;
+  font-weight: 500;
+}
+
+.side-tab-button:hover {
+  background: var(--ios-fill);
+  color: var(--ios-text);
+}
+
+.side-tab-button.active {
+  background: var(--ios-card);
+  color: var(--ios-blue);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  font-weight: 700;
+}
+
+.side-tab-label {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-panel-content {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 12px 14px;
+}
+
+@media (max-width: 1180px) {
+  .three-pane {
+    grid-template-columns: minmax(240px, 0.78fr) minmax(400px, 1.4fr) minmax(260px, 0.92fr);
+  }
+
+  .side-panel-shell {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+
+  .side-tab-button {
+    width: 36px;
+    min-height: 36px;
+    font-size: 11px;
+  }
+}
+
 /* 顶部导航条 */
 .nav-bar {
   display: flex;

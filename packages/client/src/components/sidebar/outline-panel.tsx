@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { t } from "../../i18n/zh-CN.js";
 import { useToastStore } from "../../stores/toast.js";
+import { useConversationStore } from "../../stores/conversation.js";
 
 interface OutlineNode {
   id: string;
@@ -17,6 +18,7 @@ const STATUS_LABELS: Record<string, string> = { planned: "计划中", in_progres
 
 export function OutlinePanel(props: { bookId: string }) {
   const { bookId } = props;
+  const libraryRefreshTrigger = useConversationStore(s => s.libraryRefreshTrigger);
   const pushToast = useToastStore((s) => s.push);
   const [nodes, setNodes] = useState<OutlineNode[]>([]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -36,7 +38,7 @@ export function OutlinePanel(props: { bookId: string }) {
     }
   }, [bookId]);
 
-  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => { void reload(); }, [reload, libraryRefreshTrigger]);
 
   const childrenOf = (parentId: string | null) =>
     nodes

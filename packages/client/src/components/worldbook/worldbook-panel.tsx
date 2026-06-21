@@ -148,7 +148,7 @@ export function WorldbookPanel(props: { bookId: string }) {
     try {
       const payload = toPayload(draft);
       if (!payload.title || !payload.content) {
-        setError("title and content are required");
+        setError("标题和内容不能为空");
         return;
       }
       if (editing === "new") {
@@ -184,7 +184,7 @@ export function WorldbookPanel(props: { bookId: string }) {
       style={{ border: "1px solid #ddd", borderRadius: 6, padding: 10, marginBottom: 10 }}
     >
       <label style={{ display: "block", fontSize: 12 }}>
-        Title
+        标题
         <input
           data-testid="worldbook-title"
           value={draft.title}
@@ -193,7 +193,7 @@ export function WorldbookPanel(props: { bookId: string }) {
         />
       </label>
       <label style={{ display: "block", fontSize: 12, marginTop: 8 }}>
-        Content
+        内容
         <textarea
           data-testid="worldbook-content"
           value={draft.content}
@@ -204,7 +204,7 @@ export function WorldbookPanel(props: { bookId: string }) {
       </label>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
         <label style={{ fontSize: 12 }}>
-          Mode
+          激活方式
           <select
             data-testid="worldbook-activation"
             value={draft.activation}
@@ -216,12 +216,12 @@ export function WorldbookPanel(props: { bookId: string }) {
             }
             style={{ width: "100%" }}
           >
-            <option value="constant">Constant</option>
-            <option value="triggered">Triggered</option>
+            <option value="constant">常驻</option>
+            <option value="triggered">关键词触发</option>
           </select>
         </label>
         <label style={{ fontSize: 12 }}>
-          Category
+          分类
           <input
             value={draft.category}
             onChange={(e) => setDraft({ ...draft, category: e.target.value })}
@@ -229,7 +229,7 @@ export function WorldbookPanel(props: { bookId: string }) {
           />
         </label>
         <label style={{ fontSize: 12 }}>
-          Priority
+          优先级
           <input
             type="number"
             value={draft.priority}
@@ -238,7 +238,7 @@ export function WorldbookPanel(props: { bookId: string }) {
           />
         </label>
         <label style={{ fontSize: 12 }}>
-          Depth
+          插入深度
           <input
             type="number"
             min={0}
@@ -249,7 +249,7 @@ export function WorldbookPanel(props: { bookId: string }) {
         </label>
       </div>
       <label style={{ display: "block", fontSize: 12, marginTop: 8 }}>
-        Keys
+        关键词
         <input
           data-testid="worldbook-keys"
           value={draft.keys}
@@ -258,7 +258,7 @@ export function WorldbookPanel(props: { bookId: string }) {
         />
       </label>
       <label style={{ display: "block", fontSize: 12, marginTop: 8 }}>
-        Secondary Keys
+        辅助关键词
         <input
           value={draft.secondaryKeys}
           onChange={(e) => setDraft({ ...draft, secondaryKeys: e.target.value })}
@@ -271,7 +271,7 @@ export function WorldbookPanel(props: { bookId: string }) {
             type="checkbox"
             checked={draft.enabled}
             onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
-          /> Enabled
+          /> 启用
         </label>
         <label style={{ fontSize: 12 }}>
           <input
@@ -279,10 +279,10 @@ export function WorldbookPanel(props: { bookId: string }) {
             type="checkbox"
             checked={draft.recursive}
             onChange={(e) => setDraft({ ...draft, recursive: e.target.checked })}
-          /> Recursive
+          /> 递归
         </label>
         <label style={{ fontSize: 12 }}>
-          Limit
+          限制
           <input
             type="number"
             min={0}
@@ -301,17 +301,17 @@ export function WorldbookPanel(props: { bookId: string }) {
               type="checkbox"
               checked={draft.stSelective}
               onChange={(e) => setDraft({ ...draft, stSelective: e.target.checked })}
-            /> Selective
+            /> 选择性触发
           </label>
           <label style={{ fontSize: 12 }}>
             <input
               type="checkbox"
               checked={draft.stUseProbability}
               onChange={(e) => setDraft({ ...draft, stUseProbability: e.target.checked })}
-            /> Probability
+            /> 使用概率
           </label>
           <label style={{ fontSize: 12 }}>
-            Probability %
+            概率 %
             <input
               data-testid="worldbook-st-probability"
               type="number"
@@ -323,7 +323,7 @@ export function WorldbookPanel(props: { bookId: string }) {
             />
           </label>
           <label style={{ fontSize: 12 }}>
-            Scan Depth
+            扫描深度
             <input
               data-testid="worldbook-st-scan-depth"
               type="number"
@@ -337,10 +337,10 @@ export function WorldbookPanel(props: { bookId: string }) {
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
         <button data-testid="worldbook-submit" onClick={() => void submit()}>
-          Save
+          保存
         </button>
         <button onClick={() => { setEditing(null); setDraft(emptyDraft); }}>
-          Cancel
+          取消
         </button>
       </div>
     </div>
@@ -350,17 +350,17 @@ export function WorldbookPanel(props: { bookId: string }) {
     <div data-testid="worldbook-panel">
       {error && <p role="alert" style={{ color: "#c00" }}>{error}</p>}
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-        <strong>Worldbook</strong>
+        <strong>世界书</strong>
         <button
           data-testid="worldbook-new"
           onClick={() => { setEditing("new"); setDraft(emptyDraft); }}
         >
-          New
+          新建
         </button>
       </div>
       <div style={{ border: "1px solid #eee", borderRadius: 6, padding: 8, marginBottom: 8 }}>
         <label style={{ display: "block", fontSize: 12 }}>
-          Preview
+          预览查询
           <input
             data-testid="worldbook-preview-query"
             value={previewQuery}
@@ -373,7 +373,7 @@ export function WorldbookPanel(props: { bookId: string }) {
           onClick={() => void runPreview()}
           style={{ marginTop: 6 }}
         >
-          Run Preview
+          运行预览
         </button>
         {preview?.diagnostics?.map((item) => (
           <p key={`${item.entryId}-${item.reason}`} style={{ margin: "4px 0", fontSize: 12 }}>
@@ -383,7 +383,7 @@ export function WorldbookPanel(props: { bookId: string }) {
       </div>
       {editing && form}
       {sorted.length === 0 && !editing && (
-        <p data-testid="worldbook-empty" style={{ color: "#888" }}>No entries</p>
+        <p data-testid="worldbook-empty" style={{ color: "#888" }}>暂无条目</p>
       )}
       {sorted.map((entry) => (
         <div
@@ -397,14 +397,14 @@ export function WorldbookPanel(props: { bookId: string }) {
               <button
                 onClick={() => { setEditing(entry.id); setDraft(draftFromEntry(entry)); }}
               >
-                Edit
+                编辑
               </button>
-              <button onClick={() => void remove(entry.id)}>Delete</button>
+              <button onClick={() => void remove(entry.id)}>删除</button>
             </span>
           </div>
           <p style={{ margin: "4px 0", whiteSpace: "pre-wrap" }}>{entry.content}</p>
           <p style={{ margin: 0, color: "#666", fontSize: 12 }}>
-            {entry.activation} / priority {entry.priority}
+            {entry.activation === "constant" ? "常驻" : "关键词触发"} / 优先级 {entry.priority}
             {entry.keys.length ? ` / ${entry.keys.join(", ")}` : ""}
           </p>
         </div>

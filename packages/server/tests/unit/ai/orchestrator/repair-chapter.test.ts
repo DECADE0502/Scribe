@@ -175,6 +175,20 @@ describe("buildRepairUserPrompt", () => {
     expect(REPAIR_PROMPT).toContain("<konatan_chat>");
   });
 
+  it("repair system prompt fixes vague serialized-novel endings locally", async () => {
+    const { REPAIR_PROMPT } = await import(
+      "../../../../src/ai/prompts/repair-chapter.js"
+    );
+
+    expect(REPAIR_PROMPT).toContain("SERIAL_CHAPTER_ENDING_RULE");
+    expect(REPAIR_PROMPT).toContain("连续小说");
+    expect(REPAIR_PROMPT).toContain("待续式");
+    expect(REPAIR_PROMPT).toContain("具体动作");
+    expect(REPAIR_PROMPT).toContain("对话");
+    expect(REPAIR_PROMPT).toContain("场景状态");
+    expect(REPAIR_PROMPT).toContain("事件后果");
+  });
+
   it("拼接 issues + 上下文", async () => {
     const { buildRepairUserPrompt } = await import(
       "../../../../src/ai/prompts/repair-chapter.js"

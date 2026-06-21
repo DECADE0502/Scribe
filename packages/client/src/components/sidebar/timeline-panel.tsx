@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { t } from "../../i18n/zh-CN.js";
+import { useConversationStore } from "../../stores/conversation.js";
 
 interface TimelineEvent {
   id: string;
@@ -10,21 +11,22 @@ interface TimelineEvent {
 }
 
 export function TimelinePanel(props: { bookId: string }) {
+  const libraryRefreshTrigger = useConversationStore(s => s.libraryRefreshTrigger);
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const res = await fetch(`/api/books/${encodeURIComponent(props.bookId)}/timeline`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const j = await res.json() as { timeline: TimelineEvent[] };
-        setEvents(j.timeline);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      }
-    })();
+  const reload = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/books/${encodeURIComponent(props.bookId)}/timeline`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const j = await res.json() as { timeline: TimelineEvent[] };
+      setEvents(j.timeline);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   }, [props.bookId]);
+
+  useEffect(() => { void reload(); }, [reload, libraryRefreshTrigger]);
 
   const byChapter = new Map<number, TimelineEvent[]>();
   for (const ev of events) {

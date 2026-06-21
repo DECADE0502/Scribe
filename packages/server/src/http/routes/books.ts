@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import * as fs from "node:fs";
 import type { LanguageModel } from "ai";
+import { ExecutionModeSchema } from "@scribe/shared";
 import { streamSseResponse } from "../sse.js";
 import type { BookRegistry } from "../book-registry.js";
 import { runNewBookConversation } from "../../ai/orchestrator/new-book.js";
@@ -14,11 +15,13 @@ import {
   seedPetCaptureDemo,
   shouldSeedPetCaptureDemo,
 } from "../../ai/demo-seeds/pet-capture-demo.js";
+import type { StyleReference } from "../../config/load.js";
 
 export interface BookRoutesDeps {
   registry: BookRegistry;
   getModel?: () => LanguageModel | undefined;
   getMasterPrompt?: () => string;
+  getStyleReferences?: () => StyleReference[];
 }
 
 export function bookRoutes(deps: BookRoutesDeps) {
@@ -123,6 +126,9 @@ export function bookRoutes(deps: BookRoutesDeps) {
     if (!message) return c.json({ error: "message 不能为空" }, 400);
     const historyRaw = (body as Record<string, unknown> | null)?.history;
     const history = Array.isArray(historyRaw) ? historyRaw : [];
+    const executionMode = ExecutionModeSchema.optional().catch(undefined).parse(
+      (body as Record<string, unknown> | null)?.executionMode,
+    );
 
     const model = deps.getModel?.();
     if (!model) return c.json({ error: "未配置模型,请先在设置中配置 API Key" }, 503);
@@ -164,7 +170,7 @@ export function bookRoutes(deps: BookRoutesDeps) {
           global: deps.getMasterPrompt?.() ?? "",
         }),
       },
-      { history, message, completenessHint },
+      { history, message, completenessHint, executionMode },
     );
 
     // 对话持久化:user 消息即刻入库,assistant 文本在流完后入库
@@ -229,6 +235,26 @@ export function bookRoutes(deps: BookRoutesDeps) {
     const handle = deps.registry.open(bookId);
     handle.bookMetaRepo.set("master_prompt", value);
     return c.json({ perBook: value });
+  });
+
+  app.get("/api/books/:bookId/style-reference", async (c) => {
+    const bookId = c.req.param("bookId");
+    if (!deps.registry.booksRepo.get(bookId)) return c.json({ error: "书不存在" }, 404);
+    const handle = deps.registry.open(bookId);
+    return c.json({
+      selectedId: handle.bookMetaRepo.get("style_reference_id") ?? "",
+      references: deps.getStyleReferences?.() ?? [],
+    });
+  });
+
+  app.put("/api/books/:bookId/style-reference", async (c) => {
+    const bookId = c.req.param("bookId");
+    if (!deps.registry.booksRepo.get(bookId)) return c.json({ error: "书不存在" }, 404);
+    const body = await c.req.json().catch(() => ({})) as { selectedId?: unknown };
+    const selectedId = typeof body.selectedId === "string" ? body.selectedId.trim() : "";
+    const handle = deps.registry.open(bookId);
+    handle.bookMetaRepo.set("style_reference_id", selectedId);
+    return c.json({ selectedId });
   });
 
   return app;

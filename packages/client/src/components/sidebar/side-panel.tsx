@@ -28,11 +28,21 @@ const BUILTIN_TABS: Array<{ id: BuiltinTabId; label: string }> = [
   { id: "outline", label: t.sidebar.sectionOutline },
   { id: "foreshadowing", label: t.sidebar.sectionForeshadowing },
   { id: "timeline", label: t.sidebar.sectionTimeline },
-  { id: "import", label: "Import" },
-  { id: "presets", label: "Presets" },
-  { id: "worldbook", label: "Worldbook" },
+  { id: "import", label: "导入" },
+  { id: "presets", label: "预设" },
+  { id: "worldbook", label: "世界书" },
   { id: "rules", label: t.sidebar.sectionRules },
 ];
+
+function compactTabLabel(label: string) {
+  const chars = Array.from(label);
+  const isAsciiWord = chars.length > 0 && chars.every((char) => {
+    const code = char.charCodeAt(0);
+    return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+  });
+  if (isAsciiWord) return chars.slice(0, 3).join("");
+  return Array.from(label).slice(0, 2).join("");
+}
 
 export function SidePanel(props: { bookId: string }) {
   const [tab, setTab] = useState<string>("meta");
@@ -55,22 +65,22 @@ export function SidePanel(props: { bookId: string }) {
     BUILTIN_TABS.some((b) => b.id === id);
 
   return (
-    <div data-testid="side-panel" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ padding: "10px 12px 8px" }}>
-        <nav className="segmented">
-          {[...BUILTIN_TABS, ...genreTabs].map((item) => (
-            <button
-              key={item.id}
-              data-testid={`tab-${item.id}`}
-              className={tab === item.id ? "active" : ""}
-              onClick={() => setTab(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </nav>
-      </div>
-      <div style={{ flex: 1, overflow: "auto", padding: "4px 12px 12px" }}>
+    <div data-testid="side-panel" className="side-panel-shell">
+      <nav className="side-tab-rail" data-testid="side-panel-tab-rail" aria-label="Sidebar sections">
+        {[...BUILTIN_TABS, ...genreTabs].map((item) => (
+          <button
+            key={item.id}
+            data-testid={`tab-${item.id}`}
+            className={`side-tab-button${tab === item.id ? " active" : ""}`}
+            title={item.label}
+            aria-label={item.label}
+            onClick={() => setTab(item.id)}
+          >
+            <span className="side-tab-label">{compactTabLabel(item.label)}</span>
+          </button>
+        ))}
+      </nav>
+      <div className="side-panel-content">
         {tab === "meta" && <MetaPanel bookId={props.bookId} />}
         {tab === "characters" && <CharactersPanel bookId={props.bookId} />}
         {tab === "outline" && <OutlinePanel bookId={props.bookId} />}

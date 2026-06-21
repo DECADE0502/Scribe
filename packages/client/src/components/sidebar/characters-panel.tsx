@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { t } from "../../i18n/zh-CN.js";
+import { useConversationStore } from "../../stores/conversation.js";
 
 interface Character {
   id: string;
@@ -17,6 +18,7 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 export function CharactersPanel(props: { bookId: string }) {
+  const libraryRefreshTrigger = useConversationStore(s => s.libraryRefreshTrigger);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
@@ -34,7 +36,7 @@ export function CharactersPanel(props: { bookId: string }) {
     }
   }, [props.bookId]);
 
-  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => { void reload(); }, [reload, libraryRefreshTrigger]);
 
   const saveName = async (c: Character) => {
     try {

@@ -1,9 +1,13 @@
 import { tool, type Tool } from "ai";
 import { z } from "zod";
 
-/** 最小依赖接口(与真实 repo 结构兼容) */
 export interface StateCharactersRepoLike {
-  list(): Array<{ id: string; name: string; currentState: Record<string, unknown> }>;
+  list(): Array<{
+    id: string;
+    name: string;
+    currentState: Record<string, unknown>;
+    appearances?: Array<{ chapterNo: number; brief: string }>;
+  }>;
   update(id: string, patch: Record<string, unknown>): unknown;
   addAppearance(id: string, appearance: { chapterNo: number; brief: string }): unknown;
   create(input: {
@@ -28,6 +32,18 @@ export interface StateForeshadowingRepoLike {
 }
 
 export interface StateTimelineRepoLike {
+  listByChapter?(chapterNo: number): Array<{
+    chapterNo: number;
+    storyTime: string;
+    event: string;
+    participants: string[];
+  }>;
+  listAll?(): Array<{
+    chapterNo: number;
+    storyTime: string;
+    event: string;
+    participants: string[];
+  }>;
   create(input: {
     chapterNo: number;
     storyTime: string;
@@ -40,17 +56,28 @@ export interface StateToolsDeps {
   charactersRepo: StateCharactersRepoLike;
   foreshadowingRepo: StateForeshadowingRepoLike;
   timelineRepo: StateTimelineRepoLike;
-  /** 当前章节号(工具内部用,LLM 不必传) */
   chapterNo: number;
 }
 
-function findCharacter(deps: StateToolsDeps, name: string) {
-  const c = deps.charactersRepo.list().find(x => x.name === name);
-  if (!c) throw new Error(`角色不存在:${name}(请先用 create_character 创建)`);
-  return c;
+const stateRecordSchema = z.union([z.record(z.unknown()), z.string()]);
+
+function normalizeText(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
 }
 
-const stateRecordSchema = z.union([z.record(z.unknown()), z.string()]);
+function sameStringSet(left: string[], right: string[]): boolean {
+  const normalize = (values: string[]) => [...new Set(values.map(normalizeText))].sort();
+  const a = normalize(left);
+  const b = normalize(right);
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+function findCharacter(deps: StateToolsDeps, name: string) {
+  const normalizedName = normalizeText(name);
+  const c = deps.charactersRepo.list().find(x => normalizeText(x.name) === normalizedName);
+  if (!c) throw new Error(`角色不存在: ${name} (create it first)`);
+  return c;
+}
 
 function parseStateRecord(value: z.infer<typeof stateRecordSchema>): Record<string, unknown> {
   if (typeof value !== "string") return value;
@@ -60,111 +87,128 @@ function parseStateRecord(value: z.infer<typeof stateRecordSchema>): Record<stri
       return parsed as Record<string, unknown>;
     }
   } catch {}
-  throw new Error("state 必须是对象,或可解析为对象的 JSON 字符串");
+  throw new Error("state must be an object or a JSON object string");
 }
 
-/** 章末状态记录工具集(spec §6.3):角色状态 / 出场 / 伏笔 / 时间线 */
 export function makeStateTools(deps: StateToolsDeps): Record<string, Tool> {
   return {
     create_character: tool({
-      description: "登记本章新出现、且档案里还没有的角色(配角/反派/盟友等)。仅在该角色名不在现有角色列表时调用;已存在的不要重复创建。创建后可再用 add_character_appearance 记录其本章戏份。",
+      description: "Create a character that appears in this chapter and is not already in the character list.",
       parameters: z.object({
-        name: z.string().describe("角色名"),
-        role: z.enum(["protagonist", "antagonist", "supporting"]).describe("定位:主角/反派/配角,拿不准用 supporting"),
-        background: z.string().optional().describe("一句话背景/身份"),
-        motivation: z.string().optional().describe("动机/目标(如已知)"),
-        languageHabits: z.string().optional().describe("说话/行为习惯(如已知)"),
+        name: z.string().describe("Character name"),
+        role: z.enum(["protagonist", "antagonist", "supporting"]).describe("Character role"),
+        background: z.string().optional().describe("One-sentence background or identity"),
+        motivation: z.string().optional().describe("Known motivation or goal"),
+        languageHabits: z.string().optional().describe("Known speech or behavior habits"),
       }),
       execute: async ({ name, role, background, motivation, languageHabits }) => {
-        const existing = deps.charactersRepo.list().find(x => x.name === name);
-        if (existing) return { skipped: "角色已存在", name };
+        const cleanName = normalizeText(name);
+        const existing = deps.charactersRepo.list().find(x => normalizeText(x.name) === cleanName);
+        if (existing) return { skipped: "character already exists", name: cleanName };
         const baseData: Record<string, unknown> = {};
-        if (background) baseData.background = background;
-        if (motivation) baseData.motivation = motivation;
-        if (languageHabits) baseData.languageHabits = languageHabits;
-        const c = deps.charactersRepo.create({ name, role, baseData, currentState: {} });
+        if (background) baseData.background = normalizeText(background);
+        if (motivation) baseData.motivation = normalizeText(motivation);
+        if (languageHabits) baseData.languageHabits = normalizeText(languageHabits);
+        const c = deps.charactersRepo.create({ name: cleanName, role, baseData, currentState: {} });
         return { created: c.name, role };
       },
     }),
 
     update_character_state: tool({
-      description: "更新角色的当前状态(位置/伤势/心境/能力/持有物/关系等),merge 到现有状态。本章中角色发生重要变化时调用。",
+      description: "Merge chapter-end character state changes into the existing current state.",
       parameters: z.object({
-        name: z.string().describe("角色名"),
-        state: stateRecordSchema.describe("状态字段,如 {位置:'某地',能力:'已知能力',持有:'关键物品'}。若模型误传 JSON 字符串,本地会解析。"),
+        name: z.string().describe("Character name"),
+        state: stateRecordSchema.describe("State object, or a JSON object string if needed"),
       }),
       execute: async ({ name, state }) => {
         const c = findCharacter(deps, name);
         const parsedState = parseStateRecord(state);
         const merged = { ...c.currentState, ...parsedState };
         deps.charactersRepo.update(c.id, { currentState: merged });
-        return { updated: name, state: merged };
+        return { updated: c.name, state: merged };
       },
     }),
 
     add_character_appearance: tool({
-      description: "记录角色在本章出场(一句话概括做了什么)。每个在本章有实质戏份的角色都应记录。",
+      description: "Record one concise appearance summary for a character in the current chapter.",
       parameters: z.object({
-        name: z.string().describe("角色名"),
-        brief: z.string().describe("本章中该角色的一句话概括"),
+        name: z.string().describe("Character name"),
+        brief: z.string().describe("One-sentence summary of the character's role in this chapter"),
       }),
       execute: async ({ name, brief }) => {
         const c = findCharacter(deps, name);
-        deps.charactersRepo.addAppearance(c.id, { chapterNo: deps.chapterNo, brief });
-        return { recorded: name, chapterNo: deps.chapterNo };
+        if (c.appearances?.some(appearance => appearance.chapterNo === deps.chapterNo)) {
+          return { skipped: "appearance already recorded for this chapter", name: c.name, chapterNo: deps.chapterNo };
+        }
+        deps.charactersRepo.addAppearance(c.id, { chapterNo: deps.chapterNo, brief: normalizeText(brief) });
+        return { recorded: c.name, chapterNo: deps.chapterNo };
       },
     }),
 
     add_foreshadowing: tool({
-      description: "登记本章新埋下的伏笔(未来需要回收的悬念/线索)。",
+      description: "Register a newly planted foreshadowing item for the current chapter.",
       parameters: z.object({
-        label: z.string().describe("简短标签,如 '黑剑碎片来历'"),
-        description: z.string().optional().describe("伏笔说明"),
-        relatedCharacters: z.array(z.string()).optional().describe("关联角色名"),
+        label: z.string().describe("Short label"),
+        description: z.string().optional().describe("Foreshadowing description"),
+        relatedCharacters: z.array(z.string()).optional().describe("Related character names"),
       }),
       execute: async ({ label, description, relatedCharacters }) => {
-        const existing = deps.foreshadowingRepo.list().find(f => f.label === label);
-        if (existing) return { skipped: "同名伏笔已存在", label };
+        const cleanLabel = normalizeText(label);
+        const existing = deps.foreshadowingRepo.list().find(f => normalizeText(f.label) === cleanLabel);
+        if (existing) return { skipped: "foreshadowing already exists", label: cleanLabel };
         deps.foreshadowingRepo.create({
-          label,
-          description: description ?? null,
+          label: cleanLabel,
+          description: description ? normalizeText(description) : null,
           plantedChapter: deps.chapterNo,
           paidChapter: null,
           status: "active",
-          relatedCharacters: relatedCharacters ?? [],
+          relatedCharacters: relatedCharacters?.map(normalizeText) ?? [],
         });
-        return { planted: label, chapterNo: deps.chapterNo };
+        return { planted: cleanLabel, chapterNo: deps.chapterNo };
       },
     }),
 
     pay_foreshadowing: tool({
-      description: "标记某伏笔在本章被回收(揭晓/兑现)。",
+      description: "Mark an active foreshadowing item as paid off in the current chapter.",
       parameters: z.object({
-        label: z.string().describe("已登记的伏笔标签"),
+        label: z.string().describe("Existing foreshadowing label"),
       }),
       execute: async ({ label }) => {
-        const f = deps.foreshadowingRepo.list("active").find(x => x.label === label);
-        if (!f) throw new Error(`活跃伏笔不存在:${label}`);
+        const cleanLabel = normalizeText(label);
+        const f = deps.foreshadowingRepo.list("active").find(x => normalizeText(x.label) === cleanLabel);
+        if (!f) throw new Error(`active foreshadowing not found: ${label}`);
         deps.foreshadowingRepo.pay(f.id, deps.chapterNo);
-        return { paid: label, chapterNo: deps.chapterNo };
+        return { paid: f.label, chapterNo: deps.chapterNo };
       },
     }),
 
     add_timeline_event: tool({
-      description: "记录本章的关键事件到时间线(故事内时间 + 事件 + 参与角色)。每章 1-3 条。",
+      description: "Record a key timeline event for the current chapter.",
       parameters: z.object({
-        storyTime: z.string().describe("故事内时间,如 '当夜' '次日清晨' '三日后'"),
-        event: z.string().describe("事件一句话"),
-        participants: z.array(z.string()).optional().describe("参与角色名"),
+        storyTime: z.string().describe("In-story time"),
+        event: z.string().describe("One-sentence event"),
+        participants: z.array(z.string()).optional().describe("Participant character names"),
       }),
       execute: async ({ storyTime, event, participants }) => {
+        const cleanStoryTime = normalizeText(storyTime);
+        const cleanEvent = normalizeText(event);
+        const cleanParticipants = participants?.map(normalizeText) ?? [];
+        const existingEvents = deps.timelineRepo.listByChapter?.(deps.chapterNo)
+          ?? deps.timelineRepo.listAll?.().filter(item => item.chapterNo === deps.chapterNo)
+          ?? [];
+        const existing = existingEvents.find(item =>
+          normalizeText(item.storyTime) === cleanStoryTime &&
+          normalizeText(item.event) === cleanEvent &&
+          sameStringSet(item.participants, cleanParticipants)
+        );
+        if (existing) return { skipped: "timeline event already recorded for this chapter", event: cleanEvent };
         deps.timelineRepo.create({
           chapterNo: deps.chapterNo,
-          storyTime,
-          event,
-          participants: participants ?? [],
+          storyTime: cleanStoryTime,
+          event: cleanEvent,
+          participants: cleanParticipants,
         });
-        return { recorded: event };
+        return { recorded: cleanEvent };
       },
     }),
   };

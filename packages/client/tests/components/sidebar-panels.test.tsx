@@ -26,6 +26,7 @@ describe("SidePanel 容器", () => {
   it("默认显示设定 tab,可切换到角色", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ characters: [], outline: [], foreshadowing: [], timeline: [], content: "" }));
     render(<SidePanel bookId="b1" />);
+    expect(screen.getByTestId("side-panel-tab-rail")).toBeInTheDocument();
     // 默认显示 meta panel
     await waitFor(() => expect(screen.getByTestId("meta-panel")).toBeInTheDocument());
     // 切换到角色
@@ -173,5 +174,36 @@ describe("RulesPanel", () => {
     const putCall = fetchMock.mock.calls.find(c => (c[1] as RequestInit | undefined)?.method === "PUT" && String(c[0]).includes("/master-prompt"));
     expect(putCall).toBeTruthy();
     expect(JSON.parse((putCall![1] as RequestInit).body as string).perBook).toBe("本书第一人称");
+  });
+
+  it("can select a global style reference for the current book", async () => {
+    fetchMock.mockImplementation((url: any, init: any) => {
+      if (String(url).includes("/style-reference")) {
+        if (init?.method === "PUT") return Promise.resolve(jsonResponse({ selectedId: "style-soft" }));
+        return Promise.resolve(jsonResponse({
+          selectedId: "",
+          references: [
+            { id: "style-soft", name: "柔和散文", content: "句子舒缓。" },
+            { id: "style-hard", name: "冷硬纪实", content: "动作清楚。" },
+          ],
+        }));
+      }
+      if (String(url).includes("/master-prompt")) return Promise.resolve(jsonResponse({ perBook: "", global: "" }));
+      return Promise.resolve(jsonResponse({ content: "" }));
+    });
+
+    render(<RulesPanel bookId="b1" />);
+    await waitFor(() => expect(screen.getByTestId("style-reference-select")).toBeInTheDocument());
+    fireEvent.change(screen.getByTestId("style-reference-select"), { target: { value: "style-soft" } });
+    fireEvent.click(screen.getByTestId("style-reference-save"));
+
+    await waitFor(() => {
+      const putCall = fetchMock.mock.calls.find(c =>
+        (c[1] as RequestInit | undefined)?.method === "PUT" &&
+        String(c[0]).includes("/style-reference")
+      );
+      expect(putCall).toBeTruthy();
+      expect(JSON.parse((putCall![1] as RequestInit).body as string).selectedId).toBe("style-soft");
+    });
   });
 });

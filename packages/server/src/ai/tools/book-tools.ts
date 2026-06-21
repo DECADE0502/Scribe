@@ -130,16 +130,17 @@ export function makeBookTools(deps: BookToolsDeps): Record<string, Tool> {
       description:
         "向大纲添加节点。用户说'大纲加一个XXX''展开第X卷''规划接下来几章'之类时调用。写作计划优先添加 chapter 节点,chapter 标题需带明确章号;volume/arc 只作结构分组。parentId 传 null 表示顶层节点。",
       parameters: z.object({
-        parentId: z.string().nullable().describe("父节点 ID；顶层传 null"),
+        parentId: z.string().nullable().optional().describe("父节点 ID；顶层传 null"),
         title: z.string().describe("节点标题。chapter 节点请写明确章号,如'第3章 雪夜重逢'"),
         summary: z.string().nullable().optional().describe("节点摘要/内容描述。chapter 节点要写清本章事件、出场角色、冲突/推进点、结尾落点"),
         level: z.enum(["volume", "arc", "chapter"]).describe("层级:chapter 是写作时精确注入的本章大纲;volume/arc 仅用于组织结构"),
         status: z.enum(["planned", "in_progress", "done"]).optional().describe("状态，默认 planned"),
       }),
       execute: async (args) => {
-        const siblings = handle.outlineRepo.listChildren(args.parentId);
+        const parentId = args.parentId ?? null;
+        const siblings = handle.outlineRepo.listChildren(parentId);
         const node = handle.outlineRepo.create({
-          parentId: args.parentId,
+          parentId,
           level: args.level,
           title: args.title,
           summary: args.summary ?? null,

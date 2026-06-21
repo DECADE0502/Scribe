@@ -279,6 +279,27 @@ describe("structured and timeline hard continuity", () => {
     expect(text).toContain("Timeline Hard Facts");
     expect(text).toContain("SP降至89");
   });
+
+  it("injects the selected global style reference into chapter write messages", () => {
+    handle.bookMetaRepo.set("style_reference_id", "style-soft");
+
+    const result = buildChapterWriteMessages(
+      handle as never,
+      2,
+      "继续第二章",
+      undefined,
+      [
+        { id: "style-soft", name: "柔和散文", content: "句子舒缓,少用口号式总结。" },
+        { id: "style-hard", name: "冷硬纪实", content: "动作清楚。" },
+      ],
+    );
+    const text = result.messages.map((message) => String(message.content)).join("\n");
+
+    expect(text).toContain("## 文风参考");
+    expect(text).toContain("柔和散文");
+    expect(text).toContain("句子舒缓");
+    expect(text).not.toContain("冷硬纪实");
+  });
 });
 
 describe("required output sections", () => {

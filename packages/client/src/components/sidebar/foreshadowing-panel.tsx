@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { t } from "../../i18n/zh-CN.js";
+import { useConversationStore } from "../../stores/conversation.js";
 
 interface Foreshadowing {
   id: string;
@@ -12,6 +13,7 @@ interface Foreshadowing {
 }
 
 export function ForeshadowingPanel(props: { bookId: string }) {
+  const libraryRefreshTrigger = useConversationStore(s => s.libraryRefreshTrigger);
   const [items, setItems] = useState<Foreshadowing[]>([]);
   const [showPaid, setShowPaid] = useState(false);
   const [newLabel, setNewLabel] = useState("");
@@ -29,7 +31,7 @@ export function ForeshadowingPanel(props: { bookId: string }) {
     }
   }, [props.bookId]);
 
-  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => { void reload(); }, [reload, libraryRefreshTrigger]);
 
   const add = async () => {
     if (!newLabel.trim()) return;

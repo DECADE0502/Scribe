@@ -1,7 +1,8 @@
 import type { CoreMessage, LanguageModel } from "ai";
-import type { ExecutionMode, ExecutionStep, ExecutionTrace, SseEvent } from "@scribe/shared";
+import { buildExecutionPolicy, type AcceptanceReport, type ExecutionMode, type ExecutionStep, type ExecutionTrace, type IntentContract, type SseEvent } from "@scribe/shared";
 import { parseSlashCommand, SLASH_COMMANDS } from "@scribe/shared";
 import type { BookHandle } from "../../http/book-registry.js";
+import type { StyleReference } from "../../config/load.js";
 import { streamLlm } from "../llm-call.js";
 import { prependDeepestPrompt } from "../prompts/deepest-prompt.js";
 import { writeWithAudit } from "./write-with-audit.js";
@@ -16,7 +17,7 @@ import {
 } from "../context-builder/book-context.js";
 import { makeGenreSectionTools } from "../tools/genre-section-tools.js";
 import { makeBookTools } from "../tools/book-tools.js";
-import { classifyIntent, type IntentCategory } from "./intent.js";
+import { analyzeIntent, type IntentCategory } from "./intent.js";
 import {
   buildWriteIntentContract,
   createTaskId,
@@ -26,76 +27,6 @@ import {
   makeWritePolicy,
 } from "./workflow-contract.js";
 
-/** 明确的写作意图关键词:命中即直接当 writing_intent,免一次分类往返,也避免分类器误判 */
-const WRITE_HINT = /(写下一章|写第.{0,3}章|写.{0,6}章|写.{0,6}章节|前三章|前[0-9零〇一二两三四五六七八九十]{1,6}章|续写|接着写|继续写|往下写|write\s+(?:next|(?:the\s+)?first\s+\d+\s+chapters?|\d+\s+chapters?))/i;
-const REWRITE_HINT = /(重写|重新写|改写|rewrite)/i;
-
-function parseChineseChapterNumber(raw: string): number | undefined {
-  const text = raw.trim();
-  if (/^\d+$/.test(text)) return Number(text);
-  const digits: Record<string, number> = {
-    零: 0,
-    〇: 0,
-    一: 1,
-    二: 2,
-    两: 2,
-    三: 3,
-    四: 4,
-    五: 5,
-    六: 6,
-    七: 7,
-    八: 8,
-    九: 9,
-  };
-  if (text === "十") return 10;
-  const tenIndex = text.indexOf("十");
-  if (tenIndex >= 0) {
-    const left = text.slice(0, tenIndex);
-    const right = text.slice(tenIndex + 1);
-    const tens = left ? digits[left] : 1;
-    const ones = right ? digits[right] : 0;
-    if (tens === undefined || ones === undefined) return undefined;
-    return tens * 10 + ones;
-  }
-  let result = 0;
-  for (const char of text) {
-    const digit = digits[char];
-    if (digit === undefined) return undefined;
-    result = result * 10 + digit;
-  }
-  return result || undefined;
-}
-
-function parseRewriteTargetChapter(message: string): number | undefined {
-  if (!REWRITE_HINT.test(message)) return undefined;
-  const match = message.match(/(?:重写|重新写|改写|rewrite)\s*(?:第)?\s*([0-9]+|[零〇一二两三四五六七八九十]{1,6})\s*章?/i);
-  if (!match) return undefined;
-  const parsed = parseChineseChapterNumber(match[1]!);
-  return parsed && parsed >= 1 ? parsed : undefined;
-}
-
-function parseWriteChapterCount(message: string): number {
-  const bounded = (value: number | undefined) =>
-    value && value >= 1 ? Math.min(value, 10) : undefined;
-  const frontMatch = message.match(/前\s*([0-9]+|[零〇一二两三四五六七八九十]{1,6})\s*章/);
-  const directMatch = message.match(/写\s*([0-9]+|[零〇一二两三四五六七八九十]{1,6})\s*章/);
-  const englishMatch = message.match(/write\s+(?:the\s+)?(?:first\s+)?([0-9]+)\s+chapters?/i);
-  const count = bounded(parseChineseChapterNumber(frontMatch?.[1] ?? directMatch?.[1] ?? englishMatch?.[1] ?? ""));
-  return count ?? 1;
-}
-
-const DELETE_HINT = /(删除|删掉|去掉|清空|清除|delete|remove)/i;
-const DELETE_ALL_HINT = /(所有章节|全部章节|所有章|全部章|all\s*chapters)/i;
-
-/** 解析"删除第 N 章"的目标章号；"删除所有章节"返回 1（回档到书初） */
-function parseDeleteTargetChapter(message: string): number | undefined {
-  if (!DELETE_HINT.test(message)) return undefined;
-  if (DELETE_ALL_HINT.test(message)) return 1;
-  const match = message.match(/(?:删除|删掉|去掉)\s*(?:第)?\s*([0-9]+|[零〇一二两三四五六七八九十]{1,6})\s*章?/i);
-  if (!match) return undefined;
-  const parsed = parseChineseChapterNumber(match[1]!);
-  return parsed && parsed >= 1 ? parsed : undefined;
-}
 
 /** 把一段已成形的静态文本作为单个 text_delta 发出(避免逐字符刷屏)。 */
 async function* cannedText(text: string): AsyncIterable<SseEvent> {
@@ -113,6 +44,8 @@ export interface ConversationOrchestratorDeps {
   abortSignal?: AbortSignal;
   /** 用户最深处提示词,原文拼到最前端 */
   deepestPrompt?: string;
+  /** 全局文风参考列表,按本书选择注入写作 Agent */
+  styleReferences?: StyleReference[];
 }
 
 export interface ConversationInput {
@@ -200,7 +133,8 @@ async function* writeChapterFlow(
   mode: "write" | "rewrite" = "write",
 ): AsyncIterable<SseEvent> {
   const { handle } = deps;
-  const promptCtx = buildBookPromptContext(handle);
+  const styleReferences = deps.styleReferences ?? [];
+  const promptCtx = buildBookPromptContext(handle, styleReferences);
 
   // 查找本章对应的大纲节点，把大纲摘要拼进 userIntent
   const fullUserIntent = enrichUserIntentWithOutline(handle.outlineRepo, chapterNo, userIntent);
@@ -219,6 +153,7 @@ async function* writeChapterFlow(
   }
 
   let chapterFailed = false;
+  let writeEmittedContent = false;
   /** 从 writeWithAudit 事件流里捕获的硬事实闸门结果 */
   let hardFactGateResult: { passed: boolean; blockingIssues: string[] } | undefined;
   for await (const ev of writeWithAudit(
@@ -233,7 +168,13 @@ async function* writeChapterFlow(
     {
       chapterNo,
       userIntent: fullUserIntent,
-      prebuiltMessages: buildChapterWriteMessages(handle, chapterNo, fullUserIntent, taskInstruction).messages,
+      prebuiltMessages: buildChapterWriteMessages(
+        handle,
+        chapterNo,
+        fullUserIntent,
+        taskInstruction,
+        styleReferences,
+      ).messages,
       source: mode === "rewrite" ? "ai_rewrite" : "ai_write",
       auditCtx: promptCtx.auditCtx,
       enableRepair: true,
@@ -243,7 +184,24 @@ async function* writeChapterFlow(
     },
   )) {
     if (ev.type === "done") continue; // 末尾统一收尾
-    if (ev.type === "error") { yield ev; chapterFailed = true; break; }
+    if (ev.type === "tool_call_end" && ev.toolName === "chapter_write") {
+      const result = ev.result as { success?: boolean } | undefined;
+      writeEmittedContent = result?.success !== false;
+    }
+    if (ev.type === "error") {
+      const readBack = handle.chapterFiles.read(chapterNo);
+      if (writeEmittedContent && readBack?.content) {
+        yield {
+          type: "tool_call_end",
+          toolName: "record_chapter_state",
+          result: { success: false, reason: ev.errorClass, message: ev.message },
+        };
+        return;
+      }
+      yield ev;
+      chapterFailed = true;
+      break;
+    }
     // 捕获硬事实闸门结果
     if (ev.type === "tool_call_end" && ev.toolName === "hard_fact_gate") {
       const result = ev.result as { passed?: boolean; blockingIssues?: string[] };
@@ -265,7 +223,7 @@ async function* chatWithContext(
   withTools: boolean,
 ): AsyncIterable<SseEvent> {
   const { handle } = deps;
-  const promptCtx = buildBookPromptContext(handle);
+  const promptCtx = buildBookPromptContext(handle, deps.styleReferences ?? []);
   const recent = handle.chaptersRepo
     .listSummaries()
     .slice(-3)
@@ -306,7 +264,7 @@ async function* agenticChat(
   input: ConversationInput,
 ): AsyncIterable<SseEvent> {
   const { handle } = deps;
-  const promptCtx = buildBookPromptContext(handle);
+  const promptCtx = buildBookPromptContext(handle, deps.styleReferences ?? []);
   const recent = handle.chaptersRepo
     .listSummaries()
     .slice(-5)
@@ -385,7 +343,7 @@ async function* auditFlow(
     yield* cannedText(`第 ${chapterNo} 章还没有正文,无法审查。`);
     return;
   }
-  const promptCtx = buildBookPromptContext(handle);
+  const promptCtx = buildBookPromptContext(handle, deps.styleReferences ?? []);
   yield { type: "tool_call_start", toolName: "chapter_audit", args: { chapterNo } };
   try {
     const result = await auditChapter(
@@ -414,6 +372,267 @@ async function* auditFlow(
   }
 }
 
+async function* plannedChapterWriteFlow(
+  deps: ConversationOrchestratorDeps,
+  input: ConversationInput,
+  chapterNos: number[],
+  mode: "write" | "rewrite" = "write",
+): AsyncIterable<SseEvent> {
+  const taskId = createTaskId(mode);
+  const executionMode = input.executionMode ?? "low_risk_auto";
+  const intentContract = buildWriteIntentContract({
+    taskId,
+    userRequest: input.message,
+    chapterNos,
+  });
+  const actions = makeWriteActions(chapterNos);
+  const policy = makeWritePolicy({ taskId, mode: executionMode, chapterNos });
+  const steps = makeExecutionSteps(actions);
+
+  yield { type: "execution_plan", taskId, policy, steps, intentContract };
+
+  if (policy.effectiveMode !== "auto") {
+    yield {
+      type: "confirmation_required",
+      taskId,
+      policy,
+      message: policy.reason,
+    };
+    yield { type: "done" };
+    return;
+  }
+
+  const completedSteps: ExecutionStep[] = [];
+  for (const chapterNo of chapterNos) {
+    const pendingStep = steps.find(step =>
+      step.argsSummary === `chapterNo=${chapterNo}` &&
+      (step.actionType === "chapter_write" || step.actionType === "multi_chapter_write")
+    )!;
+    const pendingStateStep = steps.find(step =>
+      step.argsSummary === `chapterNo=${chapterNo}` &&
+      step.actionType === "record_chapter_state"
+    );
+    const runningStep: ExecutionStep = {
+      ...pendingStep,
+      status: "running",
+      toolName: "chapter_write",
+    };
+    yield { type: "execution_step", taskId, step: runningStep };
+
+    let failed: string | undefined;
+    let stateStepFailed = false;
+    for await (const ev of writeChapterFlow(deps, chapterNo, input.message, mode)) {
+      if (ev.type === "error") {
+        failed = ev.message;
+      }
+      if (ev.type === "tool_call_start" && ev.toolName === "record_chapter_state" && pendingStateStep) {
+        yield {
+          type: "execution_step",
+          taskId,
+          step: {
+            ...pendingStateStep,
+            status: "running",
+            toolName: "record_chapter_state",
+          },
+        };
+      }
+      if (ev.type === "tool_call_end" && ev.toolName === "record_chapter_state" && pendingStateStep) {
+        const result = ev.result as { success?: boolean } | undefined;
+        const succeeded = result?.success !== false;
+        stateStepFailed = !succeeded;
+        const completedStateStep: ExecutionStep = {
+          ...pendingStateStep,
+          status: succeeded ? "succeeded" : "failed",
+          toolName: "record_chapter_state",
+          resultSummary: succeeded
+            ? `Chapter ${chapterNo} state recorded.`
+            : `Chapter ${chapterNo} state recording failed.`,
+          verification: {
+            method: "state_compare",
+            passed: succeeded,
+            detail: succeeded
+              ? `Chapter ${chapterNo} state recording completed.`
+              : `Chapter ${chapterNo} state recording did not complete.`,
+          },
+        };
+        completedSteps.push(completedStateStep);
+        yield { type: "execution_step", taskId, step: completedStateStep };
+      }
+      yield ev;
+    }
+
+    const readBack = deps.handle.chapterFiles.read(chapterNo);
+    const succeeded = !failed && !!readBack?.content;
+    const completedStep: ExecutionStep = {
+      ...runningStep,
+      status: succeeded ? "succeeded" : "failed",
+      resultSummary: succeeded
+        ? `Chapter ${chapterNo} written and read back.`
+        : `Chapter ${chapterNo} write failed${failed ? `: ${failed}` : "."}`,
+      verification: {
+        method: "read_back",
+        passed: succeeded,
+        detail: succeeded
+          ? `Chapter ${chapterNo} read back after write.`
+          : `Chapter ${chapterNo} was not readable after write.`,
+      },
+    };
+    completedSteps.push(completedStep);
+    yield { type: "execution_step", taskId, step: completedStep };
+    if (!succeeded || stateStepFailed) break;
+  }
+
+  const trace: ExecutionTrace = {
+    taskId,
+    mode: executionMode,
+    policy,
+    steps: completedSteps,
+    finalStatus: completedSteps.every(step => step.status === "succeeded")
+      ? "succeeded"
+      : "failed",
+  };
+  yield { type: "acceptance_report", report: makeAcceptanceReport({ contract: intentContract, trace }) };
+  yield { type: "done" };
+}
+
+async function* plannedDeleteFlow(
+  deps: ConversationOrchestratorDeps,
+  input: ConversationInput,
+  targetChapter: number,
+): AsyncIterable<SseEvent> {
+  const taskId = createTaskId("delete");
+  const executionMode = input.executionMode ?? "low_risk_auto";
+  const policy = buildExecutionPolicy({
+    taskId,
+    configuredMode: executionMode,
+    actions: [{ type: "delete_chapters_from", riskHint: "destructive" }],
+  });
+  const steps: ExecutionStep[] = [{
+    id: "step-1",
+    actionType: "delete_chapters_from",
+    riskLevel: "destructive",
+    status: "pending",
+    argsSummary: `chapterNo=${targetChapter}`,
+  }];
+  const intentContract: IntentContract = {
+    taskId,
+    userRequest: input.message,
+    taskType: "revise",
+    mustDo: [`Delete chapter ${targetChapter} and later dependent chapter records`],
+    mustNotDo: ["Do not delete without confirmation when policy requires it"],
+    acceptanceCriteria: ["Deletion tool completes", "Workflow status remains visible"],
+    ambiguity: [],
+  };
+  yield { type: "execution_plan", taskId, policy, steps, intentContract };
+  if (policy.effectiveMode !== "auto") {
+    yield { type: "confirmation_required", taskId, policy, message: policy.reason };
+    yield { type: "done" };
+    return;
+  }
+
+  const runningStep: ExecutionStep = { ...steps[0]!, status: "running", toolName: "delete_chapters_from" };
+  yield { type: "execution_step", taskId, step: runningStep };
+  const { deleteChaptersFrom } = await import("./delete-chapter.js");
+  const result = deleteChaptersFrom(deps.handle, targetChapter);
+  const succeeded = result.deletedChapters.length > 0;
+  const completedStep: ExecutionStep = {
+    ...runningStep,
+    status: succeeded ? "succeeded" : "skipped",
+    resultSummary: succeeded
+      ? `Deleted chapters ${result.deletedChapters.join(", ")}.`
+      : `No chapters from ${targetChapter} needed deletion.`,
+    verification: {
+      method: "panel_refresh",
+      passed: true,
+      detail: succeeded ? "Delete operation completed." : "Delete operation found no matching chapters.",
+    },
+  };
+  const evidence = succeeded ? "Delete operation completed." : "Delete operation found no matching chapters.";
+  yield { type: "execution_step", taskId, step: completedStep };
+  yield {
+    type: "acceptance_report",
+    report: makeSimpleAcceptanceReport({
+      taskId,
+      verdict: "pass",
+      criterion: "Deletion workflow completed",
+      evidence,
+    }),
+  };
+  yield { type: "done" };
+}
+
+async function* plannedAuditFlow(
+  deps: ConversationOrchestratorDeps,
+  input: ConversationInput,
+  chapterNo: number,
+): AsyncIterable<SseEvent> {
+  const taskId = createTaskId("audit");
+  const executionMode = input.executionMode ?? "low_risk_auto";
+  const policy = buildExecutionPolicy({
+    taskId,
+    configuredMode: executionMode,
+    actions: [{ type: "chapter_audit", riskHint: "draft" }],
+  });
+  const steps: ExecutionStep[] = [{
+    id: "step-1",
+    actionType: "chapter_audit",
+    riskLevel: "draft",
+    status: "pending",
+    argsSummary: `chapterNo=${chapterNo}`,
+  }];
+  yield { type: "execution_plan", taskId, policy, steps };
+  if (policy.effectiveMode !== "auto") {
+    yield { type: "confirmation_required", taskId, policy, message: policy.reason };
+    yield { type: "done" };
+    return;
+  }
+
+  const runningStep: ExecutionStep = { ...steps[0]!, status: "running", toolName: "chapter_audit" };
+  yield { type: "execution_step", taskId, step: runningStep };
+  let failed: string | undefined;
+  for await (const ev of auditFlow(deps, chapterNo)) {
+    if (ev.type === "error") failed = ev.message;
+    yield ev;
+  }
+  const completedStep: ExecutionStep = {
+    ...runningStep,
+    status: failed ? "failed" : "succeeded",
+    resultSummary: failed ? `Chapter ${chapterNo} audit failed.` : `Chapter ${chapterNo} audit completed.`,
+    verification: {
+      method: "audit",
+      passed: !failed,
+      detail: failed ?? `Chapter ${chapterNo} audit completed.`,
+    },
+  };
+  const evidence = failed ?? `Chapter ${chapterNo} audit completed.`;
+  yield { type: "execution_step", taskId, step: completedStep };
+  yield {
+    type: "acceptance_report",
+    report: makeSimpleAcceptanceReport({
+      taskId,
+      verdict: failed ? "fail" : "pass",
+      criterion: "Audit workflow completed",
+      evidence,
+    }),
+  };
+}
+
+function makeSimpleAcceptanceReport(input: {
+  taskId: string;
+  verdict: AcceptanceReport["verdict"];
+  criterion: string;
+  evidence: string;
+}): AcceptanceReport {
+  return {
+    taskId: input.taskId,
+    verdict: input.verdict,
+    userCriteria: [{ criterion: input.criterion, status: input.verdict === "fail" ? "fail" : "pass", evidence: input.evidence }],
+    processCriteria: [],
+    domainCriteria: [],
+    recommendedActions: input.verdict === "fail" ? [{ type: "stop", reason: input.evidence }] : [],
+  };
+}
+
 /**
  * 对话总入口(spec §7.3 意图识别 + §7.4 斜杠命令路由)。
  * 1) 斜杠命令 → command_explicit,确定性分派
@@ -434,17 +653,14 @@ export async function* runConversation(
     const maxNo = deps.handle.chaptersRepo.maxChapterNo();
     switch (parsed.id) {
       case "write":
-        yield* writeChapterFlow(deps, maxNo + 1, parsed.args);
-        yield { type: "done" };
+        yield* plannedChapterWriteFlow(deps, { ...input, message: parsed.args || input.message }, [maxNo + 1]);
         return;
       case "rewrite": {
-        const target = parseRewriteTargetChapter(parsed.args) ?? (maxNo >= 1 ? maxNo : 1);
-        yield* writeChapterFlow(deps, target, parsed.args, "rewrite");
-        yield { type: "done" };
+        yield* plannedChapterWriteFlow(deps, { ...input, message: parsed.args || input.message }, [maxNo >= 1 ? maxNo : 1], "rewrite");
         return;
       }
       case "audit":
-        yield* auditFlow(deps, maxNo >= 1 ? maxNo : 1);
+        yield* plannedAuditFlow(deps, input, maxNo >= 1 ? maxNo : 1);
         return;
       case "recall":
         yield* recallFlow(deps, parsed.args);
@@ -471,173 +687,37 @@ export async function* runConversation(
   // 这些需要流式 SSE 进度，不能在 tool execute 里跑。
   // 其余全部走 agenticChat 让 AI 自己理解需求 + 调轻量工具。
 
-  // 重写指定章（必须在 WRITE_HINT 之前检查，否则"重写第一章"会被 WRITE_HINT 匹配）
-  const rewriteTarget = parseRewriteTargetChapter(input.message);
-  if (rewriteTarget !== undefined) {
-    yield { type: "intent", category: "revise_intent" };
-    yield* writeChapterFlow(deps, rewriteTarget, input.message, "rewrite");
-    yield { type: "done" };
-    return;
-  }
-
-  // 写下一章
-  if (WRITE_HINT.test(input.message)) {
+  const analysis = await analyzeIntent(deps.auditModel, input.message, deps.abortSignal);
+  if (analysis.category === "writing_intent") {
     yield { type: "intent", category: "writing_intent" };
-    const count = parseWriteChapterCount(input.message);
+    const count = analysis.chapterCount ?? 1;
     const start = deps.handle.chaptersRepo.maxChapterNo() + 1;
     const chapterNos = Array.from({ length: count }, (_, offset) => start + offset);
-    const taskId = createTaskId("write");
-    const mode = input.executionMode ?? "low_risk_auto";
-    const intentContract = buildWriteIntentContract({
-      taskId,
-      userRequest: input.message,
-      chapterNos,
-    });
-    const actions = makeWriteActions(chapterNos);
-    const policy = makeWritePolicy({ taskId, mode, chapterNos });
-    const steps = makeExecutionSteps(actions);
-
-    yield { type: "execution_plan", taskId, policy, steps, intentContract };
-
-    if (policy.effectiveMode !== "auto") {
-      yield {
-        type: "confirmation_required",
-        taskId,
-        policy,
-        message: policy.reason,
-      };
-      yield { type: "done" };
-      return;
-    }
-
-    const completedSteps: ExecutionStep[] = [];
-    for (const chapterNo of chapterNos) {
-      const pendingStep = steps.find(step =>
-        step.argsSummary === `chapterNo=${chapterNo}` &&
-        (step.actionType === "chapter_write" || step.actionType === "multi_chapter_write")
-      )!;
-      const pendingStateStep = steps.find(step =>
-        step.argsSummary === `chapterNo=${chapterNo}` &&
-        step.actionType === "record_chapter_state"
-      );
-      const runningStep: ExecutionStep = {
-        ...pendingStep,
-        status: "running",
-        toolName: "chapter_write",
-      };
-      yield { type: "execution_step", taskId, step: runningStep };
-
-      let failed: string | undefined;
-      let stateStepFailed = false;
-      for await (const ev of writeChapterFlow(deps, chapterNo, input.message)) {
-        if (ev.type === "error") {
-          failed = ev.message;
-        }
-        if (ev.type === "tool_call_start" && ev.toolName === "record_chapter_state" && pendingStateStep) {
-          yield {
-            type: "execution_step",
-            taskId,
-            step: {
-              ...pendingStateStep,
-              status: "running",
-              toolName: "record_chapter_state",
-            },
-          };
-        }
-        if (ev.type === "tool_call_end" && ev.toolName === "record_chapter_state" && pendingStateStep) {
-          const result = ev.result as { success?: boolean } | undefined;
-          const succeeded = result?.success !== false;
-          stateStepFailed = !succeeded;
-          const completedStateStep: ExecutionStep = {
-            ...pendingStateStep,
-            status: succeeded ? "succeeded" : "failed",
-            toolName: "record_chapter_state",
-            resultSummary: succeeded
-              ? `Chapter ${chapterNo} state recorded.`
-              : `Chapter ${chapterNo} state recording failed.`,
-            verification: {
-              method: "state_compare",
-              passed: succeeded,
-              detail: succeeded
-                ? `Chapter ${chapterNo} state recording completed.`
-                : `Chapter ${chapterNo} state recording did not complete.`,
-            },
-          };
-          completedSteps.push(completedStateStep);
-          yield { type: "execution_step", taskId, step: completedStateStep };
-        }
-        yield ev;
-      }
-
-      const readBack = deps.handle.chapterFiles.read(chapterNo);
-      const succeeded = !failed && !!readBack?.content;
-      const completedStep: ExecutionStep = {
-        ...runningStep,
-        status: succeeded ? "succeeded" : "failed",
-        resultSummary: succeeded
-          ? `Chapter ${chapterNo} written and read back.`
-          : `Chapter ${chapterNo} write failed${failed ? `: ${failed}` : "."}`,
-        verification: {
-          method: "read_back",
-          passed: succeeded,
-          detail: succeeded
-            ? `Chapter ${chapterNo} read back after write.`
-            : `Chapter ${chapterNo} was not readable after write.`,
-        },
-      };
-      completedSteps.push(completedStep);
-      yield { type: "execution_step", taskId, step: completedStep };
-      if (!succeeded || stateStepFailed) break;
-    }
-
-    const trace: ExecutionTrace = {
-      taskId,
-      mode,
-      policy,
-      steps: completedSteps,
-      finalStatus: completedSteps.every(step => step.status === "succeeded")
-        ? "succeeded"
-        : "failed",
-    };
-    yield { type: "acceptance_report", report: makeAcceptanceReport({ contract: intentContract, trace }) };
-    yield { type: "done" };
+    yield* plannedChapterWriteFlow(deps, input, chapterNos);
     return;
   }
 
-  // 删除章节（回档语义）
-  const deleteTarget = parseDeleteTargetChapter(input.message);
-  if (deleteTarget !== undefined) {
+  if (analysis.category === "revise_intent") {
+    yield { type: "intent", category: "revise_intent" };
+    const maxNo = deps.handle.chaptersRepo.maxChapterNo();
+    yield* plannedChapterWriteFlow(deps, input, [analysis.targetChapter ?? (maxNo >= 1 ? maxNo : 1)], "rewrite");
+    return;
+  }
+
+  if (analysis.category === "delete_intent") {
     yield { type: "intent", category: "delete_intent" };
-    const { deleteChaptersFrom } = await import("./delete-chapter.js");
-    const result = deleteChaptersFrom(deps.handle, deleteTarget);
-    if (result.deletedChapters.length === 0) {
-      yield* cannedText(`没有第 ${deleteTarget} 章或更后的章节，无需删除。`);
-    } else {
-      const range = result.deletedChapters[0] === result.deletedChapters[result.deletedChapters.length - 1]
-        ? `第 ${result.deletedChapters[0]} 章`
-        : `第 ${result.deletedChapters[0]} 章到第 ${result.deletedChapters[result.deletedChapters.length - 1]} 章`;
-      let msg = `已删除${range}及所有关联记录（摘要、版本、审查、时间线、读者问题、伏笔、角色出场）。`;
-      if (result.affectedCharacterNames.length > 0) {
-        msg += `\n注意：${result.affectedCharacterNames.join("、")} 的状态是累积写入的，无法自动回滚到删章前。请到侧栏手动核对。`;
-      }
-      yield* cannedText(msg);
-    }
-    yield { type: "done" };
+    const maxNo = deps.handle.chaptersRepo.maxChapterNo();
+    yield* plannedDeleteFlow(deps, input, analysis.targetChapter ?? (maxNo >= 1 ? maxNo : 1));
     return;
   }
 
-  // 审查指定章
-  const auditMatch = input.message.match(/(?:审查|审查一下|检查|看看|评价).*(?:第\s*([0-9]+)\s*章)/i);
-  if (auditMatch) {
-    const no = Number(auditMatch[1]);
-    if (no >= 1) {
-      yield { type: "intent", category: "query" as IntentCategory };
-      yield* auditFlow(deps, no);
-      return;
-    }
+  if (analysis.category === "query" && analysis.targetChapter !== undefined) {
+    yield { type: "intent", category: "query" as IntentCategory };
+    yield* plannedAuditFlow(deps, input, analysis.targetChapter);
+    return;
   }
 
-  // 其余所有自然语言 → agentic 对话（AI 自己理解需求，自己调轻量工具）
-  yield { type: "intent", category: "agentic" as IntentCategory };
+  yield { type: "intent", category: analysis.category === "genre_section_op" ? "genre_section_op" : "agentic" as IntentCategory };
   yield* agenticChat(deps, input);
+  return;
 }

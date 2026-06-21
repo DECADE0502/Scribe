@@ -6,7 +6,7 @@ function readFileText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
+    reader.onerror = () => reject(reader.error ?? new Error("读取文件失败"));
     reader.readAsText(file);
   });
 }
@@ -42,7 +42,7 @@ export function ImportDialog(props: { bookId: string; onImported: () => void }) 
 
   return (
     <section data-testid="import-dialog" style={{ display: "grid", gap: 8 }}>
-      <strong>Import</strong>
+      <strong>导入</strong>
       {error && <p role="alert" style={{ color: "#c00" }}>{error}</p>}
       <input
         data-testid="import-file"
@@ -63,7 +63,7 @@ export function ImportDialog(props: { bookId: string; onImported: () => void }) 
             </p>
           ))}
           <button data-testid="import-confirm" onClick={() => void confirm()}>
-            Import
+            确认导入
           </button>
         </div>
       )}

@@ -287,12 +287,60 @@ describe("workflow contract helpers", () => {
 
     const report = makeAcceptanceReport({ contract, trace });
 
-    expect(report.verdict).toBe("fail");
+    expect(report.verdict).toBe("repairable");
     expect(report.processCriteria).toContainEqual({
       criterion: "Workflow final status is succeeded",
       status: "fail",
       evidence: "Trace final status is failed.",
     });
+  });
+
+  it("marks successful requested writes with failed process work as repairable", () => {
+    const contract = buildWriteIntentContract({
+      taskId: "task-write-repairable",
+      userRequest: "write next chapter",
+      chapterNos: [1],
+    });
+    const trace: ExecutionTrace = {
+      taskId: "task-write-repairable",
+      mode: "trusted_auto",
+      policy: makeWritePolicy({ taskId: "task-write-repairable", mode: "trusted_auto", chapterNos: [1] }),
+      steps: [
+        {
+          id: "step-1",
+          actionType: "chapter_write",
+          riskLevel: "write",
+          status: "succeeded",
+          argsSummary: "chapterNo=1",
+          verification: {
+            method: "read_back",
+            passed: true,
+            detail: "Chapter 1 read back after write.",
+          },
+        },
+        {
+          id: "step-2",
+          actionType: "record_chapter_state",
+          riskLevel: "write",
+          status: "failed",
+          argsSummary: "chapterNo=1",
+          verification: {
+            method: "state_compare",
+            passed: false,
+            detail: "Chapter 1 state recording did not complete.",
+          },
+        },
+      ],
+      finalStatus: "failed",
+    };
+
+    const report = makeAcceptanceReport({ contract, trace });
+
+    expect(report.verdict).toBe("repairable");
+    expect(report.userCriteria.every(criterion => criterion.status === "pass")).toBe(true);
+    expect(report.recommendedActions).toEqual([
+      { type: "auto_repair", reason: "requested chapter writes passed; follow-up workflow work failed" },
+    ]);
   });
 
   it("preserves the shared low_risk_auto default when write policy mode is omitted", () => {

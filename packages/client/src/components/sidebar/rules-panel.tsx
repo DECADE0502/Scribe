@@ -70,7 +70,72 @@ export function RulesPanel(props: { bookId: string }) {
             : <p data-testid="rules-empty" style={{ color: "#999" }}>{t.common.empty}</p>}
         </>
       )}
+      <StyleReferenceSelector bookId={props.bookId} />
       <DeepestPromptOverride bookId={props.bookId} />
+    </div>
+  );
+}
+
+interface StyleReference {
+  id: string;
+  name: string;
+  content: string;
+}
+
+function StyleReferenceSelector(props: { bookId: string }) {
+  const [references, setReferences] = useState<StyleReference[]>([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [tip, setTip] = useState(false);
+
+  const reload = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/books/${encodeURIComponent(props.bookId)}/style-reference`);
+      if (!res.ok) return;
+      const j = await res.json() as { selectedId: string; references: StyleReference[] };
+      setSelectedId(j.selectedId ?? "");
+      setReferences(Array.isArray(j.references) ? j.references : []);
+    } catch { /* ignore */ }
+  }, [props.bookId]);
+
+  useEffect(() => { void reload(); }, [reload]);
+
+  const save = async () => {
+    const res = await fetch(`/api/books/${encodeURIComponent(props.bookId)}/style-reference`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ selectedId }),
+    });
+    if (res.ok) {
+      setTip(true);
+      setTimeout(() => setTip(false), 2000);
+    }
+  };
+
+  const current = references.find(ref => ref.id === selectedId);
+  return (
+    <div data-testid="style-reference-selector" style={{ marginTop: 20, paddingTop: 14, borderTop: "1px solid #e5e5e5" }}>
+      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>本书文风参考</div>
+      <p style={{ color: "#999", fontSize: 12, margin: "0 0 8px" }}>
+        从全局设置页的文风参考中选择一组,写作 Agent 会按它规范正文风格。
+      </p>
+      {tip && <p data-testid="style-reference-saved-tip" style={{ color: "#080", fontSize: 12 }}>已保存</p>}
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <select
+          data-testid="style-reference-select"
+          value={selectedId}
+          onChange={(e) => setSelectedId(e.target.value)}
+          style={{ flex: 1, padding: 7 }}
+        >
+          <option value="">不使用文风参考</option>
+          {references.map(ref => <option key={ref.id} value={ref.id}>{ref.name}</option>)}
+        </select>
+        <button data-testid="style-reference-save" onClick={() => void save()}>保存</button>
+      </div>
+      {current && (
+        <pre data-testid="style-reference-preview" style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 12.5, background: "rgba(0,0,0,0.03)", padding: 8, borderRadius: 6, marginTop: 8 }}>
+          {current.content}
+        </pre>
+      )}
     </div>
   );
 }

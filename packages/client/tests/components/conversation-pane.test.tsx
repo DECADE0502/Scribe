@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
 import { ConversationPane, type StreamFn } from "../../src/components/conversation/conversation-pane.js";
 import { useConversationStore } from "../../src/stores/conversation.js";
@@ -26,8 +26,12 @@ beforeEach(() => {
   useConversationStore.getState().reset();
 });
 
-function renderPane(streamFn: StreamFn) {
-  return render(<ConversationPane bookId="b1" streamFn={streamFn} />);
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+function renderPane(streamFn: StreamFn, bookId = "b1") {
+  return render(<ConversationPane bookId={bookId} streamFn={streamFn} />);
 }
 
 function sendMessage(text: string) {
@@ -36,6 +40,28 @@ function sendMessage(text: string) {
 }
 
 describe("ConversationPane", () => {
+  it("切换书本时用新书聊天记录替换旧书记录", async () => {
+    const stream = makeManualStream();
+    const fetchMock = vi.fn((url: string) => {
+      const messages = url.includes("/books/b1/")
+        ? [{ id: 1, role: "user", content: "旧书消息", metadata: { kind: "chat" }, createdAt: 1 }]
+        : [{ id: 2, role: "user", content: "新书消息", metadata: { kind: "chat" }, createdAt: 2 }];
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ messages }),
+      } as Response);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const view = renderPane(stream.streamFn, "b1");
+    await waitFor(() => expect(screen.getByText("旧书消息")).toBeInTheDocument());
+
+    view.rerender(<ConversationPane bookId="b2" streamFn={stream.streamFn} />);
+
+    await waitFor(() => expect(screen.getByText("新书消息")).toBeInTheDocument());
+    expect(screen.queryByText("旧书消息")).not.toBeInTheDocument();
+  });
+
   it("发送后:占位 → 文本逐字 → done 固化到消息列表", async () => {
     const m = makeManualStream();
     renderPane(m.streamFn);
@@ -64,7 +90,7 @@ describe("ConversationPane", () => {
     sendMessage("建板块");
 
     m.push({ type: "tool_call_start", toolName: "create_genre_section" });
-    expect(screen.getByTestId("tool-running")).toHaveTextContent("create_genre_section");
+    expect(screen.getByTestId("tool-running")).toHaveTextContent("创建记录集合");
 
     m.push({ type: "tool_call_end", toolName: "create_genre_section", result: {} });
     expect(screen.queryByTestId("tool-running")).not.toBeInTheDocument();

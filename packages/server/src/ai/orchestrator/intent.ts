@@ -21,6 +21,12 @@ export type IntentCategory =
   | "agentic"
   | "other";
 
+export interface IntentAnalysis {
+  category: IntentCategory;
+  chapterCount?: number;
+  targetChapter?: number;
+}
+
 const VALID: IntentCategory[] = [
   "chitchat",
   "writing_intent",
@@ -68,4 +74,52 @@ export async function classifyIntent(
   } catch {
     return "chitchat";
   }
+}
+
+const ANALYZE_PROMPT = `你是小说创作项目的意图检验 agent。请把用户指令转成严格 JSON，不要输出解释。
+
+JSON 字段:
+- category: writing_intent | revise_intent | delete_intent | query | genre_section_op | chitchat | other
+- chapterCount: 可选数字。用户要求写多章时填写；没有明确数量时省略。
+- targetChapter: 可选数字。用户要求重写、删除、审查某章时填写；没有明确目标时省略。
+
+规则:
+- 写下一章、继续写、写多章、推进剧情 => writing_intent
+- 重写、改写已有章节 => revise_intent
+- 删除、清空章节 => delete_intent
+- 审查、检查、评价章节质量，或询问设定/前情 => query
+- 新增或修改长期资料、设定条目、角色、大纲、世界规则、线索 => genre_section_op
+- 只输出 JSON，例如 {"category":"writing_intent","chapterCount":3}`;
+
+export async function analyzeIntent(
+  model: LanguageModel,
+  message: string,
+  abortSignal?: AbortSignal,
+): Promise<IntentAnalysis> {
+  try {
+    const result = await generateText({
+      model,
+      messages: [
+        { role: "system", content: ANALYZE_PROMPT },
+        { role: "user", content: message },
+      ],
+      abortSignal,
+    });
+    const parsed = JSON.parse(result.text.trim()) as Partial<IntentAnalysis>;
+    const category = parsed.category && VALID.includes(parsed.category)
+      ? parsed.category
+      : "chitchat";
+    return {
+      category,
+      chapterCount: normalizePositiveInt(parsed.chapterCount, 10),
+      targetChapter: normalizePositiveInt(parsed.targetChapter),
+    };
+  } catch {
+    return { category: await classifyIntent(model, message, abortSignal) };
+  }
+}
+
+function normalizePositiveInt(value: unknown, max?: number): number | undefined {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) return undefined;
+  return max ? Math.min(value, max) : value;
 }

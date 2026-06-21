@@ -1,7 +1,14 @@
 import { Hono } from "hono";
 import type { BookRegistry } from "../book-registry.js";
-import { loadConfig, saveConfig, type AppConfig } from "../../config/load.js";
-import { saveSecret, maskKey } from "../../config/secrets.js";
+import {
+  isBuiltinProviderId,
+  loadConfig,
+  normalizeCustomProviders,
+  normalizeStyleReferences,
+  saveConfig,
+  type AppConfig,
+} from "../../config/load.js";
+import { loadSecrets, saveSecret, maskKey, providerSecretName } from "../../config/secrets.js";
 import type { ModelManager } from "../../ai/model-manager.js";
 
 export interface UsageRoutesDeps {
@@ -9,6 +16,20 @@ export interface UsageRoutesDeps {
   configJsonPath?: string;
   secretsEnvPath?: string;
   modelManager?: ModelManager;
+}
+
+function providerKeyStatuses(config: AppConfig, secretsEnvPath?: string) {
+  const secrets = secretsEnvPath ? loadSecrets(secretsEnvPath) : {};
+  const providerIds = ["anyrouter", "deepseek", "mimo", ...config.customProviders.map((provider) => provider.id)];
+  const out: Record<string, { hasApiKey: boolean; apiKeyMasked: string | null }> = {};
+  for (const providerId of providerIds) {
+    const key = secrets[providerSecretName(providerId)] ?? "";
+    out[providerId] = {
+      hasApiKey: !!key,
+      apiKeyMasked: key ? maskKey(key) : null,
+    };
+  }
+  return out;
 }
 
 export function usageRoutes(deps: UsageRoutesDeps) {
@@ -41,11 +62,13 @@ export function usageRoutes(deps: UsageRoutesDeps) {
   app.get("/api/settings", async (c) => {
     if (!deps.configJsonPath) return c.json({ error: "服务未就绪" }, 503);
     const config = loadConfig(deps.configJsonPath);
-    const state = deps.modelManager?.getState();
+    const providerKeys = providerKeyStatuses(config, deps.secretsEnvPath);
+    const currentKey = providerKeys[config.provider] ?? { hasApiKey: false, apiKeyMasked: null };
     return c.json({
       ...config,
-      apiKeyMasked: state?.apiKey ? maskKey(state.apiKey) : null,
-      hasApiKey: !!state?.apiKey,
+      providerKeys,
+      apiKeyMasked: currentKey.apiKeyMasked,
+      hasApiKey: currentKey.hasApiKey,
     });
   });
 
@@ -53,13 +76,19 @@ export function usageRoutes(deps: UsageRoutesDeps) {
     if (!deps.configJsonPath) return c.json({ error: "服务未就绪" }, 503);
     const body = await c.req.json().catch(() => ({})) as Partial<AppConfig> & { apiKey?: string };
     const current = loadConfig(deps.configJsonPath);
+    const nextCustomProviders = Array.isArray((body as Record<string, unknown>).customProviders)
+      ? normalizeCustomProviders((body as Record<string, unknown>).customProviders)
+      : current.customProviders;
+    const requestedProvider = typeof body.provider === "string" ? body.provider : current.provider;
+    const providerExists = isBuiltinProviderId(requestedProvider) ||
+      nextCustomProviders.some((provider) => provider.id === requestedProvider);
     const next: AppConfig = {
       ...current,
       ...(typeof body.singleBudgetUsd === "number" && body.singleBudgetUsd > 0
         ? { singleBudgetUsd: body.singleBudgetUsd }
         : {}),
-      ...(body.provider === "mimo" || body.provider === "deepseek"
-        ? { provider: body.provider }
+      ...(providerExists
+        ? { provider: requestedProvider }
         : {}),
       ...(typeof body.writeModelId === "string" && body.writeModelId
         ? { writeModelId: body.writeModelId }
@@ -70,27 +99,38 @@ export function usageRoutes(deps: UsageRoutesDeps) {
       ...(typeof body.masterPrompt === "string"
         ? { masterPrompt: body.masterPrompt }
         : {}),
+      ...(Array.isArray((body as Record<string, unknown>).styleReferences)
+        ? { styleReferences: normalizeStyleReferences((body as Record<string, unknown>).styleReferences) }
+        : {}),
+      customProviders: nextCustomProviders,
     };
     saveConfig(deps.configJsonPath, next);
 
-    // API key:按当前供应商写到对应的 secret(两套 key 独立、不可混用),热生效
+    // API key:按当前供应商写到对应的 secret(内置与自定义 key 独立、不可混用),热生效
+    let activeKey: string | null | undefined;
     if (typeof body.apiKey === "string" && body.apiKey.trim() && deps.secretsEnvPath) {
-      const secretName = next.provider === "mimo" ? "MIMO_API_KEY" : "DEEPSEEK_API_KEY";
+      const secretName = providerSecretName(next.provider);
       saveSecret(deps.secretsEnvPath, secretName, body.apiKey.trim());
-      deps.modelManager?.configure({ apiKey: body.apiKey.trim() });
+      activeKey = body.apiKey.trim();
+    } else if (deps.secretsEnvPath) {
+      activeKey = loadSecrets(deps.secretsEnvPath)[providerSecretName(next.provider)] ?? null;
     }
     deps.modelManager?.configure({
       provider: next.provider,
+      ...(activeKey !== undefined ? { apiKey: activeKey } : {}),
       writeModelId: next.writeModelId,
       auditModelId: next.auditModelId,
+      customProviders: next.customProviders,
       masterPrompt: next.masterPrompt,
     });
 
-    const state = deps.modelManager?.getState();
+    const providerKeys = providerKeyStatuses(next, deps.secretsEnvPath);
+    const currentKey = providerKeys[next.provider] ?? { hasApiKey: false, apiKeyMasked: null };
     return c.json({
       ...next,
-      apiKeyMasked: state?.apiKey ? maskKey(state.apiKey) : null,
-      hasApiKey: !!state?.apiKey,
+      providerKeys,
+      apiKeyMasked: currentKey.apiKeyMasked,
+      hasApiKey: currentKey.hasApiKey,
     });
   });
 

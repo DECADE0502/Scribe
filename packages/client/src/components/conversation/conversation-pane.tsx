@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { parseSlashCommand } from "@scribe/shared";
+import { parseSlashCommand, type ExecutionMode, type ExecutionStep } from "@scribe/shared";
 import { t } from "../../i18n/zh-CN.js";
-import { useConversationStore, type ChatMessage } from "../../stores/conversation.js";
+import { useConversationStore, type ChatMessage, type WorkflowStageStatus } from "../../stores/conversation.js";
 import { startSseStream, type SseStreamHandle, type StartStreamOptions } from "../../api/streaming.js";
 import { Message } from "./message.js";
 import { StreamingMessage } from "./streaming-message.js";
@@ -39,6 +39,48 @@ const WRITING_STAGES = [
   { id: "record_chapter_state", label: "记录状态", status: "pending" as const },
   { id: "done", label: "完成", status: "pending" as const },
 ];
+
+const ASSET_AUDIT_OPTIONS = [
+  { id: "all", label: "全部资产", scope: "已有所有资产:正文摘要、章节正文、书籍设定、大纲、角色、伏笔、时间线、通用记录集合" },
+  { id: "elements", label: "元素", scope: "元素资产:出场元素、道具、地点、组织、能力、线索、伏笔和正文里已经出现过的可复用素材" },
+  { id: "story", label: "剧情", scope: "剧情资产:已有章节、章节摘要、剧情因果、节奏、承接、未完成动作" },
+  { id: "setting", label: "设定", scope: "设定资产:书籍前提、世界规则、硬事实、时间线、通用记录集合" },
+  { id: "characters", label: "角色", scope: "角色资产:角色档案、当前状态、出场记录、关系、语言习惯和动机" },
+  { id: "outline", label: "大纲", scope: "大纲资产:卷、弧、章级大纲、章节状态和已写正文的对应关系" },
+  { id: "foreshadowing", label: "伏笔", scope: "伏笔资产:活跃伏笔、已回收伏笔、埋设章节、回收章节和正文证据" },
+] as const;
+
+function buildAssetAuditRequest(scope: string): string {
+  return [
+    `主动审查全书资产。范围:${scope}。`,
+    "必须先读取相关已有资产,不要只审查当前章。",
+    "检查重复、缺漏、冲突、OOC、时间线错误、伏笔未闭环、设定和正文不一致、工具写入失败或未落库等 bug。",
+    "能通过低风险资料修正解决的,按当前执行模式走完整工作流修复;涉及高风险或不确定改动先说明并等待确认。",
+    "最后输出验收报告:已检查的资产、发现的问题、已修复项、仍需用户决定的项。",
+  ].join("\n");
+}
+
+const EXECUTION_STEP_LABELS: Record<string, string> = {
+  chapter_write: "写正文",
+  multi_chapter_write: "写正文",
+  record_chapter_state: "记录状态",
+  chapter_audit: "审查",
+  chapter_repair: "修复",
+  chapter_repair_audit: "复核",
+  hard_fact_gate: "硬事实检查",
+};
+
+function workflowLabelForStep(step: ExecutionStep): string {
+  const base = EXECUTION_STEP_LABELS[step.actionType] ?? step.actionType;
+  return step.argsSummary ? `${base} · ${step.argsSummary}` : base;
+}
+
+function workflowStatusFromStep(step: ExecutionStep): WorkflowStageStatus {
+  if (step.status === "succeeded") return "done";
+  if (step.status === "failed") return "error";
+  if (step.status === "running") return "active";
+  return "pending";
+}
 
 const MUTATING_LIBRARY_TOOLS = new Set([
   "add_outline_node",
@@ -146,6 +188,12 @@ export interface ConversationPaneProps {
   streamFn?: StreamFn;
 }
 
+interface SendOptions {
+  executionModeOverride?: ExecutionMode;
+  appendUser?: boolean;
+  displayContent?: string;
+}
+
 let streamSeq = 0;
 
 export function ConversationPane(props: ConversationPaneProps) {
@@ -164,6 +212,7 @@ export function ConversationPane(props: ConversationPaneProps) {
   const [lastSent, setLastSent] = useState<string | null>(null);
   /** 追踪本次流是否是写作流程 */
   const writingFlowRef = useRef(false);
+  const planDrivenWorkflowRef = useRef(false);
 
   // 加载持久化对话历史（首次挂载或 bookId 变化时）
   useEffect(() => {
@@ -195,13 +244,15 @@ export function ConversationPane(props: ConversationPaneProps) {
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, streaming?.text]);
 
-  const send = useCallback((text: string) => {
+  const send = useCallback((text: string, options: SendOptions = {}) => {
     const content = text.trim();
     if (!content || streaming) return;
     clearError();
     setLastSent(content);
-    appendUserMessage(content);
+    if (options.appendUser !== false) appendUserMessage(options.displayContent ?? content);
     writingFlowRef.current = false;
+    planDrivenWorkflowRef.current = false;
+    const requestExecutionMode = options.executionModeOverride ?? executionMode;
 
     // /auto N → 自动模式端点
     const parsed = parseSlashCommand(content);
@@ -210,7 +261,7 @@ export function ConversationPane(props: ConversationPaneProps) {
     const url = isAuto
       ? `/api/books/${encodeURIComponent(props.bookId)}/auto`
       : endpoint(props.bookId);
-    const body = isAuto ? { n: autoTotal } : { message: content, executionMode };
+    const body = isAuto ? { n: autoTotal } : { message: content, executionMode: requestExecutionMode };
     if (isAuto) setAutoStatus({ state: "planning", doneCount: 0, total: autoTotal });
 
     beginStream(`s${++streamSeq}`);
@@ -232,7 +283,7 @@ export function ConversationPane(props: ConversationPaneProps) {
             if (WRITING_TOOLS.has(toolName)) {
               writingFlowRef.current = true;
               setSuppressText(true);
-              setWorkflowStages(WRITING_STAGES);
+              if (!planDrivenWorkflowRef.current) setWorkflowStages(WRITING_STAGES);
               updateWorkflowStage(toolName, "active");
             }
             // 人类可读进度提示
@@ -301,8 +352,26 @@ export function ConversationPane(props: ConversationPaneProps) {
               message: String(ev.message ?? "需要确认后执行"),
             });
             break;
+          case "execution_plan": {
+            const steps = Array.isArray(ev.steps) ? ev.steps as ExecutionStep[] : [];
+            if (steps.length > 0) {
+              writingFlowRef.current = true;
+              planDrivenWorkflowRef.current = true;
+              setSuppressText(true);
+              startWorkflow(steps.map(step => ({
+                id: step.id,
+                label: workflowLabelForStep(step),
+                status: workflowStatusFromStep(step),
+              })));
+            }
+            break;
+          }
           case "execution_step":
-            upsertExecutionStep(String(ev.taskId), ev.step as Parameters<typeof upsertExecutionStep>[1]);
+            {
+              const step = ev.step as ExecutionStep;
+              upsertExecutionStep(String(ev.taskId), step);
+              updateWorkflowStage(step.id, workflowStatusFromStep(step));
+            }
             break;
           case "acceptance_report":
             setAcceptanceReport(ev.report as Parameters<typeof setAcceptanceReport>[0]);
@@ -394,10 +463,14 @@ export function ConversationPane(props: ConversationPaneProps) {
           taskId={pendingConfirmation.taskId}
           message={pendingConfirmation.message}
           policy={pendingConfirmation.policy}
-          onApprove={() => appendSystemMessage("确认执行将在后续任务接入")}
+          onApprove={() => {
+            const approved = lastSent;
+            setPendingConfirmation(null);
+            if (approved) send(approved, { executionModeOverride: "trusted_auto", appendUser: false });
+          }}
           onReroll={() => {
             setPendingConfirmation(null);
-            if (lastSent) send(lastSent);
+            if (lastSent) send(lastSent, { appendUser: false });
           }}
           onCancel={() => setPendingConfirmation(null)}
         />
@@ -407,9 +480,10 @@ export function ConversationPane(props: ConversationPaneProps) {
   );
 }
 
-function Composer(props: { onSend: (text: string) => void; onCancel: () => void; streaming: boolean }) {
+function Composer(props: { onSend: (text: string, options?: SendOptions) => void; onCancel: () => void; streaming: boolean }) {
   const [value, setValue] = useState("");
   const [slashOpen, setSlashOpen] = useState(false);
+  const [auditOpen, setAuditOpen] = useState(false);
 
   const submit = () => {
     if (!value.trim()) return;
@@ -425,9 +499,64 @@ function Composer(props: { onSend: (text: string) => void; onCancel: () => void;
     setSlashOpen(false);
   };
 
+  const runAssetAudit = (option: typeof ASSET_AUDIT_OPTIONS[number]) => {
+    setAuditOpen(false);
+    props.onSend(buildAssetAuditRequest(option.scope), { displayContent: `已触发主动审查：${option.label}` });
+  };
+
   return (
     <div style={{ borderTop: "1px solid #e5e5e5", padding: 12, position: "relative" }}>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
+        <div style={{ position: "relative" }}>
+          <button
+            type="button"
+            className="ios-btn-small"
+            data-testid="btn-asset-audit"
+            disabled={props.streaming}
+            onClick={() => setAuditOpen(v => !v)}
+          >
+            主动审查
+          </button>
+          {auditOpen && (
+            <div
+              data-testid="asset-audit-menu"
+              style={{
+                position: "absolute",
+                left: 0,
+                bottom: "calc(100% + 6px)",
+                zIndex: 20,
+                minWidth: 180,
+                padding: 6,
+                border: "1px solid #d8d8df",
+                borderRadius: 8,
+                background: "#fff",
+                boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+                display: "grid",
+                gap: 4,
+              }}
+            >
+              {ASSET_AUDIT_OPTIONS.map(option => (
+                <button
+                  key={option.id}
+                  type="button"
+                  data-testid={`asset-audit-option-${option.id}`}
+                  onClick={() => runAssetAudit(option)}
+                  style={{
+                    border: 0,
+                    background: "transparent",
+                    textAlign: "left",
+                    padding: "7px 9px",
+                    borderRadius: 6,
+                    cursor: "pointer",
+                    fontSize: 13,
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <ExecutionModeSelector />
       </div>
       <SlashSuggestions

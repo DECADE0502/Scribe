@@ -1,6 +1,11 @@
 import type { ModelInfo } from "@scribe/shared";
 
 export const LOCAL_MODEL_TABLE: Record<string, Partial<ModelInfo>> = {
+  "gemini-2.5-pro": {
+    contextWindow: 1_000_000,
+    supportsTools: true,
+    supportsReasoning: true,
+  },
   "deepseek-v4-pro": {
     contextWindow: 128_000,
     supportsTools: true,

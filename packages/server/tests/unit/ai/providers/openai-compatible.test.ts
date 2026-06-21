@@ -25,6 +25,20 @@ describe("OpenAICompatibleProvider", () => {
   it("无 apiKey 抛错", () => {
     expect(() => new OpenAICompatibleProvider({ id: "x", baseUrl: "u", apiKey: "" })).toThrow();
   });
+  it("listModels fetch errors include the requested URL and cause", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("fetch failed", {
+      cause: new Error("connect ETIMEDOUT"),
+    }));
+    const p = new OpenAICompatibleProvider({
+      id: "x",
+      baseUrl: "https://proxy.example.com",
+      apiKey: "sk-x",
+      fetchImpl: fetchMock as any,
+    });
+
+    await expect(p.listModels()).rejects.toThrow(/https:\/\/proxy\.example\.com\/v1\/models/);
+    await expect(p.listModels()).rejects.toThrow(/connect ETIMEDOUT/);
+  });
   it("classifyError 默认 unknown", () => {
     const p = new OpenAICompatibleProvider({ id: "x", baseUrl: "u", apiKey: "k" });
     expect(p.classifyError(new Error("?"))).toBe("unknown");

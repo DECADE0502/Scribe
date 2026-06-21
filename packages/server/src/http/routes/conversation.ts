@@ -6,6 +6,7 @@ import { runEcho } from "../../ai/orchestrator/chat.js";
 import { runConversation } from "../../ai/orchestrator/conversation-orchestrator.js";
 import { resolveDeepestPrompt } from "../../ai/prompts/deepest-prompt.js";
 import type { BookRegistry } from "../book-registry.js";
+import type { StyleReference } from "../../config/load.js";
 
 export interface ConversationDeps {
   getModel?: () => LanguageModel | undefined;
@@ -14,6 +15,7 @@ export interface ConversationDeps {
   auditModelInfo?: ModelInfo;
   onChapterCommitted?: (bookId: string) => void;
   getMasterPrompt?: () => string;
+  getStyleReferences?: () => StyleReference[];
 }
 
 export function conversationRoutes(deps: ConversationDeps = {}) {
@@ -64,6 +66,7 @@ export function conversationRoutes(deps: ConversationDeps = {}) {
           auditModelId: deps.auditModelInfo?.id ?? "unknown",
           abortSignal: c.req.raw.signal,
           deepestPrompt,
+          styleReferences: deps.getStyleReferences?.() ?? [],
         },
         { message, history, executionMode },
       );
@@ -74,6 +77,10 @@ export function conversationRoutes(deps: ConversationDeps = {}) {
         let wroteChapter = false;
         for await (const ev of inner) {
           if (ev.type === "text_delta") buf += ev.delta;
+          if (ev.type === "tool_call_end" && ev.toolName === "chapter_write") {
+            const result = ev.result as { success?: boolean } | undefined;
+            if (result?.success !== false) wroteChapter = true;
+          }
           if (ev.type === "tool_call_end" && ev.toolName === "record_chapter_state") wroteChapter = true;
           if (ev.type === "done") {
             // 写章流:整章正文已存为章节版本,聊天历史只留简短标记,避免把整章

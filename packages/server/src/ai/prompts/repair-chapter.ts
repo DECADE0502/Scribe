@@ -1,4 +1,9 @@
-export const REPAIR_PROMPT = `你正在修复一段已经写好的章节。
+import { SERIAL_CHAPTER_ENDING_RULE } from "./serialized-chapter-ending.js";
+
+export const REPAIR_PROMPT = `${SERIAL_CHAPTER_ENDING_RULE}
+如果审查问题指向章末收束,只修复结尾局部:删除空泛感慨、意犹未尽、待续式旁白、抽象总结或假钩子,改成具体动作、对话、场景状态、事件后果或角色正在做出/回避的具体选择。不要新增解释性后记,不要重写整章。
+
+你正在修复一段已经写好的章节。
 你将收到:
 1) 原章节正文
 2) 审查报告(列出每个 critical / warning 问题,可能含 excerpt)

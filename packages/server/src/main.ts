@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { serve } from "@hono/node-server";
 import { resolveAppPaths } from "./config/paths.js";
 import { loadConfig } from "./config/load.js";
-import { loadSecrets } from "./config/secrets.js";
+import { loadSecrets, providerSecretName } from "./config/secrets.js";
 import { createModelManager } from "./ai/model-manager.js";
 import { createBookRegistry } from "./http/book-registry.js";
 import { createApp } from "./http/server.js";
@@ -19,15 +19,14 @@ const config = loadConfig(paths.configJson);
 const secrets = loadSecrets(paths.secretsEnv);
 const registry = createBookRegistry({ paths });
 
-// 按 provider 取对应的 key(两套 key 相互独立、不可混用)
-const activeKey = config.provider === "mimo"
-  ? secrets.MIMO_API_KEY ?? null
-  : secrets.DEEPSEEK_API_KEY ?? null;
+// 按 provider 取对应的 key(内置与自定义 key 相互独立、不可混用)
+const activeKey = secrets[providerSecretName(config.provider)] ?? null;
 const modelManager = createModelManager({
   provider: config.provider,
   apiKey: activeKey,
   writeModelId: config.writeModelId,
   auditModelId: config.auditModelId,
+  customProviders: config.customProviders,
   masterPrompt: config.masterPrompt,
 });
 

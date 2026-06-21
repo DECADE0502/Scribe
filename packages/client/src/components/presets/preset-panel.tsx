@@ -64,7 +64,7 @@ export function PresetPanel(props: { bookId: string }) {
     try {
       const parsed = JSON.parse(draft.generationSettingsJson) as unknown;
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        throw new Error("Generation settings must be a JSON object");
+        throw new Error("生成参数必须是 JSON 对象");
       }
       generationSettings = parsed as Record<string, unknown>;
     } catch (e) {
@@ -99,8 +99,8 @@ export function PresetPanel(props: { bookId: string }) {
   return (
     <section data-testid="preset-panel">
       {error && <p role="alert" style={{ color: "#c00" }}>{error}</p>}
-      <strong>Prompt Presets</strong>
-      {presets.length === 0 && <p style={{ color: "#888" }}>No presets</p>}
+      <strong>提示词预设</strong>
+      {presets.length === 0 && <p style={{ color: "#888" }}>暂无预设</p>}
       {presets.map((preset) => (
         <div key={preset.id} style={{ marginTop: 10 }}>
           <h3 style={{ fontSize: 14, margin: "6px 0" }}>{preset.name}</h3>
@@ -121,7 +121,7 @@ export function PresetPanel(props: { bookId: string }) {
                     })
                   }
                 />
-                Enabled
+                启用
               </label>
               <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 12 }}>
                 <input
@@ -137,10 +137,10 @@ export function PresetPanel(props: { bookId: string }) {
                     })
                   }
                 />
-                Regex
+                正则脚本
               </label>
               <label style={{ display: "block", fontSize: 12, marginTop: 8 }}>
-                Generation Settings
+                生成参数
                 <textarea
                   data-testid={`preset-generation-settings-${preset.id}`}
                   value={presetDrafts[preset.id]!.generationSettingsJson}
@@ -170,7 +170,7 @@ export function PresetPanel(props: { bookId: string }) {
                           updateRegexScript(preset.id, index, { disabled: event.target.checked })
                         }
                       />
-                      Disabled
+                      禁用
                     </label>
                     <input
                       data-testid={`preset-regex-replace-${scriptId}`}
@@ -188,12 +188,12 @@ export function PresetPanel(props: { bookId: string }) {
                 onClick={() => void savePreset(preset.id)}
                 style={{ marginTop: 8 }}
               >
-                Save Preset
+                保存预设
               </button>
             </div>
           )}
           <p style={{ color: "#666", fontSize: 12, margin: "0 0 8px" }}>
-            {preset.enabled ? "enabled" : "disabled"} / regex {regexCount(preset)}
+            {preset.enabled ? "已启用" : "已停用"} / 正则 {regexCount(preset)}
           </p>
           {preset.blocks
             .slice()
@@ -225,7 +225,7 @@ export function PresetPanel(props: { bookId: string }) {
                   <p style={{ color: "#666", fontSize: 12, margin: "4px 0" }}>
                     {block.role} / {block.sourceIdentifier} / stack {block.stackIndex ?? "-"}
                     {block.sourcePromptEnabled !== block.sourceOrderEnabled
-                      ? " / prompt-order mismatch"
+                      ? " / 提示词顺序不一致"
                       : ""}
                   </p>
                   <textarea
@@ -245,7 +245,7 @@ export function PresetPanel(props: { bookId: string }) {
                     onClick={() => void saveBlock(preset.id, block.id)}
                     style={{ marginTop: 6 }}
                   >
-                    Save
+                    保存
                   </button>
                 </article>
               );

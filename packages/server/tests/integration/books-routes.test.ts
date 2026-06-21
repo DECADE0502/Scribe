@@ -295,6 +295,9 @@ describe("POST /api/books/:bookId/onboard", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("text/event-stream");
     const text = await new Response(res.body).text();
+    expect(text).toContain("event: workflow_mode");
+    expect(text).toContain("event: execution_step");
+    expect(text).toContain("event: acceptance_report");
     expect(text).toContain("event: tool_call_start");
     expect(text).toContain("event: text_delta");
     expect(text).toContain("event: done");

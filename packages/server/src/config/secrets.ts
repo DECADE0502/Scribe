@@ -22,6 +22,30 @@ export function saveSecret(secretsEnvPath: string, key: string, value: string): 
   fs.writeFileSync(secretsEnvPath, content, { encoding: "utf-8", mode: 0o600 });
 }
 
+function secretSegment(value: string): string {
+  const out: string[] = [];
+  for (const char of value) {
+    const code = char.charCodeAt(0);
+    if (code >= 48 && code <= 57) {
+      out.push(char);
+    } else if (code >= 65 && code <= 90) {
+      out.push(char);
+    } else if (code >= 97 && code <= 122) {
+      out.push(char.toUpperCase());
+    } else {
+      out.push("_");
+    }
+  }
+  return out.join("") || "UNKNOWN";
+}
+
+export function providerSecretName(providerId: string): string {
+  if (providerId === "mimo") return "MIMO_API_KEY";
+  if (providerId === "deepseek") return "DEEPSEEK_API_KEY";
+  if (providerId === "anyrouter") return "ANYROUTER_API_KEY";
+  return `CUSTOM_PROVIDER_${secretSegment(providerId)}_API_KEY`;
+}
+
 /** key 打码:sk-abc...xyz → sk-a****xyz */
 export function maskKey(key: string): string {
   if (key.length <= 8) return "****";

@@ -1,0 +1,53 @@
+diff --git a/packages/server/src/ai/orchestrator/conversation-orchestrator.ts b/packages/server/src/ai/orchestrator/conversation-orchestrator.ts
+--- a/packages/server/src/ai/orchestrator/conversation-orchestrator.ts
++++ b/packages/server/src/ai/orchestrator/conversation-orchestrator.ts
+@@ -2 +2 @@ import type { CoreMessage, LanguageModel } from "ai";
+-import type { SseEvent } from "@scribe/shared";
++import type { ExecutionMode, SseEvent } from "@scribe/shared";
+@@ -102,0 +103 @@ export interface ConversationInput {
++  executionMode?: ExecutionMode;
+@@ -407,0 +409,3 @@ export async function* runConversation(
++  const executionMode = input.executionMode ?? "low_risk_auto";
++  yield { type: "workflow_mode", mode: executionMode };
++
+diff --git a/packages/server/src/http/routes/conversation.ts b/packages/server/src/http/routes/conversation.ts
+--- a/packages/server/src/http/routes/conversation.ts
++++ b/packages/server/src/http/routes/conversation.ts
+@@ -3 +3 @@ import type { LanguageModel } from "ai";
+-import type { ModelInfo } from "@scribe/shared";
++import { ExecutionModeSchema, type ModelInfo } from "@scribe/shared";
+@@ -36,0 +37,5 @@ export function conversationRoutes(deps: ConversationDeps = {}) {
++    const executionModeResult = ExecutionModeSchema.optional().safeParse(
++      (body as { executionMode?: unknown })?.executionMode,
++    );
++    if (!executionModeResult.success) return c.json({ error: "executionMode invalid" }, 400);
++    const executionMode = executionModeResult.data;
+@@ -63 +68 @@ export function conversationRoutes(deps: ConversationDeps = {}) {
+-        { message, history },
++        { message, history, executionMode },
+diff --git a/packages/server/tests/integration/chat-streaming.test.ts b/packages/server/tests/integration/chat-streaming.test.ts
+--- a/packages/server/tests/integration/chat-streaming.test.ts
++++ b/packages/server/tests/integration/chat-streaming.test.ts
+@@ -103,0 +104,22 @@ describe("runChat Á÷Ê½", () => {
++  it("accepts executionMode and emits workflow_mode over SSE", async () => {
++    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "scribe-chat-"));
++    const paths = makePaths(tmp);
++    fs.mkdirSync(paths.booksDir, { recursive: true });
++    const registry = createBookRegistry({ paths });
++    const app = createApp({ getModel: () => makeStubModel(["ok"]), bookRegistry: registry });
++
++    const res = await app.request("/api/books/b1/conversation?mode=chat", {
++      method: "POST",
++      headers: { "Content-Type": "application/json" },
++      body: JSON.stringify({ message: "hello", executionMode: "plan_only" }),
++    });
++    const text = await new Response(res.body).text();
++
++    expect(res.status).toBe(200);
++    expect(text).toContain("event: workflow_mode");
++    expect(text).toContain('"mode":"plan_only"');
++
++    registry.closeAll();
++    fs.rmSync(tmp, { recursive: true, force: true });
++  });
++

@@ -22,6 +22,32 @@ const TOOL_LABELS: Record<string, string> = {
 /** 写作流程的工具集合——有这些工具时不显示正文 */
 const WRITING_TOOLS = new Set(["chapter_write", "chapter_audit", "record_chapter_state", "hard_fact_gate", "chapter_repair", "chapter_repair_audit"]);
 
+const EXTRA_TOOL_LABELS: Record<string, string> = {
+  list_outline: "查看大纲",
+  add_outline_node: "添加大纲节点",
+  update_outline_node: "更新大纲节点",
+  delete_outline_node: "删除大纲节点",
+  list_characters: "查看角色",
+  update_character: "更新角色",
+  delete_character: "删除角色",
+  list_foreshadowing: "查看伏笔",
+  create_foreshadowing: "登记伏笔",
+  delete_foreshadowing: "删除伏笔",
+  list_timeline: "查看时间线",
+  update_book_meta: "更新书籍设定",
+  create_genre_section: "创建记录集合",
+  update_genre_section_schema: "更新记录结构",
+  delete_genre_section: "删除记录集合",
+  add_genre_section_item: "添加记录条目",
+  upsert_genre_section_item: "更新记录条目",
+  update_genre_section_item: "更新记录条目",
+  delete_genre_section_item: "删除记录条目",
+  update_record_collection_schema: "更新记录结构",
+  delete_record_collection: "删除记录集合",
+  update_record_item: "更新记录条目",
+  delete_record_item: "删除记录条目",
+};
+
 export function Message(props: { m: ChatMessage }) {
   const { m } = props;
   const [showReasoning, setShowReasoning] = useState(false);
@@ -78,7 +104,7 @@ export function Message(props: { m: ChatMessage }) {
                   marginBottom: 2,
                 }}
               >
-                {TOOL_LABELS[ev.toolName] ?? ev.toolName}
+                {EXTRA_TOOL_LABELS[ev.toolName] ?? TOOL_LABELS[ev.toolName] ?? ev.toolName}
               </span>
             ))}
           </div>

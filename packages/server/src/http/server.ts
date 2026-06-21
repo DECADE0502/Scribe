@@ -17,6 +17,7 @@ import { importRoutes } from "./routes/imports.js";
 import { presetRoutes } from "./routes/presets.js";
 import type { AppPaths } from "../config/paths.js";
 import type { ModelManager } from "../ai/model-manager.js";
+import { loadConfig, type StyleReference } from "../config/load.js";
 
 export interface AppDeps {
   getModel?: () => LanguageModel | undefined;
@@ -35,6 +36,8 @@ export interface AppDeps {
   onChapterCommitted?: (bookId: string) => void;
   /** 全局最深处提示词(可被每本书覆盖) */
   getMasterPrompt?: () => string;
+  /** 全局文风参考列表,每本书可选择一组注入写作 Agent */
+  getStyleReferences?: () => StyleReference[];
 }
 
 export function createApp(deps: AppDeps = {}) {
@@ -44,6 +47,9 @@ export function createApp(deps: AppDeps = {}) {
   const writeModelInfo = deps.writeModelInfo ?? mm?.getWriteModelInfo();
   const auditModelInfo = deps.auditModelInfo ?? mm?.getAuditModelInfo();
   const getMasterPrompt = deps.getMasterPrompt ?? (mm ? () => mm.getMasterPrompt() : () => "");
+  const getStyleReferences = deps.getStyleReferences ?? (
+    deps.configJsonPath ? () => loadConfig(deps.configJsonPath!).styleReferences : () => []
+  );
 
   // 自动构建 getChapterDeps:从 modelManager + bookRegistry 获取每本书的写作依赖
   const getChapterDeps = deps.getChapterDeps ?? ((bookId: string) => {
@@ -76,10 +82,11 @@ export function createApp(deps: AppDeps = {}) {
     auditModelInfo,
     onChapterCommitted: deps.onChapterCommitted,
     getMasterPrompt,
+    getStyleReferences,
   }));
-  app.route("/", chapterRoutes({ getDeps: getChapterDeps, registry: deps.bookRegistry, onChapterCommitted: deps.onChapterCommitted, getMasterPrompt, getAuditModel, auditModelInfo }));
+  app.route("/", chapterRoutes({ getDeps: getChapterDeps, registry: deps.bookRegistry, onChapterCommitted: deps.onChapterCommitted, getMasterPrompt, getStyleReferences, getAuditModel, auditModelInfo }));
   if (deps.bookRegistry) {
-    app.route("/", bookRoutes({ registry: deps.bookRegistry, getModel, getMasterPrompt }));
+    app.route("/", bookRoutes({ registry: deps.bookRegistry, getModel, getMasterPrompt, getStyleReferences }));
     app.route("/", reviseRoutes({ registry: deps.bookRegistry, getModel }));
     app.route("/", sidebarRoutes({ registry: deps.bookRegistry }));
     app.route("/", worldbookRoutes({ registry: deps.bookRegistry, getModel }));
@@ -94,6 +101,7 @@ export function createApp(deps: AppDeps = {}) {
       auditModelInfo,
       onChapterCommitted: deps.onChapterCommitted,
       getMasterPrompt,
+      getStyleReferences,
     }));
     app.route("/", versionRoutes({ registry: deps.bookRegistry }));
     app.route("/", usageRoutes({

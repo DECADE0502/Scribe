@@ -1,23 +1,31 @@
 # Scribe Documentation
 
-这一级目录保存项目说明、规格、实施计划和交接材料。新同学先按下面顺序读,不要直接从源码开始。
+This directory contains project specs, implementation plans, handoff notes, and development evidence.
 
-## 建议阅读顺序
+Recommended reading order for a new agent:
 
-1. `docs/superpowers/specs/2026-06-17-scribe-ultimate-product-goal.md`
-   - 项目最终目标。先确认 Scribe 要做成什么,以及为什么不能继续针对单本样例优化。
-2. `docs/superpowers/plans/2026-06-17-scribe-phase1-generic-continuity-gates.md`
-   - 当前 Phase 1 的底层纠偏计划:通用 hard-fact 门禁、跨题材测试、失败阻断长期记忆写入。
-3. `docs/superpowers/plans/2026-06-17-scribe-final-roadmap.md`
-   - 后续阶段路线图。说明 Phase 1 之后还要补哪些能力。
-4. `docs/HANDOFF-codex.md`
-   - 当前分支交接文档。记录已经完成的工作、验证命令、风险和下一步。
-5. `docs/_implementation-notes.md`
-   - 历史实现期 backlog。主要给继续派单或排查旧设计债时使用。
+1. `docs/HANDOFF-codex.md`
+   - Current canonical handoff. Start here.
+2. `docs/HANDOFF-2026-06-22.md`
+   - Dated snapshot of the latest cleanup/push state.
+3. `docs/superpowers/specs/2026-06-17-scribe-ultimate-product-goal.md`
+   - Product goal and writing-quality bar.
+4. `docs/superpowers/specs/2026-06-21-agent-workflow-execution-design.md`
+   - Workflow execution design.
+5. `docs/superpowers/plans/2026-06-21-agent-workflow-execution.md`
+   - Implementation plan for the workflow execution work.
+6. `docs/superpowers/plans/2026-06-17-scribe-phase1-generic-continuity-gates.md`
+   - Generic hard-fact continuity plan.
+7. `docs/superpowers/plans/2026-06-17-scribe-final-roadmap.md`
+   - Broader roadmap.
 
-## 文档边界
+Directory boundaries:
 
-- `specs/` 写目标和设计原则。
-- `plans/` 写可执行实施计划。
-- `HANDOFF-codex.md` 写当前状态,要随关键提交更新。
-- `_backups/` 只保留历史归档,不作为当前执行依据。
+- `specs/`: product goals and design principles.
+- `plans/`: implementation plans.
+- `sdd/`: subtask, review, and execution artifacts from subagent-driven development sessions.
+- `_backups/`: historical archive only.
+- `HANDOFF-codex.md`: current state and next-agent instructions.
+- `HANDOFF-*.md`: dated handoff snapshots.
+
+Do not commit secrets, runtime DBs, or private local exports. Runtime data normally lives under `%APPDATA%\scribe\`, outside this repository.

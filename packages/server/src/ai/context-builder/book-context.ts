@@ -7,6 +7,7 @@ import {
   resolveItemSearchText,
 } from "@scribe/shared";
 import type { BookHandle } from "../../http/book-registry.js";
+import type { StyleReference } from "../../config/load.js";
 import type { WriteChapterContext } from "../prompts/write-chapter.js";
 import type { AuditContext } from "../orchestrator/audit-chapter.js";
 import { loadBookSnapshot, type BookSnapshot } from "./snapshot.js";
@@ -17,11 +18,30 @@ export interface BookPromptContext {
   auditCtx: Partial<Omit<AuditContext, "chapterNo" | "chapterContent">>;
 }
 
+export function resolveSelectedStyleReference(
+  handle: Pick<BookHandle, "bookMetaRepo">,
+  references: StyleReference[] = [],
+): StyleReference | undefined {
+  const selectedId = handle.bookMetaRepo.get("style_reference_id")?.trim();
+  if (!selectedId) return undefined;
+  return references.find((reference) => reference.id === selectedId && reference.content.trim());
+}
+
+export function renderStyleReference(reference: StyleReference | undefined): string | undefined {
+  if (!reference) return undefined;
+  const content = reference.content.trim();
+  if (!content) return undefined;
+  return [`名称: ${reference.name}`, content].join("\n");
+}
+
 /**
  * 从书的持久化数据组装 写作/审查 上下文(B-5-001 修复)。
  * 这是 LLM 写作不跑题的关键:premise、调性、角色卡、大纲、规则全部进 prompt。
  */
-export function buildBookPromptContext(handle: BookHandle): BookPromptContext {
+export function buildBookPromptContext(
+  handle: BookHandle,
+  styleReferences: StyleReference[] = [],
+): BookPromptContext {
   const meta = Object.fromEntries(handle.bookMetaRepo.list().map(r => [r.key, r.value]));
   const characters = handle.charactersRepo.list();
   const outline = handle.outlineRepo.listAll();
@@ -29,6 +49,9 @@ export function buildBookPromptContext(handle: BookHandle): BookPromptContext {
   const rulesMd = fs.existsSync(handle.rulesMdPath)
     ? fs.readFileSync(handle.rulesMdPath, "utf-8")
     : "";
+  const styleReference = renderStyleReference(
+    resolveSelectedStyleReference(handle, styleReferences),
+  );
 
   const premiseParts: string[] = [];
   if (meta.premise) premiseParts.push(meta.premise);
@@ -58,6 +81,7 @@ export function buildBookPromptContext(handle: BookHandle): BookPromptContext {
     writeCtx: {
       premise,
       rules: rulesMd || undefined,
+      styleReference,
       characters: charactersText || undefined,
       outlineThis: outlineText || undefined,
     },
@@ -474,6 +498,7 @@ export function buildChapterWriteMessages(
   userIntent: string,
   /** 覆盖默认"写第 N 章"任务指令(如 /rewrite 传入"重写并改进 + 现有正文") */
   taskInstruction?: string,
+  styleReferences: StyleReference[] = [],
 ): ChapterWriteContext {
   const snapshot = loadBookSnapshot(
     handle.bookId,
@@ -515,6 +540,9 @@ export function buildChapterWriteMessages(
   const requiredOutputSections = renderRequiredOutputSections(
     extractRequiredOutputSections(snapshot.promptBlocks),
   );
+  const styleReference = renderStyleReference(
+    resolveSelectedStyleReference(handle, styleReferences),
+  );
 
   // 追加明确的产出指令(buildWriteContext 的动态块已含用户意图,这里固定任务框架)
   const messages: CoreMessage[] = [
@@ -530,6 +558,9 @@ export function buildChapterWriteMessages(
       : []),
     ...(requiredOutputSections
       ? [{ role: "user" as const, content: requiredOutputSections }]
+      : []),
+    ...(styleReference
+      ? [{ role: "user" as const, content: `## 文风参考\n${styleReference}` }]
       : []),
     {
       role: "user",

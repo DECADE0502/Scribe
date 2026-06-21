@@ -38,12 +38,19 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
   }
 
   async listModels(): Promise<ModelInfo[]> {
-    const res = await this.fetchImpl(`${this.baseUrl}/v1/models`, {
+    const url = `${this.baseUrl}/v1/models`;
+    try {
+      const res = await this.fetchImpl(url, {
       headers: this.authHeaders(this.apiKey),
     });
     if (!res.ok) throw new Error(`listModels 失败 HTTP ${res.status}`);
-    const j: any = await res.json();
-    return (j.data ?? []).map((m: any) => ({ id: m.id, ownedBy: m.owned_by }));
+      const j: any = await res.json();
+      return (j.data ?? []).map((m: any) => ({ id: m.id, ownedBy: m.owned_by }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const cause = err instanceof Error && err.cause instanceof Error ? ` cause=${err.cause.message}` : "";
+      throw new Error(`listModels fetch failed ${url}${cause}: ${message}`);
+    }
   }
 
   async enrichModel(id: string): Promise<ModelInfo> {

@@ -44,6 +44,14 @@ describe("AUDIT_SUMMARIZE_PROMPT", () => {
     expect(AUDIT_SUMMARIZE_PROMPT).toContain("POV drift");
     expect(AUDIT_SUMMARIZE_PROMPT).toContain("narrative perspective");
   });
+
+  it("requires auditing vague serialized-novel endings", () => {
+    expect(AUDIT_SUMMARIZE_PROMPT).toContain("SERIAL_CHAPTER_ENDING_RULE");
+    expect(AUDIT_SUMMARIZE_PROMPT).toContain("连续小说");
+    expect(AUDIT_SUMMARIZE_PROMPT).toContain("待续式");
+    expect(AUDIT_SUMMARIZE_PROMPT).toContain("hook_strength");
+    expect(AUDIT_SUMMARIZE_PROMPT).toContain("aesthetic_quality");
+  });
 });
 
 describe("parseAuditOutput", () => {

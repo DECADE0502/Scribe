@@ -68,12 +68,45 @@ function makeWritingModel(text: string): any {
   };
 }
 
+function intentAnalysisForGenerateOptions(options: any): string | undefined {
+  const prompt = (options?.prompt ?? options?.messages ?? []) as Array<{ role?: string; content?: unknown }>;
+  const allText = JSON.stringify(prompt);
+  const userContent = [...prompt].reverse().find((item) => item.role === "user")?.content;
+  const promptText = typeof userContent === "string" ? userContent : JSON.stringify(userContent ?? "");
+  if (!allText.includes("chapterCount") || !allText.includes("targetChapter")) return undefined;
+  if (promptText.includes("重写") || promptText.includes("改写")) {
+    return JSON.stringify({ category: "revise_intent", targetChapter: 1 });
+  }
+  if (promptText.includes("delete") || promptText.includes("删除")) {
+    return JSON.stringify({ category: "delete_intent", targetChapter: 1 });
+  }
+  if (promptText.includes("审查") || promptText.includes("检查") || promptText.includes("评价")) {
+    return JSON.stringify({ category: "query", targetChapter: 1 });
+  }
+  if (promptText.includes("前三章") || promptText.includes("write 3 chapters")) {
+    return JSON.stringify({ category: "writing_intent", chapterCount: 3 });
+  }
+  if (promptText.includes("write next chapter") || promptText.includes("直接把")) {
+    return JSON.stringify({ category: "writing_intent" });
+  }
+  return JSON.stringify({ category: "chitchat" });
+}
+
 function makeAuditAndRecordModel(): any {
   return {
     specificationVersion: "v1",
     provider: "stub",
     modelId: "stub-audit",
-    async doGenerate() {
+    async doGenerate(options: any) {
+      const analysis = intentAnalysisForGenerateOptions(options);
+      if (analysis) {
+        return {
+          text: analysis,
+          finishReason: "stop",
+          usage: { promptTokens: 10, completionTokens: 10 },
+          rawCall: { rawPrompt: null, rawSettings: {} },
+        };
+      }
       return {
         text: okAudit,
         finishReason: "stop",
@@ -95,6 +128,29 @@ function makeAuditAndRecordModel(): any {
         }),
         rawCall: { rawPrompt: null, rawSettings: {} },
       };
+    },
+  };
+}
+
+function makeFailingAuditModel(): any {
+  return {
+    specificationVersion: "v1",
+    provider: "stub",
+    modelId: "stub-audit-fail",
+    async doGenerate(options: any) {
+      const analysis = intentAnalysisForGenerateOptions(options);
+      if (analysis) {
+        return {
+          text: analysis,
+          finishReason: "stop",
+          usage: { promptTokens: 10, completionTokens: 10 },
+          rawCall: { rawPrompt: null, rawSettings: {} },
+        };
+      }
+      throw new Error("audit unavailable after write");
+    },
+    async doStream() {
+      throw new Error("record model should not be reached");
     },
   };
 }
@@ -187,7 +243,10 @@ describe("runConversation 斜杠命令路由(§7.4)", () => {
     deps.model = makeWritingModel("第一章重写正文");
     deps.auditModel = makeAuditAndRecordModel();
 
-    const evs = await collect(runConversation(deps, { message: "重写第一章,加强开场" }));
+    const evs = await collect(runConversation(deps, {
+      message: "重写第一章,加强开场",
+      executionMode: "trusted_auto",
+    }));
 
     expect(evs.some(e => e.type === "error")).toBe(false);
     expect(evs.some(e => e.type === "text_delta")).toBe(false);
@@ -274,6 +333,39 @@ describe("runConversation 斜杠命令路由(§7.4)", () => {
     const report = evs.find(e => e.type === "acceptance_report")?.report;
     expect(report?.verdict).toBe("pass");
     expect(handle.chaptersRepo.listVersions(6)[0].contentMd).toBe("trusted auto chapter body");
+    expect(evs.at(-1).type).toBe("done");
+  });
+
+  it("finishes with repairable acceptance when post-write audit fails after read-back succeeds", async () => {
+    deps.model = makeWritingModel("durably persisted body");
+    deps.auditModel = makeFailingAuditModel();
+
+    const evs = await collect(runConversation(deps, {
+      message: "write next chapter",
+      executionMode: "trusted_auto",
+    }));
+
+    expect(handle.chaptersRepo.listVersions(6)[0].contentMd).toBe("durably persisted body");
+    expect(evs.some(e => e.type === "text_delta")).toBe(false);
+    expect(evs.some(e => e.type === "error")).toBe(false);
+    const succeededWrite = evs.find(
+      e => e.type === "execution_step"
+        && e.step.toolName === "chapter_write"
+        && e.step.status === "succeeded",
+    );
+    expect(succeededWrite?.step.verification).toEqual({
+      method: "read_back",
+      passed: true,
+      detail: "Chapter 6 read back after write.",
+    });
+    const failedRecord = evs.find(
+      e => e.type === "execution_step"
+        && e.step.toolName === "record_chapter_state"
+        && e.step.status === "failed",
+    );
+    expect(failedRecord?.step.verification?.passed).toBe(false);
+    const report = evs.find(e => e.type === "acceptance_report")?.report;
+    expect(report?.verdict).toBe("repairable");
     expect(evs.at(-1).type).toBe("done");
   });
 
