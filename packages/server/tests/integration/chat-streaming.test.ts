@@ -101,6 +101,28 @@ describe("runChat 流式", () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
+  it("accepts executionMode and emits workflow_mode over SSE", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "scribe-chat-"));
+    const paths = makePaths(tmp);
+    fs.mkdirSync(paths.booksDir, { recursive: true });
+    const registry = createBookRegistry({ paths });
+    const app = createApp({ getModel: () => makeStubModel(["ok"]), bookRegistry: registry });
+
+    const res = await app.request("/api/books/b1/conversation?mode=chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "hello", executionMode: "plan_only" }),
+    });
+    const text = await new Response(res.body).text();
+
+    expect(res.status).toBe(200);
+    expect(text).toContain("event: workflow_mode");
+    expect(text).toContain('"mode":"plan_only"');
+
+    registry.closeAll();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
   it("无 model 注入或 mode=echo 时走回声", async () => {
     const app = createApp();
     const res = await app.request("/api/books/b1/conversation", {

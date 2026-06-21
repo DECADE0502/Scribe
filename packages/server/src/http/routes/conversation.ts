@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { LanguageModel } from "ai";
-import type { ModelInfo } from "@scribe/shared";
+import { ExecutionModeSchema, type ModelInfo } from "@scribe/shared";
 import { streamSseResponse } from "../sse.js";
 import { runEcho } from "../../ai/orchestrator/chat.js";
 import { runConversation } from "../../ai/orchestrator/conversation-orchestrator.js";
@@ -34,6 +34,11 @@ export function conversationRoutes(deps: ConversationDeps = {}) {
     const body = await c.req.json().catch(() => ({}));
     const message = String((body as { message?: unknown })?.message ?? "");
     if (!message) return c.json({ error: "message 不能为空" }, 400);
+    const executionModeResult = ExecutionModeSchema.optional().safeParse(
+      (body as { executionMode?: unknown })?.executionMode,
+    );
+    if (!executionModeResult.success) return c.json({ error: "executionMode invalid" }, 400);
+    const executionMode = executionModeResult.data;
     const mode = c.req.query("mode") ?? "echo";
     const model = deps.getModel?.();
 
@@ -60,7 +65,7 @@ export function conversationRoutes(deps: ConversationDeps = {}) {
           abortSignal: c.req.raw.signal,
           deepestPrompt,
         },
-        { message, history },
+        { message, history, executionMode },
       );
       // 对话持久化 + 章节提交回调(写章成功后触发自动快照计数)
       async function* persisting() {

@@ -1,5 +1,5 @@
 import type { CoreMessage, LanguageModel } from "ai";
-import type { SseEvent } from "@scribe/shared";
+import type { ExecutionMode, SseEvent } from "@scribe/shared";
 import { parseSlashCommand, SLASH_COMMANDS } from "@scribe/shared";
 import type { BookHandle } from "../../http/book-registry.js";
 import { streamLlm } from "../llm-call.js";
@@ -100,6 +100,7 @@ export interface ConversationOrchestratorDeps {
 export interface ConversationInput {
   message: string;
   history?: CoreMessage[];
+  executionMode?: ExecutionMode;
 }
 
 const CHAT_SYSTEM = `你是 Scribe，一个对话式中文长篇小说创作助手。你能看到这本书的设定、角色、大纲、伏笔、时间线和已有章节。
@@ -405,6 +406,9 @@ export async function* runConversation(
   deps: ConversationOrchestratorDeps,
   input: ConversationInput,
 ): AsyncIterable<SseEvent> {
+  const executionMode = input.executionMode ?? "low_risk_auto";
+  yield { type: "workflow_mode", mode: executionMode };
+
   const parsed = parseSlashCommand(input.message);
 
   if (parsed.kind === "command") {
