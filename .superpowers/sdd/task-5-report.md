@@ -49,6 +49,37 @@ tsc --noEmit
 exit 0
 ```
 
+## Fix Report 2
+
+Summary:
+- Updated `workflow-contract.test.ts` stale expectations for `makeWriteActions([1, 2, 3])`.
+- The workflow contract test now expects each target chapter to create both `multi_chapter_write` and `record_chapter_state` execution steps.
+- Added explicit coverage that `record_chapter_state` steps exist and keep parseable `chapterNo` values in `argsSummary`.
+
+RED before fix:
+
+```text
+pnpm --filter @scribe/server exec vitest run tests/unit/ai/orchestrator/conversation-orchestrator.test.ts tests/unit/ai/orchestrator/workflow-contract.test.ts
+Test Files  1 failed | 1 passed (2)
+Tests  1 failed | 18 passed (19)
+workflow contract helpers > includes target chapter numbers in execution step argument summaries
+expected [ 'chapterNo=1', 'chapterNo=1', ...(4) ] to deeply equal [ 'chapterNo=1', 'chapterNo=2', ...(1) ]
+```
+
+Verification after fix:
+
+```text
+pnpm --filter @scribe/server exec vitest run tests/unit/ai/orchestrator/conversation-orchestrator.test.ts tests/unit/ai/orchestrator/workflow-contract.test.ts
+Test Files  2 passed (2)
+Tests  19 passed (19)
+```
+
+```text
+pnpm --filter @scribe/server typecheck
+tsc --noEmit
+exit 0
+```
+
 ## Files Changed
 
 - `packages/server/src/ai/orchestrator/conversation-orchestrator.ts`

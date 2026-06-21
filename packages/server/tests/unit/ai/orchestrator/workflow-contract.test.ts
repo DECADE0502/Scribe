@@ -32,14 +32,30 @@ describe("workflow contract helpers", () => {
     expect(steps.map(step => step.riskLevel)).toEqual(["read", "write"]);
   });
 
-  it("includes target chapter numbers in execution step argument summaries", () => {
+  it("includes write and state-recording steps with parseable chapter argument summaries", () => {
     const steps = makeExecutionSteps(makeWriteActions([1, 2, 3]));
 
+    expect(steps.map(step => step.actionType)).toEqual([
+      "multi_chapter_write",
+      "record_chapter_state",
+      "multi_chapter_write",
+      "record_chapter_state",
+      "multi_chapter_write",
+      "record_chapter_state",
+    ]);
     expect(steps.map(step => step.argsSummary)).toEqual([
       "chapterNo=1",
+      "chapterNo=1",
+      "chapterNo=2",
       "chapterNo=2",
       "chapterNo=3",
+      "chapterNo=3",
     ]);
+    expect(
+      steps
+        .filter(step => step.actionType === "record_chapter_state")
+        .map(step => step.argsSummary?.match(/chapterNo=(\d+)/)?.[1]),
+    ).toEqual(["1", "2", "3"]);
   });
 
   it("passes acceptance when write trace succeeds with read-back verification", () => {
