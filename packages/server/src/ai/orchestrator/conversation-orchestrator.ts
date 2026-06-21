@@ -1,5 +1,5 @@
 import type { CoreMessage, LanguageModel } from "ai";
-import type { ExecutionMode, SseEvent } from "@scribe/shared";
+import type { ExecutionMode, ExecutionStep, ExecutionTrace, SseEvent } from "@scribe/shared";
 import { parseSlashCommand, SLASH_COMMANDS } from "@scribe/shared";
 import type { BookHandle } from "../../http/book-registry.js";
 import { streamLlm } from "../llm-call.js";
@@ -17,9 +17,17 @@ import {
 import { makeGenreSectionTools } from "../tools/genre-section-tools.js";
 import { makeBookTools } from "../tools/book-tools.js";
 import { classifyIntent, type IntentCategory } from "./intent.js";
+import {
+  buildWriteIntentContract,
+  createTaskId,
+  makeAcceptanceReport,
+  makeExecutionSteps,
+  makeWriteActions,
+  makeWritePolicy,
+} from "./workflow-contract.js";
 
 /** 明确的写作意图关键词:命中即直接当 writing_intent,免一次分类往返,也避免分类器误判 */
-const WRITE_HINT = /(写下一章|写第.{0,3}章|续写|接着写|继续写|往下写|write\s+next)/i;
+const WRITE_HINT = /(写下一章|写第.{0,3}章|写.{0,6}章|写.{0,6}章节|前三章|前[0-9零〇一二两三四五六七八九十]{1,6}章|续写|接着写|继续写|往下写|write\s+(?:next|(?:the\s+)?first\s+\d+\s+chapters?|\d+\s+chapters?))/i;
 const REWRITE_HINT = /(重写|重新写|改写|rewrite)/i;
 
 function parseChineseChapterNumber(raw: string): number | undefined {
@@ -64,6 +72,16 @@ function parseRewriteTargetChapter(message: string): number | undefined {
   if (!match) return undefined;
   const parsed = parseChineseChapterNumber(match[1]!);
   return parsed && parsed >= 1 ? parsed : undefined;
+}
+
+function parseWriteChapterCount(message: string): number {
+  const bounded = (value: number | undefined) =>
+    value && value >= 1 ? Math.min(value, 10) : undefined;
+  const frontMatch = message.match(/前\s*([0-9]+|[零〇一二两三四五六七八九十]{1,6})\s*章/);
+  const directMatch = message.match(/写\s*([0-9]+|[零〇一二两三四五六七八九十]{1,6})\s*章/);
+  const englishMatch = message.match(/write\s+(?:the\s+)?(?:first\s+)?([0-9]+)\s+chapters?/i);
+  const count = bounded(parseChineseChapterNumber(frontMatch?.[1] ?? directMatch?.[1] ?? englishMatch?.[1] ?? ""));
+  return count ?? 1;
 }
 
 const DELETE_HINT = /(删除|删掉|去掉|清空|清除|delete|remove)/i;
@@ -465,7 +483,81 @@ export async function* runConversation(
   // 写下一章
   if (WRITE_HINT.test(input.message)) {
     yield { type: "intent", category: "writing_intent" };
-    yield* writeChapterFlow(deps, deps.handle.chaptersRepo.maxChapterNo() + 1, input.message);
+    const count = parseWriteChapterCount(input.message);
+    const start = deps.handle.chaptersRepo.maxChapterNo() + 1;
+    const chapterNos = Array.from({ length: count }, (_, offset) => start + offset);
+    const taskId = createTaskId("write");
+    const mode = input.executionMode ?? "low_risk_auto";
+    const intentContract = buildWriteIntentContract({
+      taskId,
+      userRequest: input.message,
+      chapterNos,
+    });
+    const actions = makeWriteActions(chapterNos);
+    const policy = makeWritePolicy({ taskId, mode, chapterNos });
+    const steps = makeExecutionSteps(actions);
+
+    yield { type: "execution_plan", taskId, policy, steps, intentContract };
+
+    if (policy.effectiveMode !== "auto") {
+      yield {
+        type: "confirmation_required",
+        taskId,
+        policy,
+        message: policy.reason,
+      };
+      yield { type: "done" };
+      return;
+    }
+
+    const completedSteps: ExecutionStep[] = [];
+    for (const [index, chapterNo] of chapterNos.entries()) {
+      const pendingStep = steps[index]!;
+      const runningStep: ExecutionStep = {
+        ...pendingStep,
+        status: "running",
+        toolName: "chapter_write",
+      };
+      yield { type: "execution_step", taskId, step: runningStep };
+
+      let failed: string | undefined;
+      for await (const ev of writeChapterFlow(deps, chapterNo, input.message)) {
+        if (ev.type === "error") {
+          failed = ev.message;
+        }
+        yield ev;
+      }
+
+      const readBack = deps.handle.chapterFiles.read(chapterNo);
+      const succeeded = !failed && !!readBack?.content;
+      const completedStep: ExecutionStep = {
+        ...runningStep,
+        status: succeeded ? "succeeded" : "failed",
+        resultSummary: succeeded
+          ? `Chapter ${chapterNo} written and read back.`
+          : `Chapter ${chapterNo} write failed${failed ? `: ${failed}` : "."}`,
+        verification: {
+          method: "read_back",
+          passed: succeeded,
+          detail: succeeded
+            ? `Chapter ${chapterNo} read back after write.`
+            : `Chapter ${chapterNo} was not readable after write.`,
+        },
+      };
+      completedSteps.push(completedStep);
+      yield { type: "execution_step", taskId, step: completedStep };
+    }
+
+    const trace: ExecutionTrace = {
+      taskId,
+      mode,
+      policy,
+      steps: completedSteps,
+      finalStatus: completedSteps.every(step => step.status === "succeeded")
+        ? "succeeded"
+        : "failed",
+    };
+    yield { type: "acceptance_report", report: makeAcceptanceReport({ contract: intentContract, trace }) };
     yield { type: "done" };
     return;
   }

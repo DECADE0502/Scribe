@@ -196,4 +196,70 @@ describe("runConversation 斜杠命令路由(§7.4)", () => {
     expect(chapter1Versions[0].contentMd).toBe("第一章重写正文");
     expect(handle.chaptersRepo.listVersions(5)[0].source).toBe("ai_write");
   });
+
+  it("routes natural language multi-chapter writing through the write flow without chat prose", async () => {
+    deps.model = makeWritingModel("new chapter body");
+    deps.auditModel = makeAuditAndRecordModel();
+
+    const evs = await collect(runConversation(deps, {
+      message: "可以啊，现在直接把前三章都写了",
+      executionMode: "trusted_auto",
+    }));
+
+    expect(evs.find(e => e.type === "intent")?.category).toBe("writing_intent");
+    expect(evs.some(e => e.type === "text_delta")).toBe(false);
+    const writes = evs.filter(e => e.type === "tool_call_start" && e.toolName === "chapter_write");
+    expect(writes.map(e => e.args.chapterNo)).toEqual([6, 7, 8]);
+    expect(handle.chaptersRepo.listVersions(6)[0].contentMd).toBe("new chapter body");
+    expect(handle.chaptersRepo.listVersions(7)[0].contentMd).toBe("new chapter body");
+    expect(handle.chaptersRepo.listVersions(8)[0].contentMd).toBe("new chapter body");
+  });
+
+  it("plans natural language writing in plan_only mode without writing chapters", async () => {
+    deps.model = makeWritingModel("planned body should not write");
+    deps.auditModel = makeAuditAndRecordModel();
+    const beforeMax = handle.chaptersRepo.maxChapterNo();
+
+    const evs = await collect(runConversation(deps, {
+      message: "write next chapter",
+      executionMode: "plan_only",
+    }));
+
+    expect(evs.find(e => e.type === "intent")?.category).toBe("writing_intent");
+    const plan = evs.find(e => e.type === "execution_plan");
+    expect(plan?.steps.map((step: any) => step.argsSummary)).toEqual([`chapterNo=${beforeMax + 1}`]);
+    const confirmation = evs.find(e => e.type === "confirmation_required");
+    expect(confirmation?.taskId).toBe(plan?.taskId);
+    expect(evs.some(e => e.type === "tool_call_start" && e.toolName === "chapter_write")).toBe(false);
+    expect(handle.chaptersRepo.maxChapterNo()).toBe(beforeMax);
+    expect(evs.at(-1).type).toBe("done");
+  });
+
+  it("traces trusted_auto natural language writing and emits a passing acceptance report", async () => {
+    deps.model = makeWritingModel("trusted auto chapter body");
+    deps.auditModel = makeAuditAndRecordModel();
+
+    const evs = await collect(runConversation(deps, {
+      message: "write next chapter",
+      executionMode: "trusted_auto",
+    }));
+
+    const plan = evs.find(e => e.type === "execution_plan");
+    expect(plan?.policy.effectiveMode).toBe("auto");
+    const succeededWrite = evs.find(
+      e => e.type === "execution_step"
+        && e.step.toolName === "chapter_write"
+        && e.step.status === "succeeded",
+    );
+    expect(succeededWrite?.step.resultSummary).toContain("Chapter 6");
+    expect(succeededWrite?.step.verification).toEqual({
+      method: "read_back",
+      passed: true,
+      detail: "Chapter 6 read back after write.",
+    });
+    const report = evs.find(e => e.type === "acceptance_report")?.report;
+    expect(report?.verdict).toBe("pass");
+    expect(handle.chaptersRepo.listVersions(6)[0].contentMd).toBe("trusted auto chapter body");
+    expect(evs.at(-1).type).toBe("done");
+  });
 });
