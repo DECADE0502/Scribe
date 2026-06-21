@@ -6,6 +6,7 @@ import { startSseStream, type SseStreamHandle, type StartStreamOptions } from ".
 import { Message } from "./message.js";
 import { StreamingMessage } from "./streaming-message.js";
 import { SlashSuggestions } from "./slash-suggestions.js";
+import { ExecutionModeSelector } from "./execution-mode-selector.js";
 
 export type StreamFn = (opts: StartStreamOptions) => SseStreamHandle;
 
@@ -38,6 +39,106 @@ const WRITING_STAGES = [
   { id: "done", label: "完成", status: "pending" as const },
 ];
 
+const MUTATING_LIBRARY_TOOLS = new Set([
+  "add_outline_node",
+  "update_outline_node",
+  "delete_outline_node",
+  "create_character",
+  "update_character",
+  "delete_character",
+  "create_foreshadowing",
+  "pay_foreshadowing",
+  "delete_foreshadowing",
+  "add_timeline_event",
+  "update_book_meta",
+  "create_genre_section",
+  "update_genre_section_schema",
+  "delete_genre_section",
+  "add_genre_section_item",
+  "upsert_genre_section_item",
+  "update_genre_section_item",
+  "delete_genre_section_item",
+  "create_record_collection",
+  "update_record_collection_schema",
+  "delete_record_collection",
+  "upsert_record_item",
+  "update_record_item",
+  "delete_record_item",
+]);
+
+const TOOL_RESULT_LABELS: Record<string, string> = {
+  add_outline_node: "添加大纲节点",
+  update_outline_node: "更新大纲节点",
+  delete_outline_node: "删除大纲节点",
+  create_character: "创建角色",
+  update_character: "更新角色",
+  delete_character: "删除角色",
+  create_foreshadowing: "登记伏笔",
+  pay_foreshadowing: "回收伏笔",
+  delete_foreshadowing: "删除伏笔",
+  add_timeline_event: "记录时间线",
+  update_book_meta: "更新书籍设定",
+  create_genre_section: "创建记录集合",
+  update_genre_section_schema: "更新记录结构",
+  delete_genre_section: "删除记录集合",
+  add_genre_section_item: "添加记录条目",
+  upsert_genre_section_item: "更新记录条目",
+  update_genre_section_item: "更新记录条目",
+  delete_genre_section_item: "删除记录条目",
+  create_record_collection: "创建记录集合",
+  update_record_collection_schema: "更新记录结构",
+  delete_record_collection: "删除记录集合",
+  upsert_record_item: "更新记录条目",
+  update_record_item: "更新记录条目",
+  delete_record_item: "删除记录条目",
+};
+
+const EXTRA_TOOL_LABELS: Record<string, string> = {
+  list_outline: "正在查看大纲",
+  add_outline_node: "正在添加大纲节点",
+  update_outline_node: "正在更新大纲节点",
+  delete_outline_node: "正在删除大纲节点",
+  list_characters: "正在查看角色",
+  update_character: "正在更新角色",
+  delete_character: "正在删除角色",
+  list_foreshadowing: "正在查看伏笔",
+  create_foreshadowing: "正在登记伏笔",
+  delete_foreshadowing: "正在删除伏笔",
+  list_timeline: "正在查看时间线",
+  update_book_meta: "正在更新书籍设定",
+  create_genre_section: "正在创建记录集合",
+  update_genre_section_schema: "正在更新记录结构",
+  delete_genre_section: "正在删除记录集合",
+  add_genre_section_item: "正在添加记录条目",
+  upsert_genre_section_item: "正在更新记录条目",
+  update_genre_section_item: "正在更新记录条目",
+  delete_genre_section_item: "正在删除记录条目",
+  update_record_collection_schema: "正在更新记录结构",
+  delete_record_collection: "正在删除记录集合",
+  update_record_item: "正在更新记录条目",
+  delete_record_item: "正在删除记录条目",
+};
+
+function resultTitle(result: unknown): string | null {
+  if (!result || typeof result !== "object") return null;
+  const r = result as Record<string, unknown>;
+  const value = r.title ?? r.name ?? r.label ?? r.id;
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function toolResultMessage(toolName: string, result: unknown): string | null {
+  const label = TOOL_RESULT_LABELS[toolName];
+  if (!label) return null;
+  if (result && typeof result === "object") {
+    const r = result as Record<string, unknown>;
+    if (r.success === false || typeof r.error === "string") {
+      return `工具${label}失败：${String(r.error ?? "未知错误")}`;
+    }
+  }
+  const title = resultTitle(result);
+  return title ? `已${label}：${title}` : `已${label}`;
+}
+
 export interface ConversationPaneProps {
   bookId: string;
   endpoint?: (bookId: string) => string;
@@ -52,9 +153,9 @@ export function ConversationPane(props: ConversationPaneProps) {
   const {
     messages, streaming, error, autoStatus,
     appendUserMessage, appendSystemMessage, beginStream, appendDelta, appendReasoning,
-    pushToolEvent, setWorkflowStages, updateWorkflowStage, setSuppressText,
+    pushToolEvent, setWorkflowStages, startWorkflow, updateWorkflowStage, setSuppressText,
     finishStream, setError, clearError, setAutoStatus,
-    triggerChapterRefresh, hydrate,
+    triggerChapterRefresh, triggerLibraryRefresh, hydrate, reset,
   } = useConversationStore();
   const handleRef = useRef<SseStreamHandle | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -65,6 +166,7 @@ export function ConversationPane(props: ConversationPaneProps) {
   // 加载持久化对话历史（首次挂载或 bookId 变化时）
   useEffect(() => {
     let cancelled = false;
+    reset();
     void (async () => {
       try {
         const res = await fetch(`/api/books/${encodeURIComponent(props.bookId)}/conversation?limit=100`);
@@ -83,7 +185,7 @@ export function ConversationPane(props: ConversationPaneProps) {
       } catch { /* ignore */ }
     })();
     return () => { cancelled = true; };
-  }, [props.bookId, hydrate]);
+  }, [props.bookId, hydrate, reset]);
 
   // 自动滚到底
   useEffect(() => {
@@ -132,7 +234,7 @@ export function ConversationPane(props: ConversationPaneProps) {
               updateWorkflowStage(toolName, "active");
             }
             // 人类可读进度提示
-            const label = TOOL_LABELS[toolName];
+            const label = EXTRA_TOOL_LABELS[toolName] ?? TOOL_LABELS[toolName];
             if (label) appendSystemMessage(label);
             break;
           }
@@ -140,6 +242,9 @@ export function ConversationPane(props: ConversationPaneProps) {
             const toolName = String(ev.toolName ?? "");
             pushToolEvent({ kind: "end", toolName, payload: ev.result });
             if (WRITING_TOOLS.has(toolName)) updateWorkflowStage(toolName, "done");
+            const resultMessage = toolResultMessage(toolName, ev.result);
+            if (resultMessage) appendSystemMessage(resultMessage);
+            if (MUTATING_LIBRARY_TOOLS.has(toolName)) triggerLibraryRefresh();
             // 写作流程的关键节点提示
             if (toolName === "chapter_audit") {
               const result = ev.result as { verdict?: string };
@@ -168,6 +273,10 @@ export function ConversationPane(props: ConversationPaneProps) {
               command_explicit: "",
             };
             const label = labels[String(ev.category ?? "")];
+            if (String(ev.category ?? "") === "writing_intent") {
+              writingFlowRef.current = true;
+              startWorkflow(WRITING_STAGES);
+            }
             if (label) appendSystemMessage(label);
             break;
           }
@@ -204,7 +313,7 @@ export function ConversationPane(props: ConversationPaneProps) {
         }
       },
     });
-  }, [props.bookId, endpoint, streamFn, streaming, appendUserMessage, appendSystemMessage, beginStream, appendDelta, appendReasoning, pushToolEvent, setWorkflowStages, updateWorkflowStage, setSuppressText, finishStream, setError, clearError, setAutoStatus, triggerChapterRefresh]);
+  }, [props.bookId, endpoint, streamFn, streaming, appendUserMessage, appendSystemMessage, beginStream, appendDelta, appendReasoning, pushToolEvent, setWorkflowStages, startWorkflow, updateWorkflowStage, setSuppressText, finishStream, setError, clearError, setAutoStatus, triggerChapterRefresh, triggerLibraryRefresh]);
 
   const cancel = useCallback(() => {
     if (autoStatus) {
@@ -290,6 +399,9 @@ function Composer(props: { onSend: (text: string) => void; onCancel: () => void;
 
   return (
     <div style={{ borderTop: "1px solid #e5e5e5", padding: 12, position: "relative" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
+        <ExecutionModeSelector />
+      </div>
       <SlashSuggestions
         input={value}
         visible={slashOpen}
