@@ -227,7 +227,10 @@ describe("runConversation 斜杠命令路由(§7.4)", () => {
 
     expect(evs.find(e => e.type === "intent")?.category).toBe("writing_intent");
     const plan = evs.find(e => e.type === "execution_plan");
-    expect(plan?.steps.map((step: any) => step.argsSummary)).toEqual([`chapterNo=${beforeMax + 1}`]);
+    expect(plan?.steps.map((step: any) => [step.actionType, step.argsSummary])).toEqual([
+      ["chapter_write", `chapterNo=${beforeMax + 1}`],
+      ["record_chapter_state", `chapterNo=${beforeMax + 1}`],
+    ]);
     const confirmation = evs.find(e => e.type === "confirmation_required");
     expect(confirmation?.taskId).toBe(plan?.taskId);
     expect(evs.some(e => e.type === "tool_call_start" && e.toolName === "chapter_write")).toBe(false);
@@ -257,9 +260,49 @@ describe("runConversation 斜杠命令路由(§7.4)", () => {
       passed: true,
       detail: "Chapter 6 read back after write.",
     });
+    const succeededRecord = evs.find(
+      e => e.type === "execution_step"
+        && e.step.toolName === "record_chapter_state"
+        && e.step.status === "succeeded",
+    );
+    expect(succeededRecord?.step.resultSummary).toContain("Chapter 6 state recorded");
+    expect(succeededRecord?.step.verification).toEqual({
+      method: "state_compare",
+      passed: true,
+      detail: "Chapter 6 state recording completed.",
+    });
     const report = evs.find(e => e.type === "acceptance_report")?.report;
     expect(report?.verdict).toBe("pass");
     expect(handle.chaptersRepo.listVersions(6)[0].contentMd).toBe("trusted auto chapter body");
+    expect(evs.at(-1).type).toBe("done");
+  });
+
+  it("stops trusted_auto multi-chapter writing after a chapter write verification failure", async () => {
+    deps.model = makeWritingModel("");
+    deps.auditModel = makeAuditAndRecordModel();
+
+    const evs = await collect(runConversation(deps, {
+      message: "write 3 chapters",
+      executionMode: "trusted_auto",
+    }));
+
+    const writeStarts = evs.filter(e => e.type === "tool_call_start" && e.toolName === "chapter_write");
+    expect(writeStarts.map(e => e.args.chapterNo)).toEqual([6]);
+    expect(handle.chaptersRepo.listVersions(6)).toHaveLength(0);
+    expect(handle.chaptersRepo.listVersions(7)).toHaveLength(0);
+    expect(handle.chaptersRepo.listVersions(8)).toHaveLength(0);
+    const failedWrite = evs.find(
+      e => e.type === "execution_step"
+        && e.step.toolName === "chapter_write"
+        && e.step.status === "failed",
+    );
+    expect(failedWrite?.step.verification).toEqual({
+      method: "read_back",
+      passed: false,
+      detail: "Chapter 6 was not readable after write.",
+    });
+    const report = evs.find(e => e.type === "acceptance_report")?.report;
+    expect(report?.verdict).toBe("fail");
     expect(evs.at(-1).type).toBe("done");
   });
 });

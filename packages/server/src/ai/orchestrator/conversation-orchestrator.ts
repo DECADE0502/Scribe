@@ -511,8 +511,15 @@ export async function* runConversation(
     }
 
     const completedSteps: ExecutionStep[] = [];
-    for (const [index, chapterNo] of chapterNos.entries()) {
-      const pendingStep = steps[index]!;
+    for (const chapterNo of chapterNos) {
+      const pendingStep = steps.find(step =>
+        step.argsSummary === `chapterNo=${chapterNo}` &&
+        (step.actionType === "chapter_write" || step.actionType === "multi_chapter_write")
+      )!;
+      const pendingStateStep = steps.find(step =>
+        step.argsSummary === `chapterNo=${chapterNo}` &&
+        step.actionType === "record_chapter_state"
+      );
       const runningStep: ExecutionStep = {
         ...pendingStep,
         status: "running",
@@ -521,9 +528,43 @@ export async function* runConversation(
       yield { type: "execution_step", taskId, step: runningStep };
 
       let failed: string | undefined;
+      let stateStepFailed = false;
       for await (const ev of writeChapterFlow(deps, chapterNo, input.message)) {
         if (ev.type === "error") {
           failed = ev.message;
+        }
+        if (ev.type === "tool_call_start" && ev.toolName === "record_chapter_state" && pendingStateStep) {
+          yield {
+            type: "execution_step",
+            taskId,
+            step: {
+              ...pendingStateStep,
+              status: "running",
+              toolName: "record_chapter_state",
+            },
+          };
+        }
+        if (ev.type === "tool_call_end" && ev.toolName === "record_chapter_state" && pendingStateStep) {
+          const result = ev.result as { success?: boolean } | undefined;
+          const succeeded = result?.success !== false;
+          stateStepFailed = !succeeded;
+          const completedStateStep: ExecutionStep = {
+            ...pendingStateStep,
+            status: succeeded ? "succeeded" : "failed",
+            toolName: "record_chapter_state",
+            resultSummary: succeeded
+              ? `Chapter ${chapterNo} state recorded.`
+              : `Chapter ${chapterNo} state recording failed.`,
+            verification: {
+              method: "state_compare",
+              passed: succeeded,
+              detail: succeeded
+                ? `Chapter ${chapterNo} state recording completed.`
+                : `Chapter ${chapterNo} state recording did not complete.`,
+            },
+          };
+          completedSteps.push(completedStateStep);
+          yield { type: "execution_step", taskId, step: completedStateStep };
         }
         yield ev;
       }
@@ -546,6 +587,7 @@ export async function* runConversation(
       };
       completedSteps.push(completedStep);
       yield { type: "execution_step", taskId, step: completedStep };
+      if (!succeeded || stateStepFailed) break;
     }
 
     const trace: ExecutionTrace = {

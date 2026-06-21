@@ -65,13 +65,22 @@ export function makeWriteActions(chapterNos: number[]): IntendedAction[] {
   const type = isBulkWrite ? "multi_chapter_write" : "chapter_write";
   const riskHint = isBulkWrite ? "bulk_write" : "write";
 
-  return chapterNos.map(chapterNo => ({
-    id: `write-chapter-${chapterNo}`,
-    type,
-    target: { chapterNo },
-    riskHint,
-    reason: `Persist chapter ${chapterNo}`,
-  }));
+  return chapterNos.flatMap(chapterNo => [
+    {
+      id: `write-chapter-${chapterNo}`,
+      type,
+      target: { chapterNo },
+      riskHint,
+      reason: `Persist chapter ${chapterNo}`,
+    },
+    {
+      id: `record-chapter-state-${chapterNo}`,
+      type: "record_chapter_state",
+      target: { chapterNo },
+      riskHint,
+      reason: `Record chapter ${chapterNo} state`,
+    },
+  ]);
 }
 
 export function makeWritePolicy(input: {
