@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { StreamingState } from "../../stores/conversation.js";
+import { useConversationStore } from "../../stores/conversation.js";
 import { t } from "../../i18n/zh-CN.js";
 
 /** 工具名 → 中文标签(与 conversation-pane 共享) */
@@ -22,9 +23,38 @@ const TOOL_LABELS: Record<string, string> = {
 /** 写作流程的工具集合——有这些工具时不显示正文 */
 const WRITING_TOOLS = new Set(["chapter_write", "chapter_audit", "record_chapter_state", "hard_fact_gate", "chapter_repair", "chapter_repair_audit"]);
 
+const EXTRA_TOOL_LABELS: Record<string, string> = {
+  chapter_write: "正在写正文",
+  list_outline: "查看大纲",
+  add_outline_node: "添加大纲节点",
+  update_outline_node: "更新大纲节点",
+  delete_outline_node: "删除大纲节点",
+  list_characters: "查看角色",
+  update_character: "更新角色",
+  delete_character: "删除角色",
+  list_foreshadowing: "查看伏笔",
+  create_foreshadowing: "登记伏笔",
+  delete_foreshadowing: "删除伏笔",
+  list_timeline: "查看时间线",
+  update_book_meta: "更新书籍设定",
+  create_genre_section: "创建记录集合",
+  update_genre_section_schema: "更新记录结构",
+  delete_genre_section: "删除记录集合",
+  add_genre_section_item: "添加记录条目",
+  upsert_genre_section_item: "更新记录条目",
+  update_genre_section_item: "更新记录条目",
+  delete_genre_section_item: "删除记录条目",
+  update_record_collection_schema: "更新记录结构",
+  delete_record_collection: "删除记录集合",
+  update_record_item: "更新记录条目",
+  delete_record_item: "删除记录条目",
+};
+
 export function StreamingMessage(props: { state: StreamingState }) {
   const { state } = props;
   const pendingTools = collectPendingTools(state);
+  const executionSteps = useConversationStore(s => s.executionSteps);
+  const acceptanceReport = useConversationStore(s => s.acceptanceReport);
   const [elapsed, setElapsed] = useState(0);
 
   // 超时检测:每秒更新已用时间,超过15秒显示提示
@@ -36,7 +66,7 @@ export function StreamingMessage(props: { state: StreamingState }) {
   const showSlowWarning = elapsed > 15 && pendingTools.length > 0;
 
   // 是否是写作流程(已出现过写作工具)
-  const isWriting = state.toolEvents.some(ev => WRITING_TOOLS.has(ev.toolName));
+  const isWriting = state.toolEvents.some(ev => WRITING_TOOLS.has(ev.toolName)) || state.workflowStages.length > 0;
 
   return (
     <div data-testid="streaming-message" style={{ margin: "8px 0" }}>
@@ -54,9 +84,24 @@ export function StreamingMessage(props: { state: StreamingState }) {
         {state.workflowStages.length > 0 && (
           <WorkflowProgress stages={state.workflowStages} />
         )}
+        {executionSteps.length > 0 && (
+          <div data-testid="execution-steps" style={{ marginTop: 8, marginBottom: 8, fontSize: 12, color: "#445" }}>
+            {executionSteps.map(step => (
+              <div key={step.id}>
+                {step.status === "succeeded" ? "✓" : step.status === "failed" ? "×" : "•"} {step.actionType}
+                {step.verification?.detail ? ` · ${step.verification.detail}` : ""}
+              </div>
+            ))}
+          </div>
+        )}
+        {acceptanceReport && (
+          <div data-testid="acceptance-report" style={{ marginTop: 8, marginBottom: 8, fontSize: 12, color: "#445" }}>
+            验收: {acceptanceReport.verdict}
+          </div>
+        )}
         {/* 进度提示 */}
         {pendingTools.map((name, i) => {
-          const label = TOOL_LABELS[name] ?? name;
+          const label = EXTRA_TOOL_LABELS[name] ?? TOOL_LABELS[name] ?? name;
           return (
             <div key={i} data-testid="tool-running" style={{ fontSize: 12, color: "#557", display: "flex", alignItems: "center", gap: 4 }}>
               <span style={{ display: "inline-block", width: 12, height: 12, border: "2px solid #cfe3ff", borderTopColor: "var(--ios-blue)", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />

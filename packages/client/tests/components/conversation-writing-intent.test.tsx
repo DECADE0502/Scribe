@@ -39,6 +39,10 @@ function sendMessage(text: string) {
   fireEvent.click(screen.getByTestId("btn-send"));
 }
 
+async function waitForInitialHydration() {
+  await waitFor(() => expect(fetch).toHaveBeenCalled());
+}
+
 describe("ConversationPane writing intent", () => {
   it("stores execution workflow mode", () => {
     expect(useConversationStore.getState().executionMode).toBe("low_risk_auto");
@@ -48,19 +52,21 @@ describe("ConversationPane writing intent", () => {
     expect(useConversationStore.getState().executionMode).toBe("plan_only");
   });
 
-  it("sends execution mode with conversation requests", () => {
+  it("sends execution mode with conversation requests", async () => {
     const m = makeManualStream();
     render(<ConversationPane bookId="b1" streamFn={m.streamFn} />);
+    await waitForInitialHydration();
 
     act(() => useConversationStore.getState().setExecutionMode("plan_only"));
     sendMessage("直接把前三章都写了");
 
-    expect(m.lastBody()).toMatchObject({ executionMode: "plan_only" });
+    await waitFor(() => expect(m.lastBody()).toMatchObject({ executionMode: "plan_only" }));
   });
 
   it("enters non-prose writing state on writing_intent before chapter_write starts", async () => {
     const m = makeManualStream();
     render(<ConversationPane bookId="b1" streamFn={m.streamFn} />);
+    await waitForInitialHydration();
     sendMessage("直接把前三章都写了");
 
     m.push({ type: "intent", category: "writing_intent" });
@@ -78,5 +84,45 @@ describe("ConversationPane writing intent", () => {
 
     await waitFor(() => expect(screen.queryByTestId("streaming-message")).not.toBeInTheDocument());
     expect(screen.queryByText("正文不应该出现在聊天框")).not.toBeInTheDocument();
+  });
+
+  it("shows execution trace and acceptance report while streaming", async () => {
+    const m = makeManualStream();
+    render(<ConversationPane bookId="b1" streamFn={m.streamFn} />);
+    await waitForInitialHydration();
+    sendMessage("write next chapter");
+
+    await waitFor(() => expect(m.lastBody()).toMatchObject({ message: "write next chapter" }));
+
+    m.push({ type: "intent", category: "writing_intent" });
+    m.push({
+      type: "execution_step",
+      taskId: "task-1",
+      step: {
+        id: "step-1",
+        actionType: "chapter_write",
+        riskLevel: "write",
+        status: "succeeded",
+        toolName: "chapter_write",
+        verification: { method: "read_back", passed: true, detail: "chapter 1 read back" },
+      },
+    });
+
+    expect(screen.getByText(/chapter 1 read back/)).toBeInTheDocument();
+
+    m.push({
+      type: "acceptance_report",
+      report: {
+        taskId: "task-1",
+        verdict: "pass",
+        userCriteria: [{ criterion: "write", status: "pass", evidence: "verified" }],
+        processCriteria: [],
+        domainCriteria: [],
+        recommendedActions: [],
+      },
+    });
+
+    expect(screen.getByText(/验收/)).toBeInTheDocument();
+    expect(screen.getByText(/pass/)).toBeInTheDocument();
   });
 });
