@@ -1,11 +1,26 @@
 import { describe, expect, it } from "vitest";
 import {
   ExecutionPolicySchema,
+  ExecutionModeWithDefaultSchema,
   buildExecutionPolicy,
   classifyActionRisk,
 } from "../src/types/agent-workflow.js";
 
 describe("agent workflow execution policy", () => {
+  it("defaults missing execution mode to low risk auto", () => {
+    expect(ExecutionModeWithDefaultSchema.parse(undefined)).toBe("low_risk_auto");
+  });
+
+  it("uses low risk auto policy when configured mode is omitted", () => {
+    const policy = buildExecutionPolicy({
+      taskId: "task-default",
+      actions: [{ type: "chapter_write" }],
+    });
+
+    expect(policy.configuredMode).toBe("low_risk_auto");
+    expect(policy.effectiveMode).toBe("confirm");
+  });
+
   it("requires confirmation for chapter writes in low risk auto mode", () => {
     const policy = buildExecutionPolicy({
       taskId: "task-1",

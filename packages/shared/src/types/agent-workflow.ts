@@ -7,6 +7,8 @@ export const ExecutionModeSchema = z.enum([
   "plan_only",
 ]);
 export type ExecutionMode = z.infer<typeof ExecutionModeSchema>;
+export const DEFAULT_EXECUTION_MODE: ExecutionMode = "low_risk_auto";
+export const ExecutionModeWithDefaultSchema = ExecutionModeSchema.default(DEFAULT_EXECUTION_MODE);
 
 export const RiskLevelSchema = z.enum(["read", "draft", "write", "bulk_write", "destructive"]);
 export type RiskLevel = z.infer<typeof RiskLevelSchema>;
@@ -188,9 +190,10 @@ export function classifyActionRisk(actionType: string, riskHint?: RiskLevel): Ri
 
 export function buildExecutionPolicy(input: {
   taskId: string;
-  configuredMode: ExecutionMode;
+  configuredMode?: ExecutionMode;
   actions: Array<{ type: string; riskHint?: RiskLevel }>;
 }): ExecutionPolicy {
+  const configuredMode = input.configuredMode ?? DEFAULT_EXECUTION_MODE;
   const risks = input.actions.map(action => classifyActionRisk(action.type, action.riskHint));
   const highestRisk = risks.reduce<RiskLevel>(
     (highest, risk) => (riskRank[risk] > riskRank[highest] ? risk : highest),
@@ -198,9 +201,9 @@ export function buildExecutionPolicy(input: {
   );
 
   let effectiveMode: ExecutionPolicy["effectiveMode"] = "auto";
-  let reason = `${input.configuredMode} allows ${highestRisk} actions automatically`;
+  let reason = `${configuredMode} allows ${highestRisk} actions automatically`;
 
-  if (input.configuredMode === "plan_only") {
+  if (configuredMode === "plan_only") {
     if (riskRank[highestRisk] <= riskRank.draft) {
       effectiveMode = "auto";
       reason = "plan_only allows read and draft actions";
@@ -208,7 +211,7 @@ export function buildExecutionPolicy(input: {
       effectiveMode = "blocked";
       reason = `plan_only blocks ${highestRisk} workspace mutations`;
     }
-  } else if (input.configuredMode === "confirm_each") {
+  } else if (configuredMode === "confirm_each") {
     if (riskRank[highestRisk] <= riskRank.draft) {
       effectiveMode = "auto";
       reason = "confirm_each allows read and draft actions automatically";
@@ -216,7 +219,7 @@ export function buildExecutionPolicy(input: {
       effectiveMode = "confirm";
       reason = `confirm_each requires confirmation for ${highestRisk} actions`;
     }
-  } else if (input.configuredMode === "trusted_auto") {
+  } else if (configuredMode === "trusted_auto") {
     if (highestRisk === "destructive") {
       effectiveMode = "confirm";
       reason = "trusted_auto requires confirmation for destructive actions";
@@ -232,7 +235,7 @@ export function buildExecutionPolicy(input: {
 
   return {
     taskId: input.taskId,
-    configuredMode: input.configuredMode,
+    configuredMode,
     effectiveMode,
     highestRisk,
     requiresConfirmation,
