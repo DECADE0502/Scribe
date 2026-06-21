@@ -1,4 +1,10 @@
 import { create } from "zustand";
+import type {
+  AcceptanceReport,
+  ExecutionMode,
+  ExecutionPolicy,
+  ExecutionStep,
+} from "@scribe/shared";
 
 export interface ToolEvent {
   kind: "start" | "end";
@@ -40,6 +46,12 @@ export interface AutoStatus {
   currentChapter?: number;
 }
 
+export interface PendingConfirmation {
+  taskId: string;
+  policy: ExecutionPolicy;
+  message: string;
+}
+
 interface ConversationStore {
   messages: ChatMessage[];
   streaming: StreamingState | null;
@@ -47,6 +59,11 @@ interface ConversationStore {
   autoStatus: AutoStatus | null;
   /** 章节提交触发器:对话流程写完一章后递增,编辑器监听此值刷新 */
   chapterRefreshTrigger: number;
+  libraryRefreshTrigger: number;
+  executionMode: ExecutionMode;
+  pendingConfirmation: PendingConfirmation | null;
+  executionSteps: ExecutionStep[];
+  acceptanceReport: AcceptanceReport | null;
   appendUserMessage(content: string): void;
   appendSystemMessage(content: string): void;
   beginStream(id: string): void;
@@ -54,6 +71,7 @@ interface ConversationStore {
   appendReasoning(delta: string): void;
   pushToolEvent(ev: ToolEvent): void;
   setWorkflowStages(stages: WorkflowStage[]): void;
+  startWorkflow(stages: WorkflowStage[]): void;
   updateWorkflowStage(id: string, status: WorkflowStageStatus): void;
   setSuppressText(suppress: boolean): void;
   finishStream(): void;
@@ -61,6 +79,11 @@ interface ConversationStore {
   clearError(): void;
   setAutoStatus(status: AutoStatus | null): void;
   triggerChapterRefresh(): void;
+  triggerLibraryRefresh(): void;
+  setExecutionMode(mode: ExecutionMode): void;
+  setPendingConfirmation(value: PendingConfirmation | null): void;
+  upsertExecutionStep(taskId: string, step: ExecutionStep): void;
+  setAcceptanceReport(report: AcceptanceReport | null): void;
   hydrate(msgs: ChatMessage[]): void;
   reset(): void;
 }
@@ -74,6 +97,11 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
   error: null,
   autoStatus: null,
   chapterRefreshTrigger: 0,
+  libraryRefreshTrigger: 0,
+  executionMode: "low_risk_auto",
+  pendingConfirmation: null,
+  executionSteps: [],
+  acceptanceReport: null,
 
   appendUserMessage(content) {
     set(s => ({ messages: [...s.messages, { id: nextId(), role: "user", content }] }));
@@ -84,7 +112,13 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
   },
 
   beginStream(id) {
-    set({ streaming: { id, text: "", reasoning: "", toolEvents: [], workflowStages: [], suppressText: false }, error: null });
+    set({
+      streaming: { id, text: "", reasoning: "", toolEvents: [], workflowStages: [], suppressText: false },
+      error: null,
+      pendingConfirmation: null,
+      executionSteps: [],
+      acceptanceReport: null,
+    });
   },
 
   appendDelta(delta) {
@@ -113,14 +147,30 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
       : {});
   },
 
+  startWorkflow(stages) {
+    set(s => s.streaming
+      ? { streaming: { ...s.streaming, workflowStages: stages, suppressText: true } }
+      : {});
+  },
+
   updateWorkflowStage(id, status) {
     set(s => s.streaming
       ? {
         streaming: {
           ...s.streaming,
-          workflowStages: s.streaming.workflowStages.map(stage =>
-            stage.id === id ? { ...stage, status } : stage,
-          ),
+          workflowStages: s.streaming.workflowStages.map((stage, index, stages) => {
+            if (stage.id === id) return { ...stage, status };
+            const changedIndex = stages.findIndex(item => item.id === id);
+            if (
+              status === "done" &&
+              changedIndex >= 0 &&
+              index === changedIndex + 1 &&
+              stage.status === "pending"
+            ) {
+              return { ...stage, status: "active" };
+            }
+            return stage;
+          }),
         },
       }
       : {});
@@ -175,6 +225,32 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
     set(s => ({ chapterRefreshTrigger: s.chapterRefreshTrigger + 1 }));
   },
 
+  triggerLibraryRefresh() {
+    set(s => ({ libraryRefreshTrigger: s.libraryRefreshTrigger + 1 }));
+  },
+
+  setExecutionMode(mode) {
+    set({ executionMode: mode });
+  },
+
+  setPendingConfirmation(value) {
+    set({ pendingConfirmation: value });
+  },
+
+  upsertExecutionStep(_taskId, step) {
+    set(s => {
+      const existingIndex = s.executionSteps.findIndex(existing => existing.id === step.id);
+      const executionSteps = existingIndex >= 0
+        ? s.executionSteps.map(existing => existing.id === step.id ? step : existing)
+        : [...s.executionSteps, step];
+      return { executionSteps };
+    });
+  },
+
+  setAcceptanceReport(report) {
+    set({ acceptanceReport: report });
+  },
+
   hydrate(msgs) {
     set(s => ({
       messages: s.messages.length === 0 ? msgs : s.messages,
@@ -184,6 +260,14 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
   },
 
   reset() {
-    set({ messages: [], streaming: null, error: null, autoStatus: null });
+    set({
+      messages: [],
+      streaming: null,
+      error: null,
+      autoStatus: null,
+      pendingConfirmation: null,
+      executionSteps: [],
+      acceptanceReport: null,
+    });
   },
 }));
