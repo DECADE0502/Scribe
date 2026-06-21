@@ -7,8 +7,10 @@ type EventSink = (ev: { type: string; [key: string]: unknown }) => void;
 
 function makeManualStream() {
   let sink: EventSink | null = null;
+  let body: unknown = null;
   const streamFn: StreamFn = (opts) => {
     sink = opts.onEvent;
+    body = opts.body;
     return { cancel: vi.fn(), done: Promise.resolve() };
   };
   return {
@@ -16,6 +18,7 @@ function makeManualStream() {
     push(ev: { type: string; [key: string]: unknown }) {
       act(() => sink?.(ev));
     },
+    lastBody: () => body,
   };
 }
 
@@ -43,6 +46,16 @@ describe("ConversationPane writing intent", () => {
     act(() => useConversationStore.getState().setExecutionMode("plan_only"));
 
     expect(useConversationStore.getState().executionMode).toBe("plan_only");
+  });
+
+  it("sends execution mode with conversation requests", () => {
+    const m = makeManualStream();
+    render(<ConversationPane bookId="b1" streamFn={m.streamFn} />);
+
+    act(() => useConversationStore.getState().setExecutionMode("plan_only"));
+    sendMessage("直接把前三章都写了");
+
+    expect(m.lastBody()).toMatchObject({ executionMode: "plan_only" });
   });
 
   it("enters non-prose writing state on writing_intent before chapter_write starts", async () => {

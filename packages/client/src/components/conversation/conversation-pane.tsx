@@ -7,6 +7,7 @@ import { Message } from "./message.js";
 import { StreamingMessage } from "./streaming-message.js";
 import { SlashSuggestions } from "./slash-suggestions.js";
 import { ExecutionModeSelector } from "./execution-mode-selector.js";
+import { ExecutionConfirmationCard } from "./execution-confirmation-card.js";
 
 export type StreamFn = (opts: StartStreamOptions) => SseStreamHandle;
 
@@ -151,11 +152,12 @@ export function ConversationPane(props: ConversationPaneProps) {
   const endpoint = props.endpoint ?? ((id: string) => `/api/books/${encodeURIComponent(id)}/conversation?mode=chat`);
   const streamFn = props.streamFn ?? startSseStream;
   const {
-    messages, streaming, error, autoStatus,
+    messages, streaming, error, autoStatus, executionMode, pendingConfirmation,
     appendUserMessage, appendSystemMessage, beginStream, appendDelta, appendReasoning,
     pushToolEvent, setWorkflowStages, startWorkflow, updateWorkflowStage, setSuppressText,
     finishStream, setError, clearError, setAutoStatus,
-    triggerChapterRefresh, triggerLibraryRefresh, hydrate, reset,
+    triggerChapterRefresh, triggerLibraryRefresh, setPendingConfirmation, upsertExecutionStep,
+    setAcceptanceReport, hydrate, reset,
   } = useConversationStore();
   const handleRef = useRef<SseStreamHandle | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -208,7 +210,7 @@ export function ConversationPane(props: ConversationPaneProps) {
     const url = isAuto
       ? `/api/books/${encodeURIComponent(props.bookId)}/auto`
       : endpoint(props.bookId);
-    const body = isAuto ? { n: autoTotal } : { message: content };
+    const body = isAuto ? { n: autoTotal } : { message: content, executionMode };
     if (isAuto) setAutoStatus({ state: "planning", doneCount: 0, total: autoTotal });
 
     beginStream(`s${++streamSeq}`);
@@ -292,6 +294,19 @@ export function ConversationPane(props: ConversationPaneProps) {
             }
             break;
           }
+          case "confirmation_required":
+            setPendingConfirmation({
+              taskId: String(ev.taskId),
+              policy: ev.policy as NonNullable<typeof pendingConfirmation>["policy"],
+              message: String(ev.message ?? "需要确认后执行"),
+            });
+            break;
+          case "execution_step":
+            upsertExecutionStep(String(ev.taskId), ev.step as Parameters<typeof upsertExecutionStep>[1]);
+            break;
+          case "acceptance_report":
+            setAcceptanceReport(ev.report as Parameters<typeof setAcceptanceReport>[0]);
+            break;
           case "done":
             if (writingFlowRef.current) updateWorkflowStage("done", "done");
             finishStream();
@@ -313,7 +328,7 @@ export function ConversationPane(props: ConversationPaneProps) {
         }
       },
     });
-  }, [props.bookId, endpoint, streamFn, streaming, appendUserMessage, appendSystemMessage, beginStream, appendDelta, appendReasoning, pushToolEvent, setWorkflowStages, startWorkflow, updateWorkflowStage, setSuppressText, finishStream, setError, clearError, setAutoStatus, triggerChapterRefresh, triggerLibraryRefresh]);
+  }, [props.bookId, endpoint, streamFn, streaming, executionMode, pendingConfirmation, appendUserMessage, appendSystemMessage, beginStream, appendDelta, appendReasoning, pushToolEvent, setWorkflowStages, startWorkflow, updateWorkflowStage, setSuppressText, finishStream, setError, clearError, setAutoStatus, triggerChapterRefresh, triggerLibraryRefresh, setPendingConfirmation, upsertExecutionStep, setAcceptanceReport]);
 
   const cancel = useCallback(() => {
     if (autoStatus) {
@@ -373,6 +388,19 @@ export function ConversationPane(props: ConversationPaneProps) {
           <span style={{ color: "#c00" }}>{error.message}</span>
           <button data-testid="btn-retry" onClick={retry}>{t.common.retry}</button>
         </div>
+      )}
+      {pendingConfirmation && (
+        <ExecutionConfirmationCard
+          taskId={pendingConfirmation.taskId}
+          message={pendingConfirmation.message}
+          policy={pendingConfirmation.policy}
+          onApprove={() => appendSystemMessage("确认执行将在后续任务接入")}
+          onReroll={() => {
+            setPendingConfirmation(null);
+            if (lastSent) send(lastSent);
+          }}
+          onCancel={() => setPendingConfirmation(null)}
+        />
       )}
       <Composer onSend={send} onCancel={cancel} streaming={!!streaming} />
     </div>
