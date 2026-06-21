@@ -30,12 +30,19 @@ function makePaths(root: string) {
 const dsPro: ModelInfo = { id: "ds-pro", pricing: { input: 0.27, output: 1.1 } };
 const dsFlash: ModelInfo = { id: "ds-flash", pricing: { input: 0.07, output: 0.28 } };
 
-/** 写作 stub:每次 doStream 输出固定正文 */
+/** 写作 stub:非流式 doGenerate 输出固定正文 */
 function makeWriteModel() {
   return {
     specificationVersion: "v1" as const,
     provider: "stub", modelId: "stub-write",
-    async doGenerate() { throw new Error("not used"); },
+    async doGenerate() {
+      return {
+        text: "本章正文。",
+        finishReason: "stop",
+        usage: { promptTokens: 10, completionTokens: 5 },
+        rawCall: { rawPrompt: null, rawSettings: {} },
+      };
+    },
     async doStream() {
       return {
         stream: new ReadableStream({
@@ -151,15 +158,26 @@ function completeOnboarding(bookId: string): void {
     baseData: {},
     currentState: {},
   });
-  handle.outlineRepo.create({
+  const volume = handle.outlineRepo.create({
     parentId: null,
     level: "volume",
     title: "第一卷",
-    summary: "测试大纲",
+    summary: "测试结构分组",
     status: "planned",
     sortOrder: 0,
     metadata: null,
   });
+  for (let chapterNo = 1; chapterNo <= 3; chapterNo++) {
+    handle.outlineRepo.create({
+      parentId: volume.id,
+      level: "chapter",
+      title: `第${chapterNo}章 自动测试${chapterNo}`,
+      summary: `本章写自动测试第 ${chapterNo} 章的具体事件、角色推进和结尾落点`,
+      status: "planned",
+      sortOrder: chapterNo,
+      metadata: null,
+    });
+  }
 }
 
 describe("POST /api/books/:id/auto", () => {

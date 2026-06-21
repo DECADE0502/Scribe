@@ -5,7 +5,7 @@ import {
   parseAuditOutput,
 } from "../prompts/audit-summarize.js";
 import { prependDeepestPrompt } from "../prompts/deepest-prompt.js";
-import type { ChapterAuditOutput, ChapterSummary } from "@scribe/shared";
+import type { ChapterAuditOutput, ChapterSummary, HardFactClaimOutput } from "@scribe/shared";
 
 export interface AuditContext {
   chapterNo: number;
@@ -48,6 +48,7 @@ export interface AuditResult {
   };
   rawText: string;
   reasoningText?: string;
+  hardFacts: HardFactClaimOutput[];
 }
 
 /**
@@ -87,6 +88,7 @@ export async function auditChapter(
         },
         rawText: result.text,
         reasoningText: result.reasoning ?? undefined,
+        hardFacts: output.hardFacts ?? [],
       };
     } catch (e) {
       lastError = e;

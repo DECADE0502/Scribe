@@ -115,6 +115,14 @@ describe("新建书完整流程集成测试", () => {
     expect(NEW_BOOK_ONBOARD_PROMPT).not.toContain("都市/异能 →");
   });
 
+  it("onboard prompt requires precise chapter-level outline instead of arc-only planning", () => {
+    expect(NEW_BOOK_ONBOARD_PROMPT).toContain('level: "chapter"');
+    expect(NEW_BOOK_ONBOARD_PROMPT).toContain("本章事件");
+    expect(NEW_BOOK_ONBOARD_PROMPT).toContain("本章精确大纲");
+    expect(NEW_BOOK_ONBOARD_PROMPT).toContain("不能替代章级大纲");
+    expect(NEW_BOOK_ONBOARD_PROMPT).not.toContain("弧级大纲是写作时防止");
+  });
+
   it("三轮对话后基础设定齐全,isOnboardComplete=true", async () => {
     // 轮 1:set_book_meta(genre, premise) + create_record_collection x 3 → 文本
     const turn1Model = makeMultiTurnStub((t) => {
@@ -287,9 +295,9 @@ describe("新建书完整流程集成测试", () => {
             toolCallId: "t3a",
             toolName: "create_outline_node",
             args: JSON.stringify({
-              level: "volume",
-              title: "卷一:重生",
-              summary: "林尘重修崛起到第一次复仇",
+              level: "chapter",
+              title: "第1章 雨夜重修",
+              summary: "本章写林尘在雨夜确认旧伤、发现重修契机,结尾立下离开云岚宗的决定",
             }),
           },
           {
@@ -345,7 +353,7 @@ describe("新建书完整流程集成测试", () => {
     expect(
       snapshotDeps.outlineRepo
         .listAll()
-        .some((n: any) => n.level === "volume" && n.title === "卷一:重生"),
+        .some((n: any) => n.level === "chapter" && n.title === "第1章 雨夜重修"),
     ).toBe(true);
     expect(snapshotDeps.genreSectionsRepo.listSections()).toHaveLength(3);
 

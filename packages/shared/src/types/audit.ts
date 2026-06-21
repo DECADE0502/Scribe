@@ -47,6 +47,41 @@ export const AuditIssueOutputSchema = z.object({
   note: z.string(),
 });
 
+export const HardFactValueOutputSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+  z.object({
+    quantity: z.number(),
+    unit: z.string().optional(),
+    raw: z.string().optional(),
+  }),
+]);
+
+export const HardFactClaimOutputSchema = z.object({
+  entity: z.string(),
+  attribute: z.string(),
+  value: HardFactValueOutputSchema,
+  factType: z.enum([
+    "state",
+    "quantity",
+    "location",
+    "ownership",
+    "relationship",
+    "deadline",
+    "cooldown",
+    "injury",
+    "task",
+  ]),
+  scope: z.enum(["book", "character", "location", "chapter", "scene"]),
+  operation: z
+    .enum(["set", "increase", "decrease", "move", "transfer", "resolve", "damage", "heal"])
+    .optional(),
+  cause: z.string().optional(),
+  evidence: z.string(),
+});
+
 export const ChapterAuditOutputSchema = z.object({
   verdict: SeveritySchema,
   issues: z.array(AuditIssueOutputSchema),
@@ -62,5 +97,7 @@ export const ChapterAuditOutputSchema = z.object({
     ),
   }),
   stateUpdates: z.array(z.unknown()).optional(),
+  hardFacts: z.array(HardFactClaimOutputSchema).optional().default([]),
 });
 export type ChapterAuditOutput = z.infer<typeof ChapterAuditOutputSchema>;
+export type HardFactClaimOutput = z.infer<typeof HardFactClaimOutputSchema>;

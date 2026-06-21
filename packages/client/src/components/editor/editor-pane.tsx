@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Editor } from "@tiptap/react";
 import { t } from "../../i18n/zh-CN.js";
 import { ChapterEditor } from "./chapter-editor.js";
@@ -6,6 +6,7 @@ import { SelectionToolbar, actionToInstruction, type ReviseAction } from "./sele
 import { RevisePreview } from "./revise-preview.js";
 import { VersionHistory } from "./version-history.js";
 import { useToastStore } from "../../stores/toast.js";
+import { useConversationStore } from "../../stores/conversation.js";
 
 interface ChapterMeta {
   chapterNo: number;
@@ -17,6 +18,7 @@ interface ChapterMeta {
 export function EditorPane(props: { bookId: string }) {
   const { bookId } = props;
   const pushToast = useToastStore(s => s.push);
+  const chapterRefreshTrigger = useConversationStore(s => s.chapterRefreshTrigger);
   const [chapters, setChapters] = useState<ChapterMeta[]>([]);
   const [currentNo, setCurrentNo] = useState<number | null>(null);
   const [current, setCurrent] = useState<ChapterMeta | null>(null);
@@ -24,22 +26,48 @@ export function EditorPane(props: { bookId: string }) {
   const [revise, setRevise] = useState<{ segmentText: string; instruction: string } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [writingDraft, setWritingDraft] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [hasAudit, setHasAudit] = useState(false);
 
-  const reloadList = useCallback(async () => {
+  // 用 ref 拿 currentNo，避免 reloadList 依赖 currentNo 导致 stale closure 和 effect 重跑
+  const currentNoRef = useRef<number | null>(null);
+  useEffect(() => { currentNoRef.current = currentNo; }, [currentNo]);
+
+  const reloadList = useCallback(async (switchToLatest = false) => {
     try {
       const res = await fetch(`/api/books/${encodeURIComponent(bookId)}/chapters`);
       if (!res.ok) return;
       const j = await res.json() as { chapters: ChapterMeta[] };
       setChapters(j.chapters);
-      if (j.chapters.length > 0 && currentNo == null) {
-        setCurrentNo(j.chapters[j.chapters.length - 1]!.chapterNo);
+      const cur = currentNoRef.current;
+      if (j.chapters.length > 0) {
+        if (switchToLatest || cur == null) {
+          setCurrentNo(j.chapters[j.chapters.length - 1]!.chapterNo);
+        } else if (!j.chapters.some(c => c.chapterNo === cur)) {
+          // 当前章已被删除，切到最新章
+          setCurrentNo(j.chapters[j.chapters.length - 1]!.chapterNo);
+        }
+      } else {
+        setCurrentNo(null);
       }
     } finally {
       setLoading(false);
     }
-  }, [bookId, currentNo]);
+  }, [bookId]);
 
   useEffect(() => { void reloadList(); }, [reloadList]);
+
+  // 监听对话流程的章节刷新通知:对话写完一章后自动刷新编辑器并跳到最新章
+  // 用 ref 记录上次处理过的 trigger 值，只在 trigger 真正递增时才刷
+  const lastRefreshTrigger = useRef(0);
+  useEffect(() => {
+    if (chapterRefreshTrigger > lastRefreshTrigger.current) {
+      lastRefreshTrigger.current = chapterRefreshTrigger;
+      void reloadList(true);
+    }
+  }, [chapterRefreshTrigger, reloadList]);
 
   // 加载当前章节内容
   useEffect(() => {
@@ -83,6 +111,111 @@ export function EditorPane(props: { bookId: string }) {
     setRevise({ segmentText: selectedText, instruction });
   }, []);
 
+  const runDraft = useCallback(async (targetNo: number, mode: "next" | "rewrite") => {
+    const userIntent = window.prompt("写什么？(一句话描述本章意图)") ?? "";
+    if (!userIntent.trim()) return;
+    setWritingDraft(true);
+    try {
+      const res = await fetch(`/api/books/${encodeURIComponent(bookId)}/chapters/${targetNo}/write-draft`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userIntent: mode === "rewrite" ? `重写第 ${targetNo} 章。${userIntent}` : userIntent,
+        }),
+      });
+      if (!res.ok || !res.body) { pushToast({ level: "error", text: "写作失败" }); return; }
+      // 读取 SSE 流
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+      }
+      await reloadList();
+      setCurrentNo(targetNo);
+      setHasAudit(false);
+      pushToast({ level: "info", text: "正文已生成,确认后点击「确认本章」" });
+    } finally {
+      setWritingDraft(false);
+    }
+  }, [bookId, reloadList, pushToast]);
+
+  const writeDraft = useCallback(async () => {
+    const next = chapters.length ? Math.max(...chapters.map(c => c.chapterNo)) + 1 : 1;
+    await runDraft(next, "next");
+  }, [chapters, runDraft]);
+
+  const rewriteCurrent = useCallback(async () => {
+    if (currentNo == null) return;
+    await runDraft(currentNo, "rewrite");
+  }, [currentNo, runDraft]);
+
+  const finalizeChapter = useCallback(async () => {
+    if (currentNo == null) return;
+    const userIntent = window.prompt("本章意图(用于审计上下文,可留空)") ?? "";
+    setFinalizing(true);
+    try {
+      const res = await fetch(`/api/books/${encodeURIComponent(bookId)}/chapters/${currentNo}/finalize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userIntent }),
+      });
+      if (!res.ok || !res.body) { pushToast({ level: "error", text: "确认失败" }); return; }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+      setHasAudit(true);
+      pushToast({ level: "info", text: "本章已确认:审计+状态记录完成" });
+    } finally {
+      setFinalizing(false);
+    }
+  }, [bookId, currentNo, pushToast]);
+
+  const deleteCurrentAndAfter = useCallback(async () => {
+    if (currentNo == null) return;
+    const tail = chapters.filter(c => c.chapterNo >= currentNo);
+    const confirmMsg = tail.length === 1
+      ? `确认删除第 ${currentNo} 章？\n该章及其所有派生记录（摘要/审查/时间线/伏笔/角色出场）都会被清除。`
+      : `确认删除第 ${currentNo} 章及之后的 ${tail.length} 章？\n这些章及所有派生记录（摘要/审查/时间线/伏笔/角色出场）都会被清除。`;
+    if (!window.confirm(confirmMsg)) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/books/${encodeURIComponent(bookId)}/chapters/${currentNo}`, { method: "DELETE" });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({})) as { error?: string };
+        pushToast({ level: "error", text: j.error ?? "删除失败" });
+        return;
+      }
+      const { result } = await res.json() as { result: { affectedCharacterNames: string[] } };
+      await reloadList();
+      pushToast({ level: "info", text: `已删除第 ${currentNo} 章及之后所有章` });
+      if (result.affectedCharacterNames.length > 0) {
+        pushToast({ level: "warning", text: `${result.affectedCharacterNames.join("、")} 的状态是累积写入的，请到侧栏手动核对` });
+      }
+    } finally {
+      setDeleting(false);
+    }
+  }, [bookId, currentNo, chapters, reloadList, pushToast]);
+
+  const deleteAll = useCallback(async () => {
+    if (chapters.length === 0) return;
+    if (!window.confirm(`确认删除全部 ${chapters.length} 章？\n所有章及派生记录都会被清除，相当于回到书初状态。`)) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/books/${encodeURIComponent(bookId)}/chapters`, { method: "DELETE" });
+      if (!res.ok) { pushToast({ level: "error", text: "删除失败" }); return; }
+      await reloadList();
+      pushToast({ level: "info", text: "已删除所有章节" });
+    } finally {
+      setDeleting(false);
+    }
+  }, [bookId, chapters, reloadList, pushToast]);
+
   const exportBook = useCallback(async (format: "md" | "txt", chapterOnly: boolean) => {
     const body: Record<string, unknown> = { format };
     if (chapterOnly && currentNo != null) body.chapter = currentNo;
@@ -122,6 +255,40 @@ export function EditorPane(props: { bookId: string }) {
           +
         </button>
         <span style={{ flex: 1 }} />
+        <button
+          className="ios-btn-small"
+          data-testid="btn-write-draft"
+          onClick={() => void writeDraft()}
+          disabled={writingDraft}
+          style={{ fontWeight: 600 }}
+        >
+          {writingDraft ? "写作中..." : "AI 写下一章"}
+        </button>
+        {currentNo != null && (
+          <button
+            className="ios-btn-small"
+            data-testid="btn-rewrite-current"
+            onClick={() => void rewriteCurrent()}
+            disabled={writingDraft}
+            style={{ fontWeight: 600 }}
+          >
+            {writingDraft ? "写作中..." : `重新写第${currentNo}章`}
+          </button>
+        )}
+        {currentNo != null && !hasAudit && (
+          <button
+            className="ios-btn-small"
+            data-testid="btn-finalize"
+            onClick={() => void finalizeChapter()}
+            disabled={finalizing}
+            style={{ fontWeight: 600, color: "#007aff" }}
+          >
+            {finalizing ? "确认中..." : "确认本章"}
+          </button>
+        )}
+        {currentNo != null && hasAudit && (
+          <span style={{ fontSize: 11, color: "#34c759", alignSelf: "center" }}>已确认</span>
+        )}
         {currentNo != null && (
           <>
             <button className="ios-btn-small" data-testid="btn-history" onClick={() => setShowHistory(v => !v)}>
@@ -133,6 +300,28 @@ export function EditorPane(props: { bookId: string }) {
             <button className="ios-btn-small" onClick={() => void exportBook("txt", false)}>
               全书 txt
             </button>
+            <button
+              className="ios-btn-small"
+              data-testid="btn-delete-chapter"
+              onClick={() => void deleteCurrentAndAfter()}
+              disabled={deleting}
+              style={{ color: "#ff3b30", fontWeight: 600 }}
+              title={`删除第 ${currentNo} 章及之后所有章`}
+            >
+              {deleting ? "删除中..." : `删除第${currentNo}章起`}
+            </button>
+            {chapters.length > 0 && (
+              <button
+                className="ios-btn-small"
+                data-testid="btn-delete-all"
+                onClick={() => void deleteAll()}
+                disabled={deleting}
+                style={{ color: "#ff3b30" }}
+                title="删除所有章节"
+              >
+                全删
+              </button>
+            )}
           </>
         )}
       </div>

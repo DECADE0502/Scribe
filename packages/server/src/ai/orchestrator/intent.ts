@@ -16,6 +16,9 @@ export type IntentCategory =
   | "revise_intent"
   | "query"
   | "genre_section_op"
+  | "command_explicit"
+  | "delete_intent"
+  | "agentic"
   | "other";
 
 const VALID: IntentCategory[] = [
@@ -24,6 +27,9 @@ const VALID: IntentCategory[] = [
   "revise_intent",
   "query",
   "genre_section_op",
+  "command_explicit",
+  "delete_intent",
+  "agentic",
   "other",
 ];
 

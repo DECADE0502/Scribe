@@ -16,11 +16,9 @@ export function isOnboardComplete(snapshot: BookSnapshot): CompletenessResult {
     missing.push("主角");
   }
 
-  // 3. 至少一个一级大纲(volume 或 arc)
-  if (
-    !snapshot.outline.some((n) => n.level === "volume" || n.level === "arc")
-  ) {
-    missing.push("一级大纲");
+  // 3. 至少一个章级大纲。写作时必须有“本章写什么”的精确节点，卷/弧线只作为分组。
+  if (!snapshot.outline.some((n) => n.level === "chapter")) {
+    missing.push("章级大纲");
   }
 
   // 4. 调性 / 篇幅 / premise 至少给到两项

@@ -1,9 +1,43 @@
+import { useEffect, useState } from "react";
 import type { StreamingState } from "../../stores/conversation.js";
 import { t } from "../../i18n/zh-CN.js";
+
+/** 工具名 → 中文标签(与 conversation-pane 共享) */
+const TOOL_LABELS: Record<string, string> = {
+  chapter_audit: "审查章节质量",
+  chapter_repair: "修复章节",
+  chapter_repair_audit: "修复后审查",
+  hard_fact_gate: "硬事实检查",
+  record_chapter_state: "记录状态",
+  create_character: "登记角色",
+  update_character_state: "更新角色状态",
+  add_character_appearance: "记录出场",
+  add_foreshadowing: "登记伏笔",
+  pay_foreshadowing: "回收伏笔",
+  add_timeline_event: "记录时间线",
+  upsert_record_item: "更新记录",
+  create_record_collection: "创建记录集合",
+};
+
+/** 写作流程的工具集合——有这些工具时不显示正文 */
+const WRITING_TOOLS = new Set(["chapter_write", "chapter_audit", "record_chapter_state", "hard_fact_gate", "chapter_repair", "chapter_repair_audit"]);
 
 export function StreamingMessage(props: { state: StreamingState }) {
   const { state } = props;
   const pendingTools = collectPendingTools(state);
+  const [elapsed, setElapsed] = useState(0);
+
+  // 超时检测:每秒更新已用时间,超过15秒显示提示
+  useEffect(() => {
+    const timer = setInterval(() => setElapsed(e => e + 1), 1000);
+    return () => clearInterval(timer);
+  }, [state.id]);
+
+  const showSlowWarning = elapsed > 15 && pendingTools.length > 0;
+
+  // 是否是写作流程(已出现过写作工具)
+  const isWriting = state.toolEvents.some(ev => WRITING_TOOLS.has(ev.toolName));
+
   return (
     <div data-testid="streaming-message" style={{ margin: "8px 0" }}>
       <div
@@ -17,16 +51,81 @@ export function StreamingMessage(props: { state: StreamingState }) {
           wordBreak: "break-word",
         }}
       >
-        {pendingTools.map((name, i) => (
-          <div key={i} data-testid="tool-running" style={{ fontSize: 12, color: "#557" }}>
-            ⏳ {t.conversation.toolCalled}:{name}...
+        {state.workflowStages.length > 0 && (
+          <WorkflowProgress stages={state.workflowStages} />
+        )}
+        {/* 进度提示 */}
+        {pendingTools.map((name, i) => {
+          const label = TOOL_LABELS[name] ?? name;
+          return (
+            <div key={i} data-testid="tool-running" style={{ fontSize: 12, color: "#557", display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ display: "inline-block", width: 12, height: 12, border: "2px solid #cfe3ff", borderTopColor: "var(--ios-blue)", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+              {label}...
+            </div>
+          );
+        })}
+        {/* 超时提示 */}
+        {showSlowWarning && (
+          <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>
+            已处理 {elapsed} 秒,仍在进行中...
           </div>
-        ))}
-        {state.text
-          ? state.text
-          : <span data-testid="streaming-placeholder" style={{ color: "#999" }}>{t.conversation.aiThinking}</span>}
-        <span data-testid="streaming-cursor" style={{ opacity: 0.6 }}>▌</span>
+        )}
+        {/* 写作流程:不显示正文,只显示字数进度 */}
+        {isWriting && state.suppressText && (
+          <div style={{ color: "#999", fontSize: 13, marginTop: 6 }}>
+            正文生成中,完成后请在右侧编辑器查看
+          </div>
+        )}
+        {isWriting && !state.suppressText && state.text.length > 0 && (
+          <div style={{ color: "#999", fontSize: 13 }}>
+            正文已生成 {state.text.length} 字
+          </div>
+        )}
+        {/* 非写作流程(纯对话或写作前正文生成):正常显示文字 */}
+        {!isWriting && state.text && (
+          <>
+            {state.text}
+            <span data-testid="streaming-cursor" style={{ opacity: 0.6 }}>▌</span>
+          </>
+        )}
+        {/* 等待状态(没文字也没工具) */}
+        {!isWriting && pendingTools.length === 0 && !state.text && (
+          <span data-testid="streaming-placeholder" style={{ color: "#999" }}>
+            {elapsed > 5 ? "AI 正在思考中,请稍候..." : t.conversation.aiThinking}
+          </span>
+        )}
+        {/* 写作流程但没有正文也没有工具(工具间隙) */}
+        {isWriting && state.text.length === 0 && pendingTools.length === 0 && (
+          <span style={{ color: "#999", fontSize: 13 }}>处理中...</span>
+        )}
       </div>
+    </div>
+  );
+}
+
+function WorkflowProgress(props: { stages: StreamingState["workflowStages"] }) {
+  return (
+    <div data-testid="workflow-progress" style={{ display: "grid", gap: 6, marginBottom: 8 }}>
+      {props.stages.map((stage) => {
+        const color = stage.status === "done"
+          ? "#34c759"
+          : stage.status === "active"
+            ? "var(--ios-blue)"
+            : stage.status === "error"
+              ? "var(--ios-red)"
+              : "#a8a8a8";
+        const mark = stage.status === "done" ? "✓" : stage.status === "active" ? "●" : "○";
+        return (
+          <div
+            key={stage.id}
+            data-testid={`workflow-stage-${stage.id}`}
+            style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color }}
+          >
+            <span style={{ width: 14, display: "inline-block", textAlign: "center" }}>{mark}</span>
+            <span>{stage.label}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }

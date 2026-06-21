@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import type { CoreMessage } from "ai";
-import type { ChapterSummary, Character, TimelineEvent } from "@scribe/shared";
+import type { ChapterSummary, Character, TimelineEvent, OutlineNode } from "@scribe/shared";
 import {
   resolveItemIdentityKey,
   resolveItemLabel,
@@ -9,7 +9,7 @@ import {
 import type { BookHandle } from "../../http/book-registry.js";
 import type { WriteChapterContext } from "../prompts/write-chapter.js";
 import type { AuditContext } from "../orchestrator/audit-chapter.js";
-import { loadBookSnapshot } from "./snapshot.js";
+import { loadBookSnapshot, type BookSnapshot } from "./snapshot.js";
 import { buildWriteContext, type BuildResult } from "./builder.js";
 
 export interface BookPromptContext {
@@ -46,9 +46,12 @@ export function buildBookPromptContext(handle: BookHandle): BookPromptContext {
   }).join("\n");
 
   const outlineText = outline
-    .filter(n => n.level === "volume" || n.level === "arc")
     .sort((a, b) => a.sortOrder - b.sortOrder)
-    .map(n => `[${n.level === "volume" ? "卷" : "弧"}] ${n.title}${n.summary ? `:${n.summary}` : ""}`)
+    .map(n => {
+      const levelLabel = n.level === "volume" ? "卷" : n.level === "arc" ? "弧" : "章";
+      const indent = n.level === "chapter" ? "  " : "";
+      return `${indent}[${levelLabel}] ${n.title}${n.summary ? `:${n.summary}` : ""}`;
+    })
     .join("\n");
 
   return {
@@ -74,6 +77,64 @@ export function buildBookPromptContext(handle: BookHandle): BookPromptContext {
       })),
     },
   };
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function titleMatchesChapterNo(title: string, chapterNo: number): boolean {
+  const escapedNo = escapeRegExp(String(chapterNo));
+  const patterns = [
+    new RegExp(`第\\s*${escapedNo}\\s*[章节回]`, "i"),
+    new RegExp(`\\bchapter\\s*${escapedNo}\\b`, "i"),
+    new RegExp(`^\\s*${escapedNo}\\s*[.、．\\-:：\\s]`),
+  ];
+  return patterns.some((pattern) => pattern.test(title));
+}
+
+/**
+ * 查找某章对应的章级大纲节点。只匹配明确章号，避免第 1 章误命中第 10 章。
+ */
+export function findChapterOutlineNode(
+  outlineRepo: { listAll(): OutlineNode[] },
+  chapterNo: number,
+): OutlineNode | undefined {
+  const nodes = outlineRepo.listAll();
+  return nodes.find((node) =>
+    node.level === "chapter" && titleMatchesChapterNo(node.title, chapterNo)
+  );
+}
+
+/**
+ * 查找某章对应的大纲节点，返回其摘要。写章时拼进 userIntent 让 AI 按章级大纲写。
+ */
+export function findChapterOutlineSummary(
+  outlineRepo: { listAll(): OutlineNode[] },
+  chapterNo: number,
+): string | undefined {
+  const node = findChapterOutlineNode(outlineRepo, chapterNo);
+  return node?.summary ?? undefined;
+}
+
+/**
+ * 把章级大纲摘要拼进 userIntent。如果没有大纲节点则原样返回。
+ */
+export function enrichUserIntentWithOutline(
+  outlineRepo: { listAll(): OutlineNode[] },
+  chapterNo: number,
+  userIntent: string,
+): string {
+  const node = findChapterOutlineNode(outlineRepo, chapterNo);
+  if (!node?.summary) return userIntent;
+  return [
+    userIntent,
+    "# 本章精确大纲",
+    `目标章节: 第 ${chapterNo} 章`,
+    `大纲标题: ${node.title}`,
+    `本章必须写: ${node.summary}`,
+    "要求: 本章正文必须优先服从这里的章级大纲，不要用卷/弧线替代本章事件，不要擅自跳到其它章节安排。",
+  ].filter(Boolean).join("\n");
 }
 
 export interface ChapterWriteContext {
@@ -102,20 +163,59 @@ export function extractRequiredOutputSections(
   const joined = blocks
     .map((block) => block.content)
     .join("\n");
-  if (!/(状态栏|狀態欄|status\s*bar|面板)/i.test(joined)) return [];
+  // 通用的状态面板触发词(跨题材)
+  if (!/(状态栏|狀態欄|status\s*bar|面板|属性面板|战斗记录|任务日志|角色卡)/i.test(joined)) return [];
   const statusLines = joined
     .split(/\r?\n|[。！？]/)
     .map((line) => line.trim())
-    .filter((line) => /(状态栏|狀態欄|status\s*bar|面板)/i.test(line))
+    .filter((line) => /(状态栏|狀態欄|status\s*bar|面板|属性面板|战斗记录|任务日志|角色卡)/i.test(line))
     .filter((line) => /(必须|必須|必填|包含|包括|输出|輸出|格式|字段|欄位|include|required)/i.test(line))
     .filter((line) => !/(不是|无需|無需|不必|不要|非必填|not required)/i.test(line));
   const sourceText = statusLines.join("\n") || joined;
-  const requiredTerms = ["HP", "SP", "MP", "契约", "捕捉球", "等级", "时间", "倒计时"]
-    .filter((term) => sourceText.includes(term) || new RegExp(term, "i").test(sourceText));
+
+  // 动态提取 requiredTerms:从源文本里搜索大写英文字母组合(如 HP/SP/MP)和常见属性词
+  // 不再硬编码 ["HP", "SP", "MP", "契约", "捕捉球", "等级", "时间", "倒计时"]
+  const termSet = new Set<string>();
+
+  // 1. 提取大写英文字母组合(2-5个字母,如 HP/SP/MP/EXP)
+  const upperCaseMatches = sourceText.match(/\b[A-Z]{2,5}\b/g);
+  if (upperCaseMatches) {
+    for (const term of upperCaseMatches) termSet.add(term);
+  }
+
+  // 2. 提取冒号/等号前的属性名(如 "HP：73" 里的 "HP")
+  const attrMatches = sourceText.match(/([\u4e00-\u9fffA-Za-z]{1,8})\s*[：:=＝]/g);
+  if (attrMatches) {
+    for (const match of attrMatches) {
+      const attr = match.replace(/\s*[：:=＝]/, "").trim();
+      if (attr.length >= 1 && attr.length <= 8) termSet.add(attr);
+    }
+  }
+
+  // 3. 提取"包含/包括"后顿号分隔的词(如 "包含HP、契约、捕捉球" 里的 "契约"/"捕捉球")
+  const includeMatch = sourceText.match(/(?:包含|包括|含有|需含)\s*([^\s。！？]+)/);
+  if (includeMatch) {
+    const parts = includeMatch[1]!.split(/[、,，;；]/);
+    for (const part of parts) {
+      const trimmed = part.trim().replace(/数量|值|等\s*$/, "").trim();
+      // 只保留 1-8 个字符的词,过滤掉纯数字或太长的片段
+      if (trimmed.length >= 1 && trimmed.length <= 8 && !/^\d+$/.test(trimmed)) {
+        termSet.add(trimmed);
+      }
+    }
+  }
+
+  // 如果没有提取到任何属性词,用触发词本身作为 requiredTerm
+  const triggerMatch = sourceText.match(/(状态栏|狀態欄|status\s*bar|面板|属性面板|战斗记录|任务日志|角色卡)/i);
+  if (triggerMatch) termSet.add(triggerMatch[0]!);
+
+  const requiredTerms = [...termSet];
+  if (requiredTerms.length === 0) return [];
+
   return [{
     kind: "status_section",
-    label: "状态栏",
-    requiredTerms: requiredTerms.length ? requiredTerms : ["状态栏"],
+    label: triggerMatch?.[0] ?? "状态栏",
+    requiredTerms,
     source: "preset",
   }];
 }
@@ -146,11 +246,9 @@ export function detectMissingRequiredSections(
     );
 }
 
-const HARD_CONTINUITY_PATTERNS = [
-  /无[^。！？\n]{0,24}(?:可用|剩余|持有|库存|宠物球|普通球)/,
-  /(?:宠物球|普通球|契约|状态栏|HP|SP|服从度|好感度|成功率|剩余|库存|持有|代价|冷却|整合)[^。！？\n]{0,48}/,
-  /[^。！？\n]{0,24}(?:仅|只剩|剩余|没有|不能|无法)[^。！？\n]{0,48}/,
-];
+/** 通用的否定/变化关键词(跨题材适用) */
+const GENERIC_NEGATION_TERMS = ["无", "没有", "不能", "无法", "仅", "只剩", "耗尽", "归零"];
+const GENERIC_CHANGE_TERMS = ["可用", "剩余", "还剩", "获得", "用尽", "消耗", "损毁", "碎裂", "失去"];
 
 function splitSentences(text: string): string[] {
   return text
@@ -159,63 +257,67 @@ function splitSentences(text: string): string[] {
     .filter(Boolean);
 }
 
-const HARD_STATE_TERMS = [
-  "\u5ba0\u7269\u7403",
-  "\u666e\u901a\u7403",
-  "\u9ad8\u7ea7\u7403",
-  "\u6355\u6349\u7403",
-  "\u5951\u7ea6",
-  "\u72b6\u6001\u680f",
-  "\u9635\u8425",
-  "\u5f3a\u5236\u89e6\u53d1",
-  "\u5012\u8ba1\u65f6",
-  "\u5c0f\u65f6",
-  "\u5929\u540e",
-  "\u65f6\u95f4",
-  "HP",
-  "SP",
-  "MP",
-  "\u670d\u4ece\u5ea6",
-  "\u597d\u611f\u5ea6",
-  "\u6210\u529f\u7387",
-  "\u5269\u4f59",
-  "\u8fd8\u5269",
-  "\u8ddd\u79bb",
-  "\u5e93\u5b58",
-  "\u6301\u6709",
-  "\u4ee3\u4ef7",
-  "\u51b7\u5374",
-  "\u6574\u5408",
-  "\u83b7\u5f97",
-  "\u7528\u5c3d",
-];
+/**
+ * 从书的快照里动态构建硬状态词表。
+ * 不硬编码任何题材词汇——从角色 currentState 的 key、通用记录 schema 字段名、
+ * 世界书常量条目内容里自动收集。
+ */
+function buildDynamicHardStateTerms(snapshot: BookSnapshot): Set<string> {
+  const terms = new Set<string>();
+  // 1. 角色 currentState 的 key (如 normalCaptureBalls, hp, sp, location 等)
+  for (const c of snapshot.characters) {
+    for (const key of Object.keys(c.currentState ?? {})) {
+      terms.add(key);
+      // 也加角色名,这样句子里有角色名时也能匹配
+      if (c.name) terms.add(c.name);
+    }
+  }
+  // 2. 通用记录集合的 schema 字段名(identity/label/status role 的字段)
+  for (const { section } of snapshot.genreSections) {
+    for (const field of section.schema) {
+      if (field.role === "identity" || field.role === "label" || field.role === "status" || field.isLabel) {
+        terms.add(field.name);
+      }
+    }
+    // 集合名也加入(如"系统规则与机制"里的条目名)
+    terms.add(section.name);
+  }
+  // 3. 通用记录条目的 identity 值(如"觉醒者与标记"、"捕捉判定规则"等条目名)
+  for (const { section, items } of snapshot.genreSections) {
+    for (const item of items) {
+      const label = resolveItemLabel(section, item.data, "");
+      if (label) terms.add(label);
+    }
+  }
+  return terms;
+}
 
-const HARD_NEGATION_TERMS = [
-  "\u65e0",
-  "\u6ca1\u6709",
-  "\u4e0d\u80fd",
-  "\u65e0\u6cd5",
-  "\u4ec5",
-  "\u53ea\u5269",
-];
-
-function isHardContinuitySentence(sentence: string): boolean {
-  const hasStateTerm = HARD_STATE_TERMS.some((term) => sentence.includes(term));
+/**
+ * 判断一个句子是否包含硬事实信息。
+ * 不依赖硬编码词表,而是用动态构建的 terms + 通用数字/否定模式。
+ */
+function isHardContinuitySentence(
+  sentence: string,
+  dynamicTerms: Set<string>,
+): boolean {
+  // 检查句子里是否包含任何动态词
+  const hasStateTerm = [...dynamicTerms].some((term) =>
+    term.length >= 2 ? sentence.includes(term) : false,
+  );
   if (!hasStateTerm) return false;
+  // 必须同时包含数字、否定词、或变化词
   return (
     /[0-9]/.test(sentence) ||
-    HARD_NEGATION_TERMS.some((term) => sentence.includes(term)) ||
-    sentence.includes("\u53ef\u7528") ||
-    sentence.includes("\u5269\u4f59") ||
-    sentence.includes("\u8fd8\u5269") ||
-    sentence.includes("\u83b7\u5f97") ||
-    sentence.includes("\u7528\u5c3d")
+    GENERIC_NEGATION_TERMS.some((term) => sentence.includes(term)) ||
+    GENERIC_CHANGE_TERMS.some((term) => sentence.includes(term))
   );
 }
 
 export function renderHardContinuityConstraints(
   summaries: Pick<ChapterSummary, "chapterNo" | "oneLiner" | "paragraph" | "keyEvents">[],
+  dynamicTerms?: Set<string>,
 ): string {
+  const terms = dynamicTerms ?? new Set<string>();
   const lines: string[] = [];
   const seen = new Set<string>();
   for (const summary of summaries) {
@@ -225,7 +327,7 @@ export function renderHardContinuityConstraints(
       ...summary.keyEvents.flatMap((event) => splitSentences(event.event)),
     ];
     for (const sentence of candidates) {
-      if (!isHardContinuitySentence(sentence)) continue;
+      if (!isHardContinuitySentence(sentence, terms)) continue;
       const normalized = sentence.replace(/\s+/g, " ").trim();
       if (!normalized || seen.has(normalized)) continue;
       seen.add(normalized);
@@ -261,9 +363,13 @@ export function renderCharacterStateContinuity(
   ].join("\n");
 }
 
-export function renderTimelineContinuity(events: TimelineEvent[]): string {
+export function renderTimelineContinuity(
+  events: TimelineEvent[],
+  dynamicTerms?: Set<string>,
+): string {
+  const terms = dynamicTerms ?? new Set<string>();
   const lines = events
-    .filter((event) => isHardContinuitySentence(event.event))
+    .filter((event) => isHardContinuitySentence(event.event, terms))
     .slice(-12)
     .map((event) => `- Chapter ${event.chapterNo}${event.storyTime ? ` ${event.storyTime}` : ""}: ${event.event}`);
   if (!lines.length) return "";
@@ -396,14 +502,16 @@ export function buildChapterWriteMessages(
       userMessage: userIntent,
     },
   });
+  // 动态构建硬状态词表(不硬编码任何题材词汇)
+  const dynamicTerms = buildDynamicHardStateTerms(snapshot);
   const hardContinuity = renderHardContinuityConstraints([
     ...snapshot.recentSummaries,
     ...snapshot.allSummaries
       .filter((summary) => result.recalledChapterNos.includes(summary.chapterNo))
       .slice(-5),
-  ]);
+  ], dynamicTerms);
   const structuredContinuity = renderCharacterStateContinuity(snapshot.characters);
-  const timelineContinuity = renderTimelineContinuity(handle.timelineRepo?.listAll?.() ?? []);
+  const timelineContinuity = renderTimelineContinuity(handle.timelineRepo?.listAll?.() ?? [], dynamicTerms);
   const requiredOutputSections = renderRequiredOutputSections(
     extractRequiredOutputSections(snapshot.promptBlocks),
   );
@@ -477,14 +585,16 @@ export function buildChapterAuditContext(
 
   const recalled = new Set(result.recalledChapterNos);
   const recent = new Set(result.recentChapterNos);
+  // 动态构建硬状态词表(不硬编码任何题材词汇)
+  const dynamicTerms = buildDynamicHardStateTerms(snapshot);
   const hardContinuityContext = renderHardContinuityConstraints([
     ...snapshot.recentSummaries,
     ...snapshot.allSummaries
       .filter((summary) => result.recalledChapterNos.includes(summary.chapterNo))
       .slice(-5),
-  ]);
+  ], dynamicTerms);
   const structuredContinuity = renderCharacterStateContinuity(snapshot.characters);
-  const timelineContinuity = renderTimelineContinuity(handle.timelineRepo?.listAll?.() ?? []);
+  const timelineContinuity = renderTimelineContinuity(handle.timelineRepo?.listAll?.() ?? [], dynamicTerms);
   return {
     auditCtx: {
       ...base,

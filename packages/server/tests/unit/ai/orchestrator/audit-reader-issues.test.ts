@@ -26,6 +26,7 @@ function auditResult(): AuditResult {
         paragraph: "This paragraph is intentionally long enough to resemble a valid audit summary for persistence in tests.",
         keyEvents: [],
       },
+      hardFacts: [],
     },
     usage: {
       promptTokens: 0,
@@ -34,6 +35,7 @@ function auditResult(): AuditResult {
       reasoningTokens: 0,
     },
     rawText: "{}",
+    hardFacts: [],
   };
 }
 

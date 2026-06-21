@@ -141,11 +141,11 @@ export function makeBookMetaTools(
 
     create_outline_node: tool({
       description:
-        "创建一个大纲节点。level 必须是 volume(卷)/ arc(弧)/ chapter(章)之一。",
+        "创建一个大纲节点。写作计划优先创建 chapter(章)节点,并在标题中写明章号;volume 只作分组,arc 只作可选弧线分组,不能替代章级计划。",
       parameters: z.object({
-        level: z.enum(["volume", "arc", "chapter"]),
-        title: z.string().min(1),
-        summary: z.string().optional(),
+        level: z.enum(["volume", "arc", "chapter"]).describe("层级:chapter 是写作时精确注入的本章大纲;volume/arc 仅用于组织结构"),
+        title: z.string().min(1).describe("节点标题。chapter 节点请使用明确章号,如'第1章 雨夜来信'"),
+        summary: z.string().optional().describe("节点摘要。chapter 节点必须写清本章事件、出场角色、冲突/推进点、结尾落点"),
         parentId: z.string().nullable().optional(),
         sortOrder: z.number().int().optional(),
       }),

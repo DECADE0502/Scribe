@@ -6,11 +6,13 @@ import { ForeshadowingPanel } from "./foreshadowing-panel.js";
 import { TimelinePanel } from "./timeline-panel.js";
 import { RulesPanel } from "./rules-panel.js";
 import { GenreSectionPanel } from "./genre-section-panel.js";
+import { MetaPanel } from "./meta-panel.js";
 import { WorldbookPanel } from "../worldbook/worldbook-panel.js";
 import { ImportDialog } from "../import/import-dialog.js";
 import { PresetPanel } from "../presets/preset-panel.js";
 
 type BuiltinTabId =
+  | "meta"
   | "characters"
   | "outline"
   | "foreshadowing"
@@ -21,6 +23,7 @@ type BuiltinTabId =
   | "rules";
 
 const BUILTIN_TABS: Array<{ id: BuiltinTabId; label: string }> = [
+  { id: "meta", label: "设定" },
   { id: "characters", label: t.sidebar.sectionCharacters },
   { id: "outline", label: t.sidebar.sectionOutline },
   { id: "foreshadowing", label: t.sidebar.sectionForeshadowing },
@@ -32,7 +35,7 @@ const BUILTIN_TABS: Array<{ id: BuiltinTabId; label: string }> = [
 ];
 
 export function SidePanel(props: { bookId: string }) {
-  const [tab, setTab] = useState<string>("characters");
+  const [tab, setTab] = useState<string>("meta");
   const [genreTabs, setGenreTabs] = useState<Array<{ id: string; label: string }>>([]);
 
   useEffect(() => {
@@ -68,6 +71,7 @@ export function SidePanel(props: { bookId: string }) {
         </nav>
       </div>
       <div style={{ flex: 1, overflow: "auto", padding: "4px 12px 12px" }}>
+        {tab === "meta" && <MetaPanel bookId={props.bookId} />}
         {tab === "characters" && <CharactersPanel bookId={props.bookId} />}
         {tab === "outline" && <OutlinePanel bookId={props.bookId} />}
         {tab === "foreshadowing" && <ForeshadowingPanel bookId={props.bookId} />}

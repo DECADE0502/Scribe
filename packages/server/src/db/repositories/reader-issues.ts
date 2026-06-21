@@ -114,5 +114,9 @@ export function createReaderIssuesRepo(db: Database) {
       );
       return this.get(id)!;
     },
+
+    deleteFromChapter(fromChapterNo: number): number {
+      return db.prepare("DELETE FROM reader_issues WHERE chapter_no >= ?").run(fromChapterNo).changes;
+    },
   };
 }

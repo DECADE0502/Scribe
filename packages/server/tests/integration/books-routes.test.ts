@@ -179,7 +179,7 @@ describe("GET /api/books/:bookId/onboard-status", () => {
     expect(j.ok).toBe(false);
     expect(j.missing).toContain("题材");
     expect(j.missing).toContain("主角");
-    expect(j.missing).toContain("一级大纲");
+    expect(j.missing).toContain("章级大纲");
   });
 
   it("书不存在返回 404", async () => {

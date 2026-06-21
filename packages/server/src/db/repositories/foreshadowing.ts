@@ -75,5 +75,11 @@ export function createForeshadowingRepo(db: Database) {
       ).run(paidChapter, id);
       return this.get(id)!;
     },
+    /** 删 planted_chapter 或 paid_chapter >= fromChapterNo 的伏笔（回档语义） */
+    deleteFromChapter(fromChapterNo: number): number {
+      return db
+        .prepare("DELETE FROM foreshadowing WHERE planted_chapter >= ? OR paid_chapter >= ?")
+        .run(fromChapterNo, fromChapterNo).changes;
+    },
   };
 }

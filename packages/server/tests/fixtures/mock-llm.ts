@@ -13,7 +13,15 @@ export function makeStubLanguageModel(opts: MockLLMOpts = {}): any {
     provider: "stub",
     modelId: "stub-model",
     async doGenerate() {
-      throw new Error("stub does not support doGenerate");
+      if (opts.throwOn === "doStream" || opts.throwOn === "stream") {
+        throw new Error(opts.errorMessage ?? "stub error");
+      }
+      return {
+        text: chunks.join(""),
+        finishReason: "stop",
+        usage: { promptTokens: 5, completionTokens: chunks.length },
+        rawCall: { rawPrompt: null, rawSettings: {} },
+      };
     },
     async doStream() {
       if (opts.throwOn === "doStream") {

@@ -30,6 +30,75 @@ async function collect(it: AsyncIterable<any>): Promise<any[]> {
 }
 const textOf = (evs: any[]) => evs.filter(e => e.type === "text_delta").map(e => e.delta).join("");
 
+const okAudit = JSON.stringify({
+  verdict: "ok",
+  issues: [
+    "setting_consistency",
+    "character_behavior",
+    "pacing",
+    "narrative_coherence",
+    "foreshadowing",
+    "hook_strength",
+    "aesthetic_quality",
+  ].map((dimension) => ({ dimension, severity: "ok", score: 8, note: "无明显问题" })),
+  summary: {
+    oneLiner: "第一章重写完成",
+    paragraph: "第一章重写后承接原有设定,保留主角出场与基础冲突,叙事更加清楚,场景推进更稳定,后续章节可以继续沿用这一版内容作为上下文。",
+    keyEvents: [{ event: "第一章被重写", characters: ["林尘"], foreshadowingRefs: [] }],
+  },
+  hardFacts: [],
+});
+
+function makeWritingModel(text: string): any {
+  return {
+    specificationVersion: "v1",
+    provider: "stub",
+    modelId: "stub-write",
+    async doGenerate() {
+      return {
+        text,
+        finishReason: "stop",
+        usage: { promptTokens: 10, completionTokens: 10 },
+        rawCall: { rawPrompt: null, rawSettings: {} },
+      };
+    },
+    async doStream() {
+      throw new Error("write model should not stream prose");
+    },
+  };
+}
+
+function makeAuditAndRecordModel(): any {
+  return {
+    specificationVersion: "v1",
+    provider: "stub",
+    modelId: "stub-audit",
+    async doGenerate() {
+      return {
+        text: okAudit,
+        finishReason: "stop",
+        usage: { promptTokens: 10, completionTokens: 10 },
+        rawCall: { rawPrompt: null, rawSettings: {} },
+      };
+    },
+    async doStream() {
+      return {
+        stream: new ReadableStream({
+          start(ctrl) {
+            ctrl.enqueue({
+              type: "finish",
+              finishReason: "stop",
+              usage: { promptTokens: 1, completionTokens: 0 },
+            });
+            ctrl.close();
+          },
+        }),
+        rawCall: { rawPrompt: null, rawSettings: {} },
+      };
+    },
+  };
+}
+
 beforeEach(() => {
   db = new Database(":memory:");
   const initSql = fs.readFileSync(path.join(__dirname, "../../../../src/db/migrations/workspace/001_init.sql"), "utf-8");
@@ -55,9 +124,30 @@ beforeEach(() => {
     genreSectionsRepo: createGenreSectionsRepo(db),
     chaptersRepo,
     conversationsRepo: createConversationsRepo(db),
-    chapterFiles: { read: () => undefined },
+    chapterFiles: {
+      files: new Map<number, any>(),
+      save(input: any) {
+        this.files.set(input.chapterNo, {
+          chapterNo: input.chapterNo,
+          title: input.title,
+          content: input.content,
+          versionNo: input.versionNo,
+          wordCount: input.content.length,
+          updatedAt: Date.now(),
+        });
+      },
+      read(no: number) {
+        return this.files.get(no);
+      },
+      list() {
+        return [...this.files.values()].sort((a, b) => a.chapterNo - b.chapterNo);
+      },
+    },
     rulesMdPath: "__none__.md",
   };
+  for (let n = 1; n <= 5; n++) {
+    handle.chapterFiles.save({ chapterNo: n, title: `第${n}章`, content: `第${n}章正文`, versionNo: 1 });
+  }
   deps = { handle, model: {} as any, auditModel: {} as any, auditModelId: "stub" };
 });
 
@@ -91,5 +181,19 @@ describe("runConversation 斜杠命令路由(§7.4)", () => {
   it("/revise 引导去编辑器选段", async () => {
     const evs = await collect(runConversation(deps, { message: "/revise" }));
     expect(textOf(evs)).toContain("编辑器");
+  });
+
+  it("自然语言重写第一章时落到第 1 章,不会误写最新章", async () => {
+    deps.model = makeWritingModel("第一章重写正文");
+    deps.auditModel = makeAuditAndRecordModel();
+
+    const evs = await collect(runConversation(deps, { message: "重写第一章,加强开场" }));
+
+    expect(evs.some(e => e.type === "error")).toBe(false);
+    expect(evs.some(e => e.type === "text_delta")).toBe(false);
+    const chapter1Versions = handle.chaptersRepo.listVersions(1);
+    expect(chapter1Versions[0].source).toBe("ai_rewrite");
+    expect(chapter1Versions[0].contentMd).toBe("第一章重写正文");
+    expect(handle.chaptersRepo.listVersions(5)[0].source).toBe("ai_write");
   });
 });

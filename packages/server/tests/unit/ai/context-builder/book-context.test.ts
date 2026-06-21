@@ -15,7 +15,10 @@ import {
   buildChapterAuditContext,
   buildChapterWriteMessages,
   detectMissingRequiredSections,
+  enrichUserIntentWithOutline,
   extractRequiredOutputSections,
+  findChapterOutlineNode,
+  findChapterOutlineSummary,
   renderCharacterStateContinuity,
   renderHardContinuityConstraints,
   renderTimelineContinuity,
@@ -95,6 +98,8 @@ beforeEach(() => {
 
 describe("hard continuity constraints", () => {
   it("promotes recent resource availability into hard constraints", () => {
+    // 动态词表:从测试数据里提取的关键词
+    const dynamicTerms = new Set(["宠物球", "SP", "服从度", "林远", "王建国", "魔物"]);
     const constraints = renderHardContinuityConstraints([
       {
         chapterNo: 8,
@@ -102,7 +107,7 @@ describe("hard continuity constraints", () => {
         paragraph: "林远发现自身SP仅7，无宠物球可用，D级魔物仍在整合中，王建国服从度12.8。",
         keyEvents: [],
       },
-    ]);
+    ], dynamicTerms);
 
     expect(constraints).toContain("Hard Continuity Constraints");
     expect(constraints).toContain("无宠物球可用");
@@ -110,8 +115,86 @@ describe("hard continuity constraints", () => {
   });
 });
 
+describe("chapter outline matching", () => {
+  it("matches the exact chapter node and does not treat chapter 10 as chapter 1", () => {
+    const outlineRepo = {
+      listAll: () => [
+        {
+          id: "ch10",
+          parentId: null,
+          level: "chapter" as const,
+          title: "第10章 旧敌回归",
+          summary: "只能给第十章使用",
+          status: "planned" as const,
+          sortOrder: 10,
+          metadata: null,
+        },
+        {
+          id: "ch1",
+          parentId: null,
+          level: "chapter" as const,
+          title: "第1章 雨夜开局",
+          summary: "第一章必须写主角在雨夜收到信",
+          status: "planned" as const,
+          sortOrder: 1,
+          metadata: null,
+        },
+      ],
+    };
+
+    expect(findChapterOutlineNode(outlineRepo, 1)?.id).toBe("ch1");
+    expect(findChapterOutlineSummary(outlineRepo, 1)).toBe("第一章必须写主角在雨夜收到信");
+  });
+
+  it("does not fall back to arc text when a chapter node is missing", () => {
+    const outlineRepo = {
+      listAll: () => [
+        {
+          id: "arc1",
+          parentId: null,
+          level: "arc" as const,
+          title: "第一卷前半弧",
+          summary: "这是弧线方向，不是第二章的精确正文安排",
+          status: "planned" as const,
+          sortOrder: 1,
+          metadata: null,
+        },
+      ],
+    };
+
+    expect(findChapterOutlineNode(outlineRepo, 2)).toBeUndefined();
+    expect(enrichUserIntentWithOutline(outlineRepo, 2, "继续写")).toBe("继续写");
+  });
+
+  it("injects a strict chapter-level outline block with title and required writing instruction", () => {
+    const outlineRepo = {
+      listAll: () => [
+        {
+          id: "ch2",
+          parentId: null,
+          level: "chapter" as const,
+          title: "Chapter 2 - Lantern Market",
+          summary: "本章写灯市重逢、误会解除、结尾收到黑笺",
+          status: "planned" as const,
+          sortOrder: 2,
+          metadata: null,
+        },
+      ],
+    };
+
+    const enriched = enrichUserIntentWithOutline(outlineRepo, 2, "按计划写");
+
+    expect(enriched).toContain("# 本章精确大纲");
+    expect(enriched).toContain("目标章节: 第 2 章");
+    expect(enriched).toContain("大纲标题: Chapter 2 - Lantern Market");
+    expect(enriched).toContain("本章必须写: 本章写灯市重逢、误会解除、结尾收到黑笺");
+    expect(enriched).toContain("必须优先服从这里的章级大纲");
+  });
+});
+
 describe("hard continuity timer/resource facts", () => {
   it("renders deadlines and resource counts as hard continuity constraints", () => {
+    const dynamicTerms = new Set(["捕捉球", "阵营", "契约", "状态栏", "系统"]);
     const constraints = renderHardContinuityConstraints([
       {
         chapterNo: 8,
@@ -125,7 +208,7 @@ describe("hard continuity timer/resource facts", () => {
         paragraph: "系统状态栏刷新：高级捕捉球1枚，普通捕捉球0枚。",
         keyEvents: [],
       },
-    ]);
+    ], dynamicTerms);
 
     expect(constraints).toContain("48小时");
     expect(constraints).toContain("36小时");
@@ -153,6 +236,7 @@ describe("structured and timeline hard continuity", () => {
   });
 
   it("renders resource-changing timeline events as hard facts", () => {
+    const dynamicTerms = new Set(["捕捉球", "SP", "林澈"]);
     const constraints = renderTimelineContinuity([
       {
         id: "event-1",
@@ -161,7 +245,7 @@ describe("structured and timeline hard continuity", () => {
         event: "林澈首次捕捉失败，一颗捕捉球损毁，SP降至89",
         participants: ["林澈"],
       },
-    ]);
+    ], dynamicTerms);
 
     expect(constraints).toContain("Timeline Hard Facts");
     expect(constraints).toContain("一颗捕捉球损毁");
@@ -216,7 +300,11 @@ describe("required output sections", () => {
       { content: "其他规则可能讨论MP、等级、技能树，但不是状态栏必填字段。" },
     ]);
 
-    expect(constraints[0]?.requiredTerms).toEqual(["HP", "契约", "捕捉球"]);
+    // 动态提取:HP(大写)、契约(包含列表)、捕捉球(包含列表)、状态栏(触发词)
+    // 不再硬编码词表;MP/等级/技能树被排除因为它们在"不是"行里
+    expect(constraints[0]?.requiredTerms).toEqual(expect.arrayContaining(["HP", "契约", "捕捉球"]));
+    expect(constraints[0]?.requiredTerms).not.toContain("MP");
+    expect(constraints[0]?.requiredTerms).not.toContain("等级");
   });
 
   it("detects missing required status terms in generated prose", () => {

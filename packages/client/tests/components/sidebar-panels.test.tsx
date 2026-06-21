@@ -23,10 +23,15 @@ function jsonResponse(data: unknown, status = 200) {
 }
 
 describe("SidePanel 容器", () => {
-  it("默认显示角色 tab,可切换", async () => {
+  it("默认显示设定 tab,可切换到角色", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ characters: [], outline: [], foreshadowing: [], timeline: [], content: "" }));
     render(<SidePanel bookId="b1" />);
+    // 默认显示 meta panel
+    await waitFor(() => expect(screen.getByTestId("meta-panel")).toBeInTheDocument());
+    // 切换到角色
+    fireEvent.click(screen.getByTestId("tab-characters"));
     await waitFor(() => expect(screen.getByTestId("characters-panel")).toBeInTheDocument());
+    // 切换到规则
     fireEvent.click(screen.getByTestId("tab-rules"));
     await waitFor(() => expect(screen.getByTestId("rules-panel")).toBeInTheDocument());
     expect(screen.queryByTestId("characters-panel")).not.toBeInTheDocument();

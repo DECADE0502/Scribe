@@ -152,5 +152,16 @@ export function createChaptersRepo(db: Database) {
         .get(chapterNo);
       return r ? rowToAudit(r) : undefined;
     },
+
+    // ---- 批量删除（回档语义：删 fromChapterNo 及之后所有章的派生数据）----
+    deleteSummaryFrom(fromChapterNo: number): number {
+      return db.prepare("DELETE FROM chapter_summaries WHERE chapter_no >= ?").run(fromChapterNo).changes;
+    },
+    deleteAuditFrom(fromChapterNo: number): number {
+      return db.prepare("DELETE FROM chapter_audits WHERE chapter_no >= ?").run(fromChapterNo).changes;
+    },
+    deleteVersionsFrom(fromChapterNo: number): number {
+      return db.prepare("DELETE FROM chapter_versions WHERE chapter_no >= ?").run(fromChapterNo).changes;
+    },
   };
 }

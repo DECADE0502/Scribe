@@ -92,4 +92,35 @@ describe("EditorPane", () => {
     fireEvent.click(screen.getByTestId("btn-history"));
     await waitFor(() => expect(screen.getByTestId("version-history")).toBeInTheDocument());
   });
+
+  it("重写当前章调用当前章节 write-draft,不新开下一章", async () => {
+    const calls: Array<[string, RequestInit | undefined]> = [];
+    vi.spyOn(window, "prompt").mockReturnValue("重写这一章");
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      calls.push([String(url), init]);
+      const u = String(url);
+      if (init?.method === "POST" && u.includes("/write-draft")) {
+        return {
+          ok: true,
+          body: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
+        } as Response;
+      }
+      if (u.endsWith("/chapters")) return jsonResponse({ chapters: [ch1, ch2] });
+      if (u.endsWith("/chapters/2")) return jsonResponse(ch2);
+      if (u.endsWith("/chapters/1")) return jsonResponse(ch1);
+      return jsonResponse({}, 404);
+    });
+    render(<EditorPane bookId="b1" />);
+    await waitFor(() => screen.getByTestId("chapter-tab-2"));
+    fireEvent.click(screen.getByTestId("chapter-tab-1"));
+    await waitFor(() => expect(screen.getByTestId("chapter-title")).toHaveTextContent("第一章"));
+
+    fireEvent.click(screen.getByTestId("btn-rewrite-current"));
+
+    await waitFor(() => {
+      const writeDraft = calls.find(([url, init]) => init?.method === "POST" && url.includes("/write-draft"));
+      expect(writeDraft).toBeTruthy();
+      expect(writeDraft![0]).toContain("/chapters/1/write-draft");
+    });
+  });
 });

@@ -51,6 +51,47 @@ export function sidebarRoutes(deps: SidebarRoutesDeps) {
     return c.json({ outline: handle.outlineRepo.listAll() });
   });
 
+  // 创建大纲节点
+  app.post("/api/books/:bookId/outline", async (c) => {
+    const handle = withBook(c.req.param("bookId"));
+    if (!handle) return c.json({ error: "书不存在" }, 404);
+    const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+    const node = handle.outlineRepo.create({
+      parentId: typeof body.parentId === "string" ? body.parentId : null,
+      level: typeof body.level === "string" ? body.level as "volume" | "arc" | "chapter" : "chapter",
+      title: typeof body.title === "string" ? body.title : "",
+      summary: typeof body.summary === "string" ? body.summary : "",
+      status: typeof body.status === "string" ? body.status as "planned" | "in_progress" | "done" : "planned",
+      sortOrder: typeof body.sortOrder === "number" ? body.sortOrder : 0,
+      metadata: null,
+    });
+    return c.json(node, 201);
+  });
+
+  // 更新大纲节点
+  app.put("/api/books/:bookId/outline/:nodeId", async (c) => {
+    const handle = withBook(c.req.param("bookId"));
+    if (!handle) return c.json({ error: "书不存在" }, 404);
+    const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+    const patch: Record<string, unknown> = {};
+    if (typeof body.title === "string") patch.title = body.title;
+    if (typeof body.summary === "string") patch.summary = body.summary;
+    if (typeof body.status === "string") patch.status = body.status;
+    if (typeof body.level === "string") patch.level = body.level;
+    if (typeof body.sortOrder === "number") patch.sortOrder = body.sortOrder;
+    if (typeof body.parentId === "string" || body.parentId === null) patch.parentId = body.parentId;
+    const node = handle.outlineRepo.update(c.req.param("nodeId"), patch);
+    return c.json(node);
+  });
+
+  // 删除大纲节点
+  app.delete("/api/books/:bookId/outline/:nodeId", async (c) => {
+    const handle = withBook(c.req.param("bookId"));
+    if (!handle) return c.json({ error: "书不存在" }, 404);
+    handle.outlineRepo.delete(c.req.param("nodeId"));
+    return c.json({ ok: true });
+  });
+
   app.get("/api/books/:bookId/foreshadowing", async (c) => {
     const handle = withBook(c.req.param("bookId"));
     if (!handle) return c.json({ error: "书不存在" }, 404);

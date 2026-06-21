@@ -1,6 +1,6 @@
 import type { CoreMessage, LanguageModel } from "ai";
 import type { SseEvent } from "@scribe/shared";
-import { streamLlm } from "../llm-call.js";
+import { generateLlmText } from "../llm-call.js";
 import { SYSTEM_PROMPT } from "../prompts/system-prompt.js";
 import { prependDeepestPrompt } from "../prompts/deepest-prompt.js";
 import {
@@ -59,47 +59,65 @@ export async function* writeChapterSimple(
     },
   ];
   const messages = prependDeepestPrompt(baseMessages, input.deepestPrompt);
-  let buffer = "";
 
-  for await (const ev of streamLlm({
-    model: deps.model,
-    messages,
-    abortSignal: input.abortSignal,
-  })) {
-    if (ev.type === "text_delta") buffer += ev.delta;
-    if (ev.type === "done") {
-      const content = sanitizeChapterOutput(buffer);
-      if (content.trim()) {
-        let saved: { versionNo: number } | undefined;
-        try {
-          saved = deps.chaptersRepo.saveVersion({
-            chapterNo: input.chapterNo,
-            source: input.source ?? "ai_write",
-            contentMd: content,
-          });
-          deps.chapterFiles.save({
-            chapterNo: input.chapterNo,
-            title: `第 ${input.chapterNo} 章`,
-            content,
-            versionNo: saved.versionNo,
-          });
-        } catch (error) {
-          if (saved) {
-            try {
-              deps.chaptersRepo.deleteVersion(input.chapterNo, saved.versionNo);
-            } catch {
-              // Keep the original save error as the reported failure.
-            }
-          }
-          yield {
-            type: "error",
-            errorClass: "save_failed",
-            message: String((error as Error)?.message ?? error),
-          };
-          return;
-        }
+  yield { type: "tool_call_start", toolName: "chapter_write", args: { chapterNo: input.chapterNo } };
+
+  let generated;
+  try {
+    generated = await generateLlmText({
+      model: deps.model,
+      messages,
+      abortSignal: input.abortSignal,
+    });
+  } catch (error) {
+    yield {
+      type: "error",
+      errorClass: "write_failed",
+      message: String((error as Error)?.message ?? error),
+    };
+    return;
+  }
+
+  const content = sanitizeChapterOutput(generated.text);
+  if (!content.trim()) {
+    yield { type: "tool_call_end", toolName: "chapter_write", result: { success: false, reason: "empty" } };
+    yield { type: "done" };
+    return;
+  }
+
+  let saved: { versionNo: number } | undefined;
+  try {
+    saved = deps.chaptersRepo.saveVersion({
+      chapterNo: input.chapterNo,
+      source: input.source ?? "ai_write",
+      contentMd: content,
+    });
+    deps.chapterFiles.save({
+      chapterNo: input.chapterNo,
+      title: `第 ${input.chapterNo} 章`,
+      content,
+      versionNo: saved.versionNo,
+    });
+  } catch (error) {
+    if (saved) {
+      try {
+        deps.chaptersRepo.deleteVersion(input.chapterNo, saved.versionNo);
+      } catch {
+        // Keep the original save error as the reported failure.
       }
     }
-    yield ev;
+    yield {
+      type: "error",
+      errorClass: "save_failed",
+      message: String((error as Error)?.message ?? error),
+    };
+    return;
   }
+
+  yield {
+    type: "tool_call_end",
+    toolName: "chapter_write",
+    result: { success: true, wordCount: content.length, versionNo: saved.versionNo },
+  };
+  yield { type: "done" };
 }

@@ -24,6 +24,21 @@ export interface BookSummary {
   totalCostUsd: number;
 }
 
+export interface DeleteChapterResult {
+  result: {
+    fromChapterNo: number;
+    deletedChapters: number[];
+    deletedSummaries: number;
+    deletedVersions: number;
+    deletedAudits: number;
+    deletedTimeline: number;
+    deletedReaderIssues: number;
+    deletedForeshadowing: number;
+    touchedCharacters: number;
+    affectedCharacterNames: string[];
+  };
+}
+
 export interface CreateBookInput {
   title?: string;
   genre?: string | null;
@@ -182,6 +197,18 @@ export const api = {
   async deleteBook(bookId: string): Promise<void> {
     // 当前 server 还没暴露 DELETE,留接口位
     await jsonFetch(`/api/books/${encodeURIComponent(bookId)}`, { method: "DELETE" });
+  },
+  async deleteChapter(bookId: string, chapterNo: number): Promise<DeleteChapterResult> {
+    return jsonFetch<DeleteChapterResult>(
+      `/api/books/${encodeURIComponent(bookId)}/chapters/${chapterNo}`,
+      { method: "DELETE" },
+    );
+  },
+  async deleteAllChapters(bookId: string): Promise<DeleteChapterResult> {
+    return jsonFetch<DeleteChapterResult>(
+      `/api/books/${encodeURIComponent(bookId)}/chapters`,
+      { method: "DELETE" },
+    );
   },
   async listWorldbook(bookId: string): Promise<WorldbookEntry[]> {
     const r = await jsonFetch<{ entries: WorldbookEntry[] }>(

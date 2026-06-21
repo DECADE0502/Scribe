@@ -87,5 +87,23 @@ export function createCharactersRepo(db: Database) {
       );
       return this.get(id)!;
     },
+    /** 从所有角色的 appearances 数组里移除 chapterNo >= fromChapterNo 的元素（回档语义） */
+    removeAppearancesFromChapter(fromChapterNo: number): number {
+      const all = this.list();
+      let touched = 0;
+      const now = Date.now();
+      for (const c of all) {
+        const filtered = c.appearances.filter((a) => a.chapterNo < fromChapterNo);
+        if (filtered.length !== c.appearances.length) {
+          db.prepare("UPDATE characters SET appearances=?, updated_at=? WHERE id=?").run(
+            JSON.stringify(filtered),
+            now,
+            c.id
+          );
+          touched++;
+        }
+      }
+      return touched;
+    },
   };
 }

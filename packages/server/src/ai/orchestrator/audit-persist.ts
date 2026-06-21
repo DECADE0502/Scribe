@@ -98,13 +98,15 @@ export function persistAuditResult(
     auditedAt: now,
   });
   // 2. 保存 summary
+  // reasoningContent 不持久化:审计模型的 reasoning 含数学错误和主观推断,
+  // 存入 summary 会在后续章节召回时进入上下文,污染写作/审计。
   repo.saveSummary({
     chapterNo,
     oneLiner: result.output.summary.oneLiner,
     paragraph: result.output.summary.paragraph,
     keyEvents: result.output.summary.keyEvents,
     generatedAt: now,
-    reasoningContent: result.reasoningText ?? null,
+    reasoningContent: null,
   });
 
   if (readerIssuesRepo) {

@@ -116,4 +116,24 @@ describe("ConversationPane", () => {
     fireEvent.change(input, { target: { value: "第二条" } });
     expect(screen.getByTestId("btn-send")).toBeDisabled();
   });
+
+  it("写作流程显示完整阶段进度,不显示正文内容", async () => {
+    const m = makeManualStream();
+    renderPane(m.streamFn);
+    sendMessage("写下一章");
+
+    m.push({ type: "tool_call_start", toolName: "chapter_write", args: {} });
+    m.push({ type: "text_delta", delta: "不应该出现在左侧的正文" });
+    m.push({ type: "tool_call_end", toolName: "chapter_write", result: { wordCount: 12 } });
+    m.push({ type: "tool_call_end", toolName: "chapter_audit", result: { verdict: "ok" } });
+
+    expect(screen.getByTestId("workflow-progress")).toHaveTextContent("写正文");
+    expect(screen.getByTestId("workflow-progress")).toHaveTextContent("审查");
+    expect(screen.getByTestId("workflow-progress")).toHaveTextContent("硬事实检查");
+    expect(screen.queryByText("不应该出现在左侧的正文")).not.toBeInTheDocument();
+
+    m.push({ type: "done" });
+    await waitFor(() => expect(screen.queryByTestId("streaming-message")).not.toBeInTheDocument());
+    expect(screen.queryByText("不应该出现在左侧的正文")).not.toBeInTheDocument();
+  });
 });

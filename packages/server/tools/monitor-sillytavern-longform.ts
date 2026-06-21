@@ -10,7 +10,6 @@ import { resolveAppPaths, type AppPaths } from "../src/config/paths.js";
 import { loadConfig } from "../src/config/load.js";
 import { loadSecrets } from "../src/config/secrets.js";
 import { createModelManager } from "../src/ai/model-manager.js";
-import { buildWriteContext } from "../src/ai/context-builder/builder.js";
 import { loadBookSnapshot } from "../src/ai/context-builder/snapshot.js";
 import {
   buildChapterAuditContext,
@@ -21,6 +20,7 @@ import {
 import { writeWithAudit } from "../src/ai/orchestrator/write-with-audit.js";
 import { buildArchiveSummary, recordChapterState } from "../src/ai/orchestrator/record-state.js";
 import { sanitizeChapterOutput } from "../src/ai/orchestrator/output-sanitize.js";
+import { createHardFactQualityGate } from "../src/ai/quality-gates/hard-fact-gate.js";
 import {
   buildSillyTavernLongformVerdict,
   detectMetaOutputLeakage,
@@ -138,26 +138,16 @@ async function importFile(
 }
 
 function intentForChapter(chapterNo: number): string {
+  // 通用写作指令,不硬编码任何题材词汇
   const controls = [
-    "继续，但不要急着解释系统全貌；让主角在压力下做选择，并保持捕捉规则一致。",
-    "上一章的状态栏、捕捉规则、契约数量和代价要延续，不要突然换设定。",
+    "继续推进剧情，让主角在压力下做选择，并保持已有设定一致。",
+    "上一章建立的状态、规则和关系要延续，不要突然换设定。",
     "让世界书里的核心设定自然进入剧情，不要写成百科说明。",
     "以读者视角检查前文伏笔，推进一个矛盾，但不要一次性回收全部。",
-  ];
-  const focus = [
-    "捕捉",
-    "状态栏",
-    "宠物",
-    "契约",
-    "天界",
-    "魔界",
-    "宠物捕捉系统",
-    "系统",
   ];
   return [
     `第 ${chapterNo} 章。`,
     controls[(chapterNo - 1) % controls.length],
-    `本章必须自然触发这些关键词：${focus[(chapterNo - 1) % focus.length]}、捕捉、状态栏、系统。`,
   ].join(" ");
 }
 
@@ -186,13 +176,20 @@ function loadSnapshot(handle: BookHandle) {
 }
 
 function createReaderContinuityIssue(handle: BookHandle): string {
+  // 通用连续性提醒,不硬编码任何题材词汇
+  // 从已有角色状态和通用记录里提取关键信息
+  const characters = handle.charactersRepo.list();
+  const stateKeys = characters.flatMap((c) => Object.keys(c.currentState ?? {}));
+  const stateHint = stateKeys.length > 0
+    ? `已建立的角色状态属性(${stateKeys.slice(0, 5).join("、")})`
+    : "已建立的角色状态和设定";
   return handle.readerIssuesRepo.create({
     chapterNo: 4,
     type: "continuity",
     severity: "warning",
-    note: "状态栏、捕捉规则、契约数量与代价必须在后续章节保持连续，不能突然改设定。",
-    evidence: "前四章已经建立系统状态栏、捕捉规则和契约代价。",
-    suggestedAction: "下一章继续显示这些规则，并让变化有明确因果。",
+    note: `${stateHint}必须在后续章节保持连续，不能突然改设定。`,
+    evidence: "前四章已经建立关键状态和规则。",
+    suggestedAction: "下一章继续保持这些状态的一致性，并让变化有明确因果。",
     status: "open",
   }).id;
 }
@@ -224,17 +221,9 @@ function extractBlockSnippets(text: string, heading: string): string[] {
 
 function buildContextReport(handle: BookHandle, chapterNo: number): ChapterMonitorReport {
   const userIntent = intentForChapter(chapterNo);
-  const snapshot = loadSnapshot(handle);
-  const context = buildWriteContext({
-    snapshot,
-    currentChapterNo: chapterNo,
-    intent: {
-      characters: ["主角"],
-      foreshadowing: ["系统", "捕捉", "状态栏"],
-      records: ["系统", "捕捉", "状态栏", "宠物", "契约", "天界", "魔界"],
-      userMessage: userIntent,
-    },
-  });
+  // 使用与 live 模式相同的 buildChapterWriteMessages 路径,
+  // 确保正则脚本和 prompt blocks 一致进入上下文
+  const context = buildChapterWriteMessages(handle, chapterNo, userIntent);
   const diagnostics = context.diagnostics ?? {
     promptPresetBlockIds: [],
     promptRegexScriptsApplied: [],
@@ -272,12 +261,12 @@ function saveSyntheticChapterState(
     : "本章没有世界书进入上下文。";
   handle.chaptersRepo.saveSummary({
     chapterNo: report.chapterNo,
-    oneLiner: `第 ${report.chapterNo} 章围绕系统捕捉推进。`,
-    paragraph: `${report.userIntent} ${worldbookNote} 主角保持状态栏、捕捉规则和阵营压力的连续性。`,
+    oneLiner: `第 ${report.chapterNo} 章监控占位摘要。`,
+    paragraph: `${report.userIntent} ${worldbookNote} 保持已有设定和状态的连续性。`,
     keyEvents: [{
-      event: `chapter-${report.chapterNo}-capture-continuity`,
-      characters: ["主角"],
-      foreshadowingRefs: ["系统", "捕捉", "状态栏"],
+      event: `chapter-${report.chapterNo}-context-monitor`,
+      characters: [],
+      foreshadowingRefs: [],
     }],
     generatedAt: Date.now(),
     reasoningContent: null,
@@ -362,6 +351,7 @@ async function runRecordChapterState(input: {
   chapterContent: string;
   abortSignal: AbortSignal;
   deepestPrompt: string;
+  qualityGateResult?: { passed: boolean; blockingIssues: string[] };
 }): Promise<{
   attempted: boolean;
   succeeded: boolean;
@@ -391,6 +381,7 @@ async function runRecordChapterState(input: {
       chapterNo: input.chapterNo,
       chapterContent: input.chapterContent,
       archiveSummary: buildRecordArchiveSummary(input.handle),
+      qualityGateResult: input.qualityGateResult,
     },
   )) {
     if (ev.type === "tool_call_start") toolCallCount += 1;
@@ -438,10 +429,15 @@ async function runLiveChapter(input: {
   let repairVerdict: string | undefined;
   let repairStillCritical: boolean | undefined;
   let writeError: string | undefined;
+  /** 从 writeWithAudit 事件流里捕获的硬事实闸门结果 */
+  let hardFactGateResult: { passed: boolean; blockingIssues: string[] } | undefined;
   const auditCtx = buildChapterAuditContext(input.handle, input.chapterNo, userIntent).auditCtx;
   const requiredSections = extractRequiredOutputSections(writeContext.messages.map((message) => ({
     content: String(message.content),
   })));
+
+  // 创建硬事实闸门(通用,不依赖题材词汇)
+  const hardFactGate = createHardFactQualityGate({ handle: input.handle });
 
   await runWithTimeout(`chapter ${input.chapterNo}`, input.timeoutMs, async (signal) => {
     for await (const ev of writeWithAudit(
@@ -459,18 +455,25 @@ async function runLiveChapter(input: {
         prebuiltMessages: writeContext.messages,
         auditCtx,
         enableRepair: true,
-        qualityGate: ({ chapterContent }) => [
-          ...detectMissingRequiredSections(chapterContent, requiredSections).map((note) => ({
-            dimension: "required_output_section",
-            severity: "critical" as const,
-            note,
-          })),
-          ...detectMetaOutputLeakage(chapterContent).map((issue) => ({
-            dimension: "meta_output_leakage",
-            severity: "critical" as const,
-            note: `meta output leakage: ${issue}`,
-          })),
-        ],
+        broadcastHardFactGate: true,
+        qualityGate: async (gateInput) => {
+          // 1. 必填段落 + meta 泄漏检测(已有逻辑)
+          const sectionIssues = [
+            ...detectMissingRequiredSections(gateInput.chapterContent, requiredSections).map((note) => ({
+              dimension: "required_output_section",
+              severity: "critical" as const,
+              note,
+            })),
+            ...detectMetaOutputLeakage(gateInput.chapterContent).map((issue) => ({
+              dimension: "meta_output_leakage",
+              severity: "critical" as const,
+              note: `meta output leakage: ${issue}`,
+            })),
+          ];
+          // 2. 硬事实一致性闸门(通用)
+          const hardFactIssues = await hardFactGate(gateInput);
+          return [...sectionIssues, ...hardFactIssues];
+        },
         abortSignal: signal,
         deepestPrompt: input.deepestPrompt,
       },
@@ -493,6 +496,13 @@ async function runLiveChapter(input: {
         repairVerdict = String(result.verdict ?? "");
         repairStillCritical = Boolean(result.stillCritical);
       }
+      if (ev.type === "tool_call_end" && ev.toolName === "hard_fact_gate") {
+        const result = ev.result as { passed?: boolean; blockingIssues?: string[] };
+        hardFactGateResult = {
+          passed: result.passed ?? true,
+          blockingIssues: result.blockingIssues ?? [],
+        };
+      }
       if (ev.type === "error") {
         writeError = `${ev.errorClass}: ${ev.message}`;
         throw new Error(writeError);
@@ -514,6 +524,7 @@ async function runLiveChapter(input: {
       chapterContent: text,
       abortSignal: signal,
       deepestPrompt: input.deepestPrompt,
+      qualityGateResult: hardFactGateResult,
     });
     recordStateAttempted = recordResult.attempted;
     recordStateSucceeded = recordResult.succeeded;
@@ -725,7 +736,7 @@ async function createMonitorBook(app: ReturnType<typeof createApp>) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       title: `SillyTavern Longform Monitor ${Date.now()}`,
-      genre: "宠物捕捉系统",
+      genre: "longform-monitor",
     }),
   });
   if (create.status !== 201) {
@@ -827,13 +838,13 @@ async function main() {
       : await importFile(app, book.id, args.worldbookPath);
     handle.bookMetaRepo.set(
       "premise",
-      "一本长篇宠物捕捉系统小说，重点验证状态栏、捕捉规则、契约代价、阵营冲突与角色记忆的连续性。",
+      "一本长篇小说，重点验证状态、规则、关系与角色记忆的连续性。",
     );
     handle.bookMetaRepo.set(
       "tone",
       "读者视角、剧情推进优先、设定自然进入正文、避免百科式解释",
     );
-    handle.bookMetaRepo.set("genre", "宠物捕捉系统");
+    handle.bookMetaRepo.set("genre", "longform-monitor");
 
     const outDir = path.join(repoRoot, "reports", "live-runs");
     fs.mkdirSync(outDir, { recursive: true });

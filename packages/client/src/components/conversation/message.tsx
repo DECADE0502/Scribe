@@ -2,6 +2,26 @@ import { useState } from "react";
 import type { ChatMessage } from "../../stores/conversation.js";
 import { t } from "../../i18n/zh-CN.js";
 
+/** 工具名 → 中文标签 */
+const TOOL_LABELS: Record<string, string> = {
+  chapter_audit: "审查",
+  chapter_repair: "修复",
+  chapter_repair_audit: "修复后审查",
+  hard_fact_gate: "硬事实检查",
+  record_chapter_state: "记录状态",
+  create_character: "登记角色",
+  update_character_state: "更新角色状态",
+  add_character_appearance: "记录出场",
+  add_foreshadowing: "登记伏笔",
+  pay_foreshadowing: "回收伏笔",
+  add_timeline_event: "记录时间线",
+  upsert_record_item: "更新记录",
+  create_record_collection: "创建记录集合",
+};
+
+/** 写作流程的工具集合——有这些工具时不显示正文 */
+const WRITING_TOOLS = new Set(["chapter_write", "chapter_audit", "record_chapter_state", "hard_fact_gate", "chapter_repair", "chapter_repair_audit"]);
+
 export function Message(props: { m: ChatMessage }) {
   const { m } = props;
   const [showReasoning, setShowReasoning] = useState(false);
@@ -15,6 +35,9 @@ export function Message(props: { m: ChatMessage }) {
       </div>
     );
   }
+
+  // 判断是否是写作流程(有写作工具调用)——写作流程不显示正文
+  const isWritingFlow = m.toolEvents?.some(ev => WRITING_TOOLS.has(ev.toolName));
 
   return (
     <div
@@ -55,13 +78,21 @@ export function Message(props: { m: ChatMessage }) {
                   marginBottom: 2,
                 }}
               >
-                ⚙ {t.conversation.toolCalled}:{ev.toolName}
+                {TOOL_LABELS[ev.toolName] ?? ev.toolName}
               </span>
             ))}
           </div>
         )}
-        {m.content}
-        {!isUser && m.reasoning && m.reasoning.trim() && (
+        {/* 写作流程不显示正文,只显示"正文已生成,请在右侧编辑器查看" */}
+        {isWritingFlow
+          ? (
+            <div>
+              {m.workflowStages && <CompletedWorkflow stages={m.workflowStages} />}
+              <span style={{ color: "#999", fontSize: 13 }}>正文已生成,请在右侧编辑器查看</span>
+            </div>
+          )
+          : m.content}
+        {!isUser && m.reasoning && m.reasoning.trim() && !isWritingFlow && (
           <div style={{ marginTop: 8 }}>
             <button
               data-testid="toggle-reasoning"
@@ -93,6 +124,19 @@ export function Message(props: { m: ChatMessage }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function CompletedWorkflow(props: { stages: NonNullable<ChatMessage["workflowStages"]> }) {
+  return (
+    <div data-testid="workflow-progress" style={{ display: "grid", gap: 4, marginBottom: 8 }}>
+      {props.stages.map((stage) => (
+        <div key={stage.id} style={{ display: "flex", gap: 8, fontSize: 12, color: stage.status === "done" ? "#34c759" : "#999" }}>
+          <span>{stage.status === "done" ? "✓" : "○"}</span>
+          <span>{stage.label}</span>
+        </div>
+      ))}
     </div>
   );
 }

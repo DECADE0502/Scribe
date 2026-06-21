@@ -8,8 +8,9 @@ import { computeUsageCost } from "../../ai/usage-tracker.js";
 import { resolveDeepestPrompt } from "../../ai/prompts/deepest-prompt.js";
 import {
   buildBookPromptContext,
-  buildChapterAuditContext,
   buildChapterWriteMessages,
+  buildChapterAuditContext,
+  enrichUserIntentWithOutline,
 } from "../../ai/context-builder/book-context.js";
 import { loadBookSnapshot } from "../../ai/context-builder/snapshot.js";
 import { isOnboardComplete } from "../../ai/orchestrator/onboard-completeness.js";
@@ -100,7 +101,10 @@ export function autoRoutes(deps: AutoRoutesDeps) {
 
     // 章末状态记录 pass(spec §6.3)。记录用审查模型,这里就地把它的 usage 计入账,
     // 否则 auto-mode 只透传 tool 事件、丢弃 usage,导致 record-state 成本不入账。
-    const makeRecordState = (chapterNo: number): AsyncIterable<SseEvent> => {
+    const makeRecordState = (
+      chapterNo: number,
+      qualityGateResult?: { passed: boolean; blockingIssues: string[] },
+    ): AsyncIterable<SseEvent> => {
       const chapter = handle.chapterFiles.read(chapterNo);
       if (!chapter) return emptyIterable();
       const archiveSummary = buildArchiveSummary({
@@ -127,7 +131,14 @@ export function autoRoutes(deps: AutoRoutesDeps) {
           abortSignal: controller.signal,
           deepestPrompt,
         },
-        { chapterNo, chapterContent: chapter.content, archiveSummary },
+        {
+          chapterNo,
+          chapterContent: chapter.content,
+          archiveSummary,
+          qualityGateResult: qualityGateResult
+            ? { passed: qualityGateResult.passed, blockingIssues: qualityGateResult.blockingIssues }
+            : undefined,
+        },
       );
       return (async function* () {
         for await (const ev of inner) {
@@ -173,7 +184,7 @@ export function autoRoutes(deps: AutoRoutesDeps) {
             recordState: makeRecordState,
             // spec §6.1:逐章组装召回+最近摘要+通用记录集合+伏笔的完整防漂移上下文
             buildWriteMessages: (chapterNo) =>
-              buildChapterWriteMessages(handle, chapterNo, "").messages,
+              buildChapterWriteMessages(handle, chapterNo, enrichUserIntentWithOutline(handle.outlineRepo, chapterNo, "")).messages,
             buildAuditCtx: (chapterNo) =>
               buildChapterAuditContext(handle, chapterNo, "").auditCtx,
             deepestPrompt,

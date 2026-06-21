@@ -21,7 +21,7 @@ export interface AutoModeDeps extends Omit<WriteWithAuditDeps, "model" | "auditM
   usageStats?: UsageStatsLike;
   abortSignal?: AbortSignal;
   /** 可选:章末状态记录 pass(spec §6.3),audit 通过后调用 */
-  recordState?: (chapterNo: number) => AsyncIterable<SseEvent>;
+  recordState?: (chapterNo: number, qualityGateResult?: { passed: boolean; blockingIssues: string[] }) => AsyncIterable<SseEvent>;
   /**
    * 可选:为每章组装 spec §6.1 完整防漂移上下文(召回+最近摘要+通用记录集合+伏笔)。
    * 提供时优先于静态 writeCtx,因为召回结果逐章变化,必须按当前章号重算。
@@ -96,6 +96,8 @@ export async function* runAutoMode(
     // 避免一次瞬时断流就终结整个 /auto 长跑(只有写阶段断流才会"未落盘")。
     const MAX_WRITE_ATTEMPTS = 3;
     let chapterFailed = false;
+    /** 从 writeWithAudit 事件流里捕获的硬事实闸门结果 */
+    let hardFactGateResult: { passed: boolean; blockingIssues: string[] } | undefined;
     for (let attempt = 1; attempt <= MAX_WRITE_ATTEMPTS; attempt++) {
       if (deps.abortSignal?.aborted) {
         yield { type: "auto_status", state: "paused_by_user", remaining, doneChapters: [...doneChapters] };
@@ -118,12 +120,21 @@ export async function* runAutoMode(
           prebuiltMessages: deps.buildWriteMessages?.(next),
           auditCtx: deps.buildAuditCtx?.(next) ?? input.auditCtx,
           enableRepair: true,
+          broadcastHardFactGate: true,
           abortSignal: deps.abortSignal,
           deepestPrompt: deps.deepestPrompt,
         },
       )) {
         if (ev.type === "done") continue; // auto 流自管终结
         if (ev.type === "error") { errEvent = ev; break; }
+        // 捕获硬事实闸门结果
+        if (ev.type === "tool_call_end" && ev.toolName === "hard_fact_gate") {
+          const result = ev.result as { passed?: boolean; blockingIssues?: string[] };
+          hardFactGateResult = {
+            passed: result.passed ?? true,
+            blockingIssues: result.blockingIssues ?? [],
+          };
+        }
         buffered.push(ev);
       }
 
@@ -169,10 +180,11 @@ export async function* runAutoMode(
     }
 
     // 章末状态记录(角色状态/出场/伏笔/时间线/通用记录条目)
+    // 硬事实闸门未通过时,qualityGateResult 传入 recordChapterState 阻断状态记录
     if (deps.recordState) {
       yield { type: "tool_call_start", toolName: "record_chapter_state", args: { chapterNo: next } };
       let recordOk = true;
-      for await (const ev of deps.recordState(next)) {
+      for await (const ev of deps.recordState(next, hardFactGateResult)) {
         if (ev.type === "error") {
           recordOk = false;
           // 记录失败不阻断自动写作,降级为提示

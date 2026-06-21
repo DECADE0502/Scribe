@@ -42,6 +42,7 @@ export interface BookHandle {
 export interface BookRegistry {
   libraryDb: Database;
   booksRepo: ReturnType<typeof createBooksRepo>;
+  paths: AppPaths;
   open(bookId: string): BookHandle;
   /** 当前已打开(活跃)的书 id —— 自动快照只备份活跃的书 */
   openBookIds(): string[];
@@ -111,5 +112,5 @@ export function createBookRegistry(opts: BookRegistryOpts): BookRegistry {
     return [...handles.keys()];
   }
 
-  return { libraryDb, booksRepo, open, openBookIds, closeBook, closeAll };
+  return { libraryDb, booksRepo, paths: opts.paths, open, openBookIds, closeBook, closeAll };
 }

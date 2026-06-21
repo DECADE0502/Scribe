@@ -126,7 +126,14 @@ function makeSequencedStreamModel(chunksByCall: string[][]): any {
     provider: "stub",
     modelId: "stub-sequenced-stream",
     async doGenerate() {
-      throw new Error("not used");
+      const chunks = chunksByCall[Math.min(callCount, chunksByCall.length - 1)] ?? [];
+      callCount += 1;
+      return {
+        text: chunks.join(""),
+        finishReason: "stop",
+        usage: { promptTokens: 5, completionTokens: chunks.length },
+        rawCall: { rawPrompt: null, rawSettings: {} },
+      };
     },
     async doStream() {
       const chunks = chunksByCall[Math.min(callCount, chunksByCall.length - 1)] ?? [];
@@ -621,7 +628,7 @@ describe("writeWithAudit", () => {
   });
 
   it("repair 阶段 LLM 抛错:初审落盘保留,流以 error 终结", async () => {
-    // write 用正常模型,repair 阶段(同一个 model)第二次 doStream 抛错。
+    // write 用正常模型,repair 阶段(同一个 model)第二次 doGenerate 抛错。
     // 用一个分阶段模型:第一次成功输出,第二次抛错。
     let callCount = 0;
     const flakyModel: any = {
@@ -629,30 +636,27 @@ describe("writeWithAudit", () => {
       provider: "stub",
       modelId: "flaky",
       async doGenerate() {
-        throw new Error("not used");
-      },
-      async doStream() {
         callCount++;
         if (callCount === 1) {
           return {
-            stream: new ReadableStream({
-              start(ctrl) {
-                ctrl.enqueue({ type: "text-delta", textDelta: "原文段落" });
-                ctrl.enqueue({
-                  type: "finish",
-                  finishReason: "stop",
-                  usage: { promptTokens: 5, completionTokens: 4 },
-                });
-                ctrl.close();
-              },
-            }),
+            text: "原文段落",
+            finishReason: "stop",
+            usage: { promptTokens: 5, completionTokens: 4 },
             rawCall: { rawPrompt: null, rawSettings: {} },
           };
         }
+        throw new Error("repair generate boom");
+      },
+      async doStream() {
         return {
           stream: new ReadableStream({
             start(ctrl) {
-              ctrl.error(new Error("repair stream boom"));
+              ctrl.enqueue({
+                type: "finish",
+                finishReason: "stop",
+                usage: { promptTokens: 1, completionTokens: 0 },
+              });
+              ctrl.close();
             },
           }),
           rawCall: { rawPrompt: null, rawSettings: {} },
@@ -674,7 +678,7 @@ describe("writeWithAudit", () => {
     // 流以 error 终结(replace done,符合 B-3-002)
     expect(evs.find((e: any) => e.type === "done")).toBeUndefined();
     expect(evs.some((e: any) => e.type === "error")).toBe(true);
-    // chapter_repair 的 start/end 必须严格成对(repair 流抛错路径)
+    // chapter_repair 的 start/end 必须严格成对(repair 生成抛错路径)
     expect(
       evs.filter(
         (e: any) =>

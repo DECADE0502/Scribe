@@ -18,6 +18,17 @@ export interface ConversationDeps {
 
 export function conversationRoutes(deps: ConversationDeps = {}) {
   const app = new Hono();
+
+  // 拉取持久化对话历史（前端启动 / 刷新页面时加载）
+  app.get("/api/books/:bookId/conversation", async (c) => {
+    if (!deps.registry) return c.json({ error: "服务未就绪" }, 503);
+    const bookId = c.req.param("bookId");
+    const limit = Number(c.req.query("limit") ?? 100);
+    const handle = deps.registry.open(bookId);
+    const rows = handle.conversationsRepo.listLatest(limit).reverse();
+    return c.json({ messages: rows });
+  });
+
   app.post("/api/books/:bookId/conversation", async (c) => {
     const bookId = c.req.param("bookId");
     const body = await c.req.json().catch(() => ({}));

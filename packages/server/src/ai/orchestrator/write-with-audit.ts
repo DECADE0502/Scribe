@@ -20,6 +20,20 @@ import type { RepairContext } from "../prompts/repair-chapter.js";
 import { repairChapter, type RepairDeps } from "./repair-chapter.js";
 import { sanitizeChapterOutput } from "./output-sanitize.js";
 
+type ReadableChapterFilesLike = ChapterFilesLike & {
+  read(chapterNo: number): { content: string } | undefined;
+};
+
+function readChapterContent(
+  chapterFiles: ChapterFilesLike,
+  chapterNo: number,
+): string | undefined {
+  if ("read" in chapterFiles && typeof chapterFiles.read === "function") {
+    return (chapterFiles as ReadableChapterFilesLike).read(chapterNo)?.content;
+  }
+  return undefined;
+}
+
 /**
  * 端到端依赖。chaptersRepo 必须同时满足 write/repair 路径(saveVersion/
  * deleteVersion)与 audit/summary 落盘(saveAudit/saveSummary),用交叉类型
@@ -50,7 +64,15 @@ export interface WriteWithAuditInput extends WriteChapterInput {
     chapterContent: string;
     stage: "draft" | "repair";
     auditVerdict: string;
+    /** audit 模型提取的硬事实声明（如果 audit 输出了 hardFacts） */
+    auditHardFacts?: import("@scribe/shared").HardFactClaimOutput[];
   }) => RepairContext["issues"] | Promise<RepairContext["issues"]>;
+  /**
+   * 如果为 true,在 writeWithAudit 结束时通过 yield 一个
+   * tool_call_end(hard_fact_gate) 事件广播最终质量门禁结果,
+   * 供调用方(recordState)使用。默认 false。
+   */
+  broadcastHardFactGate?: boolean;
 }
 
 /**
@@ -75,10 +97,10 @@ export async function* writeWithAudit(
   input: WriteWithAuditInput,
 ): AsyncIterable<SseEvent> {
   // ---- 阶段 1: 写章节(流式) ----
-  let writtenContent = "";
   let writeSucceeded = false;
+  /** 最终质量门禁 issues（用于广播给 recordState 调用方） */
+  let finalQualityIssues: RepairContext["issues"] = [];
   for await (const ev of writeChapterSimple(deps, input)) {
-    if (ev.type === "text_delta") writtenContent += ev.delta;
     if (ev.type === "done") {
       writeSucceeded = true;
       // 不直接转发 done,等到端到端流程结束再发,避免双重终结
@@ -94,7 +116,7 @@ export async function* writeWithAudit(
   // 写阶段汇报 done 但实际未产出任何文本时,流必须以终结事件收尾。
   // writeChapterSimple 在 buffer 为空时不会落盘,这里也不会产出任何下游
   // 工件,直接以 error(empty_response) 结束,让客户端可观察终结状态。
-  const finalWrittenContent = sanitizeChapterOutput(writtenContent);
+  const finalWrittenContent = sanitizeChapterOutput(readChapterContent(deps.chapterFiles, input.chapterNo) ?? "");
   if (!finalWrittenContent.trim()) {
     yield {
       type: "error",
@@ -150,11 +172,13 @@ export async function* writeWithAudit(
     chapterContent: finalWrittenContent,
     stage: "draft",
     auditVerdict: auditResult.output.verdict,
+    auditHardFacts: auditResult.hardFacts,
   });
   if (draftQualityIssues.error) {
     yield draftQualityIssues.error;
     return;
   }
+  finalQualityIssues = draftQualityIssues.issues;
   const shouldRepair =
     enableRepair &&
     (auditResult.output.verdict === "critical" || draftQualityIssues.issues.length > 0);
@@ -189,7 +213,6 @@ export async function* writeWithAudit(
       result: { success, ...extra },
     });
 
-    let repairContent = "";
     let repairOk = false;
     const repairDeps: RepairDeps = {
       model: deps.model,
@@ -207,7 +230,6 @@ export async function* writeWithAudit(
         ...(input.auditCtx as Partial<AuditContext>),
       },
     })) {
-      if (ev.type === "text_delta") repairContent += ev.delta;
       if (ev.type === "done") {
         repairOk = true;
         continue;
@@ -226,7 +248,7 @@ export async function* writeWithAudit(
     // 上面 return 不会走到这里;此处是为了让类型/控制流显式
     if (repairStreamErrored) return;
 
-    const finalRepairContent = sanitizeChapterOutput(repairContent);
+    const finalRepairContent = sanitizeChapterOutput(readChapterContent(deps.chapterFiles, input.chapterNo) ?? "");
     if (repairOk && finalRepairContent.trim()) {
       try {
         const reAudit = await auditChapter(
@@ -249,12 +271,14 @@ export async function* writeWithAudit(
           chapterContent: finalRepairContent,
           stage: "repair",
           auditVerdict: reAudit.output.verdict,
+          auditHardFacts: reAudit.hardFacts,
         });
         if (repairQualityIssues.error) {
           yield repairQualityIssues.error;
           yield repairEnd(true, { reason: "repair_done_but_quality_gate_failed" });
           return;
         }
+        finalQualityIssues = repairQualityIssues.issues;
         yield repairEnd(true);
         yield {
           type: "tool_call_end",
@@ -285,6 +309,21 @@ export async function* writeWithAudit(
     }
   }
 
+  // 广播最终质量门禁结果,供调用方(recordState)使用
+  if (input.broadcastHardFactGate) {
+    const blockingIssues = finalQualityIssues
+      .filter((issue) => issue.severity === "critical")
+      .map((issue) => issue.note);
+    yield {
+      type: "tool_call_end",
+      toolName: "hard_fact_gate",
+      result: {
+        passed: blockingIssues.length === 0,
+        blockingIssues,
+      },
+    };
+  }
+
   yield { type: "done" };
 }
 
@@ -295,6 +334,7 @@ async function runQualityGate(
     chapterContent: string;
     stage: "draft" | "repair";
     auditVerdict: string;
+    auditHardFacts?: import("@scribe/shared").HardFactClaimOutput[];
   },
 ): Promise<{
   issues: RepairContext["issues"];

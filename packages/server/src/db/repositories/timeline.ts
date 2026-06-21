@@ -55,5 +55,8 @@ export function createTimelineRepo(db: Database) {
     delete(id: string): void {
       db.prepare("DELETE FROM timeline_events WHERE id=?").run(id);
     },
+    deleteFromChapter(fromChapterNo: number): number {
+      return db.prepare("DELETE FROM timeline_events WHERE chapter_no >= ?").run(fromChapterNo).changes;
+    },
   };
 }

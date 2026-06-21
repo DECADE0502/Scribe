@@ -1,4 +1,5 @@
 import {
+  generateText,
   streamText,
   type LanguageModel,
   type CoreMessage,
@@ -28,6 +29,17 @@ export interface LlmCallInput {
    */
   maxSteps?: number;
   providerOptions?: ProviderOptions;
+}
+
+export interface GeneratedLlmText {
+  text: string;
+  reasoning?: string;
+  usage: {
+    promptTokens: number;
+    completionTokens: number;
+    cachedTokens?: number;
+    reasoningTokens?: number;
+  };
 }
 
 /**
@@ -116,4 +128,24 @@ export async function* streamLlm(input: LlmCallInput): AsyncIterable<SseEvent> {
       message: String(err?.message ?? err),
     };
   }
+}
+
+export async function generateLlmText(input: Omit<LlmCallInput, "tools" | "maxSteps">): Promise<GeneratedLlmText> {
+  const result = await generateText({
+    model: input.model,
+    messages: input.messages,
+    abortSignal: input.abortSignal,
+    providerOptions: input.providerOptions,
+  });
+  const ds = readDeepSeekUsage(result.providerMetadata);
+  return {
+    text: result.text,
+    reasoning: result.reasoning,
+    usage: {
+      promptTokens: result.usage.promptTokens ?? 0,
+      completionTokens: result.usage.completionTokens ?? 0,
+      cachedTokens: ds.cachedPromptTokens,
+      reasoningTokens: ds.reasoningTokens,
+    },
+  };
 }

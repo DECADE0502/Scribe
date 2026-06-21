@@ -6,12 +6,21 @@ export interface ToolEvent {
   payload?: unknown;
 }
 
+export type WorkflowStageStatus = "pending" | "active" | "done" | "error";
+
+export interface WorkflowStage {
+  id: string;
+  label: string;
+  status: WorkflowStageStatus;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
   reasoning?: string;
   toolEvents?: ToolEvent[];
+  workflowStages?: WorkflowStage[];
   error?: { message: string; errorClass: string };
 }
 
@@ -20,6 +29,8 @@ export interface StreamingState {
   text: string;
   reasoning: string;
   toolEvents: ToolEvent[];
+  workflowStages: WorkflowStage[];
+  suppressText: boolean;
 }
 
 export interface AutoStatus {
@@ -34,16 +45,23 @@ interface ConversationStore {
   streaming: StreamingState | null;
   error: { message: string; errorClass: string } | null;
   autoStatus: AutoStatus | null;
+  /** 章节提交触发器:对话流程写完一章后递增,编辑器监听此值刷新 */
+  chapterRefreshTrigger: number;
   appendUserMessage(content: string): void;
   appendSystemMessage(content: string): void;
   beginStream(id: string): void;
   appendDelta(delta: string): void;
   appendReasoning(delta: string): void;
   pushToolEvent(ev: ToolEvent): void;
+  setWorkflowStages(stages: WorkflowStage[]): void;
+  updateWorkflowStage(id: string, status: WorkflowStageStatus): void;
+  setSuppressText(suppress: boolean): void;
   finishStream(): void;
   setError(message: string, errorClass: string): void;
   clearError(): void;
   setAutoStatus(status: AutoStatus | null): void;
+  triggerChapterRefresh(): void;
+  hydrate(msgs: ChatMessage[]): void;
   reset(): void;
 }
 
@@ -55,6 +73,7 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
   streaming: null,
   error: null,
   autoStatus: null,
+  chapterRefreshTrigger: 0,
 
   appendUserMessage(content) {
     set(s => ({ messages: [...s.messages, { id: nextId(), role: "user", content }] }));
@@ -65,12 +84,14 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
   },
 
   beginStream(id) {
-    set({ streaming: { id, text: "", reasoning: "", toolEvents: [] }, error: null });
+    set({ streaming: { id, text: "", reasoning: "", toolEvents: [], workflowStages: [], suppressText: false }, error: null });
   },
 
   appendDelta(delta) {
     set(s => s.streaming
-      ? { streaming: { ...s.streaming, text: s.streaming.text + delta } }
+      ? { streaming: s.streaming.suppressText
+        ? s.streaming
+        : { ...s.streaming, text: s.streaming.text + delta } }
       : {});
   },
 
@@ -86,6 +107,31 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
       : {});
   },
 
+  setWorkflowStages(stages) {
+    set(s => s.streaming
+      ? { streaming: { ...s.streaming, workflowStages: stages } }
+      : {});
+  },
+
+  updateWorkflowStage(id, status) {
+    set(s => s.streaming
+      ? {
+        streaming: {
+          ...s.streaming,
+          workflowStages: s.streaming.workflowStages.map(stage =>
+            stage.id === id ? { ...stage, status } : stage,
+          ),
+        },
+      }
+      : {});
+  },
+
+  setSuppressText(suppress) {
+    set(s => s.streaming
+      ? { streaming: { ...s.streaming, suppressText: suppress } }
+      : {});
+  },
+
   finishStream() {
     const { streaming } = get();
     if (!streaming) return;
@@ -95,6 +141,7 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
       content: streaming.text,
       reasoning: streaming.reasoning || undefined,
       toolEvents: streaming.toolEvents.length ? streaming.toolEvents : undefined,
+      workflowStages: streaming.workflowStages.length ? streaming.workflowStages : undefined,
     };
     set(s => ({ messages: [...s.messages, msg], streaming: null }));
   },
@@ -107,6 +154,7 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
         id: streaming.id,
         role: "assistant",
         content: streaming.text,
+        workflowStages: streaming.workflowStages.length ? streaming.workflowStages : undefined,
         error: { message, errorClass },
       };
       set(s => ({ messages: [...s.messages, msg], streaming: null, error: { message, errorClass } }));
@@ -121,6 +169,18 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
 
   setAutoStatus(status) {
     set({ autoStatus: status });
+  },
+
+  triggerChapterRefresh() {
+    set(s => ({ chapterRefreshTrigger: s.chapterRefreshTrigger + 1 }));
+  },
+
+  hydrate(msgs) {
+    set(s => ({
+      messages: s.messages.length === 0 ? msgs : s.messages,
+      streaming: null,
+      error: null,
+    }));
   },
 
   reset() {

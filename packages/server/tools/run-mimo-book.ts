@@ -42,7 +42,7 @@ const SEED = `我想写一部都市异能小说。主角叫陈默,28岁,普通�
 背景设定在现代都市江城,暗中有一个管理异能者的秘密组织"观测局",与之对立的"裂隙会"在制造异能犯罪牟利。
 基调:悬疑、快节奏、带爽感。篇幅约30万字。
 大纲方向:第一卷"觉醒与隐藏",陈默藏住能力卷入一桩命案;第二卷"加入观测局",调查连环异能案;第三卷"裂隙真相",揭开裂隙会阴谋与自己的身世。
-请把设定建好:题材板块按都市异能设计(比如 异能能力、组织势力、关键道具、金钱/资源等),建好主角陈默的角色卡,并搭出一级大纲(三卷)。`;
+请把设定建好:题材板块按都市异能设计(比如 异能能力、组织势力、关键道具、金钱/资源等),建好主角陈默的角色卡,可以保留三卷结构,但必须搭出接下来 3-6 章的章级大纲,每章写清具体事件、出场角色、冲突推进和结尾落点。`;
 
 function snapshot() {
   const h = registry.open(bookId);
@@ -72,7 +72,7 @@ function makeRecordState(chapterNo: number): AsyncIterable<SseEvent> {
 async function onboard() {
   const h = registry.open(bookId);
   const history: CoreMessage[] = [];
-  const turns = ["__seed__", "请把缺失的设定补全(尤其一级大纲三卷、主角卡),建好后说一句开始写。", "继续补全所有缺失项。"];
+  const turns = ["__seed__", "请把缺失的设定补全(尤其章级大纲、主角卡),建好后说一句开始写。", "继续补全所有缺失项。"];
   for (let i = 0; i < turns.length; i++) {
     const message = i === 0 ? SEED : turns[i]!;
     const comp = isOnboardComplete(snapshot());

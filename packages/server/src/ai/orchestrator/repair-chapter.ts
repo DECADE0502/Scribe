@@ -1,6 +1,6 @@
 import type { LanguageModel } from "ai";
 import type { SseEvent } from "@scribe/shared";
-import { streamLlm } from "../llm-call.js";
+import { generateLlmText } from "../llm-call.js";
 import { prependDeepestPrompt } from "../prompts/deepest-prompt.js";
 import {
   REPAIR_PROMPT,
@@ -60,31 +60,22 @@ export async function* repairChapter(
     { role: "system" as const, content: REPAIR_PROMPT },
     { role: "user" as const, content: userPrompt },
   ], deps.deepestPrompt);
-  let buffer = "";
-  let success = false;
-  for await (const ev of streamLlm({
-    model: deps.model,
-    messages,
-    abortSignal: deps.abortSignal,
-  })) {
-    if (ev.type === "text_delta") {
-      buffer += ev.delta;
-      yield ev;
-      continue;
-    }
-    if (ev.type === "done") {
-      // 暂存 done,等落盘成功再发,避免落盘失败时 done/error 双重终结事件
-      success = true;
-      continue;
-    }
-    if (ev.type === "error") {
-      yield ev;
-      return;
-    }
-    yield ev;
+  let generated;
+  try {
+    generated = await generateLlmText({
+      model: deps.model,
+      messages,
+      abortSignal: deps.abortSignal,
+    });
+  } catch (error) {
+    yield {
+      type: "error",
+      errorClass: "repair_failed",
+      message: String((error as Error)?.message ?? error),
+    };
+    return;
   }
-  if (!success) return;
-  const content = sanitizeChapterOutput(buffer);
+  const content = sanitizeChapterOutput(generated.text);
   if (!content.trim()) return;
 
   let saved: { versionNo: number } | undefined;

@@ -3,7 +3,7 @@ import {
   type ChapterAuditOutput,
 } from "@scribe/shared";
 
-export const AUDIT_SUMMARIZE_PROMPT = `你是 Scribe 的章末审读员,同时负责生成本章摘要。
+export const AUDIT_SUMMARIZE_PROMPT = `你是 Scribe 的章末审读员,同时负责生成本章摘要和硬事实声明。
 你将收到:
 1) 本书 premise + tone + rules.md
 2) 主要角色卡 + 活跃伏笔列表
@@ -37,11 +37,30 @@ export const AUDIT_SUMMARIZE_PROMPT = `你是 Scribe 的章末审读员,同时�
     "keyEvents": [
       { "event": "事件描述", "characters": ["角色名"], "foreshadowingRefs": ["伏笔标签"] }
     ]
-  }
+  },
+  "hardFacts": [
+    {
+      "entity": "实体名(角色名/物品名/地点名/系统名)",
+      "attribute": "属性名(如:HP/SP/捕捉球数量/位置/契约状态/金币/弹药)",
+      "value": "值 — 数字(73)、字符串('江城')、或 {quantity: 2, unit: '个'}",
+      "factType": "state|quantity|location|ownership|relationship|deadline|cooldown|injury|task",
+      "scope": "book|character|location|chapter|scene",
+      "operation": "set|increase|decrease|move|transfer|resolve|damage|heal(可选,仅当本章展示了变化原因时填)",
+      "cause": "变化原因(可选,正文里明确展示的原因,如'捕捉失败消耗1枚')",
+      "evidence": "正文原文片段(必填,截取包含该事实的句子)"
+    }
+  ]
 }
 
 判断 verdict 的规则:任一 issue 为 critical -> critical;否则任一 warning -> warning;全部 ok -> ok。
-七个维度都要给出 score 和 note(没问题就 note "无明显问题")。`;
+七个维度都要给出 score 和 note(没问题就 note "无明显问题")。
+
+hardFacts 提取规则:
+- 只提取本章正文中**明确出现**的数值、状态、位置、所有权、关系、期限等硬事实。
+- 不要脑补未在正文中出现的设定。
+- 数值类事实(HP/SP/弹药/金币/等级等)必须附带原文 evidence。
+- 如果本章展示了某个属性的变化原因(如'捕捉失败消耗1枚'),务必在 operation 和 cause 里标明;没有明确原因的变化不要标 operation。
+- 如果本章没有出现任何可追踪的硬事实,hardFacts 返回空数组 []。`;
 
 /**
  * 解析 LLM 输出的章末审查 JSON,返回结构化对象。

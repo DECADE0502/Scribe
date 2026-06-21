@@ -7,12 +7,9 @@ const fetchMock = vi.fn();
 
 beforeEach(() => {
   fetchMock.mockReset();
-  // SidePanel 拉 characters/genre-sections,EditorPane 拉 chapters
-  fetchMock.mockResolvedValue({
-    ok: true,
-    status: 200,
-    json: async () => ({ characters: [], chapters: [], sections: [] }),
-  } as Response);
+  // These page-shell tests only assert layout. Keep child data requests pending so
+  // async child state updates do not leak act(...) warnings into this suite.
+  fetchMock.mockReturnValue(new Promise(() => {}) as Promise<Response>);
   vi.stubGlobal("fetch", fetchMock);
 });
 
@@ -31,7 +28,7 @@ function renderAt(path: string) {
 }
 
 describe("WorkspacePage", () => {
-  it("渲染三栏 + bookId 标识", () => {
+  it("renders three panes and book id label", () => {
     renderAt("/books/abc");
     expect(screen.getByTestId("page-workspace")).toBeInTheDocument();
     expect(screen.getByTestId("pane-conversation")).toBeInTheDocument();
@@ -40,17 +37,16 @@ describe("WorkspacePage", () => {
     expect(screen.getByTestId("book-id-label")).toHaveTextContent("abc");
   });
 
-  it("左栏对话面板,中栏编辑器,右栏资料面板", () => {
+  it("renders conversation, editor, and side panels", () => {
     renderAt("/books/x");
     expect(screen.getByTestId("conversation-pane")).toBeInTheDocument();
-    // 中栏现在是真实 EditorPane(加载态或空状态)
     expect(
       screen.queryByTestId("editor-pane") ?? screen.queryByTestId("editor-loading"),
     ).toBeInTheDocument();
     expect(screen.getByTestId("side-panel")).toBeInTheDocument();
   });
 
-  it("返回书架按钮存在", () => {
+  it("renders back to library button", () => {
     renderAt("/books/x");
     expect(screen.getByText(/返回书架/)).toBeInTheDocument();
   });

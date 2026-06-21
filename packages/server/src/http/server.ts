@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { LanguageModel } from "ai";
 import type { ModelInfo } from "@scribe/shared";
+import { log } from "../logger.js";
 import { conversationRoutes } from "./routes/conversation.js";
 import { chapterRoutes, type ChapterRoutesDeps } from "./routes/chapters.js";
 import { bookRoutes, type BookRoutesDeps } from "./routes/books.js";
@@ -44,8 +45,30 @@ export function createApp(deps: AppDeps = {}) {
   const auditModelInfo = deps.auditModelInfo ?? mm?.getAuditModelInfo();
   const getMasterPrompt = deps.getMasterPrompt ?? (mm ? () => mm.getMasterPrompt() : () => "");
 
+  // 自动构建 getChapterDeps:从 modelManager + bookRegistry 获取每本书的写作依赖
+  const getChapterDeps = deps.getChapterDeps ?? ((bookId: string) => {
+    if (!mm || !deps.bookRegistry) return undefined;
+    const model = mm.getModel();
+    if (!model) return undefined;
+    const handle = deps.bookRegistry.open(bookId);
+    return {
+      model,
+      chaptersRepo: handle.chaptersRepo,
+      chapterFiles: handle.chapterFiles,
+    };
+  });
+
   const app = new Hono();
   app.get("/api/health", (c) => c.json({ status: "ok", name: "scribe" }));
+  // 全局请求日志
+  app.use("*", async (c, next) => {
+    const start = Date.now();
+    await next();
+    const ms = Date.now() - start;
+    if (!c.req.path.startsWith("/sse")) {
+      log.info("http", `${c.req.method} ${c.req.path} → ${c.res.status} (${ms}ms)`);
+    }
+  });
   app.route("/", conversationRoutes({
     getModel,
     getAuditModel,
@@ -54,7 +77,7 @@ export function createApp(deps: AppDeps = {}) {
     onChapterCommitted: deps.onChapterCommitted,
     getMasterPrompt,
   }));
-  app.route("/", chapterRoutes({ getDeps: deps.getChapterDeps, registry: deps.bookRegistry, onChapterCommitted: deps.onChapterCommitted, getMasterPrompt }));
+  app.route("/", chapterRoutes({ getDeps: getChapterDeps, registry: deps.bookRegistry, onChapterCommitted: deps.onChapterCommitted, getMasterPrompt, getAuditModel, auditModelInfo }));
   if (deps.bookRegistry) {
     app.route("/", bookRoutes({ registry: deps.bookRegistry, getModel, getMasterPrompt }));
     app.route("/", reviseRoutes({ registry: deps.bookRegistry, getModel }));

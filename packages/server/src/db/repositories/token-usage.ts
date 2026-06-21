@@ -127,5 +127,15 @@ export function createTokenUsageRepo(db: Database) {
       if (!r || r.n === 0) return undefined;
       return { promptTokens: Math.round(r.p ?? 0), completionTokens: Math.round(r.c ?? 0) };
     },
+
+    /** 删 fromChapterNo 及之后所有章的成本记录，返回被删的总成本 */
+    deleteFromChapter(fromChapterNo: number): number {
+      const r = db
+        .prepare("SELECT COALESCE(SUM(cost_usd), 0) AS total FROM token_usage WHERE chapter_no >= ?")
+        .get(fromChapterNo) as { total: number } | undefined;
+      const cost = r?.total ?? 0;
+      db.prepare("DELETE FROM token_usage WHERE chapter_no >= ?").run(fromChapterNo);
+      return cost;
+    },
   };
 }

@@ -19,22 +19,28 @@ const okAudit = JSON.stringify({
   summary: { oneLiner: "一句话", paragraph: "段落".repeat(30), keyEvents: [] },
 });
 
-/** 前 failTimes 次 doStream 中途抛 terminated,之后正常产出正文 */
+/** 前 failTimes 次 doGenerate 抛 terminated(可被 isTransient 重试),之后正常产出正文 */
 function makeFlakyWriteModel(failTimes: number) {
   let calls = 0;
   return {
     specificationVersion: "v1" as const, provider: "stub", modelId: "stub-write",
-    async doGenerate() { throw new Error("not used"); },
-    async doStream() {
+    async doGenerate() {
       const n = ++calls;
+      if (n <= failTimes) {
+        throw new Error("terminated"); // 模拟 provider 瞬时失败,匹配 isTransient
+      }
+      return {
+        text: "完整正文。",
+        finishReason: "stop",
+        usage: { promptTokens: 10, completionTokens: 5 },
+        rawCall: { rawPrompt: null, rawSettings: {} },
+      };
+    },
+    async doStream() {
+      // 非流式写作路径不使用 doStream;保留兼容
       return {
         stream: new ReadableStream({
           start(ctrl) {
-            if (n <= failTimes) {
-              ctrl.enqueue({ type: "text-delta", textDelta: "半截" });
-              ctrl.error(new Error("terminated")); // 模拟 provider 断流
-              return;
-            }
             ctrl.enqueue({ type: "text-delta", textDelta: "完整正文。" });
             ctrl.enqueue({ type: "finish", finishReason: "stop", usage: { promptTokens: 10, completionTokens: 5 } });
             ctrl.close();

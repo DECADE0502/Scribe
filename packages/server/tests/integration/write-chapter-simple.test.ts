@@ -45,7 +45,7 @@ async function consume<T>(iter: AsyncIterable<T>): Promise<T[]> {
 }
 
 describe("writeChapterSimple", () => {
-  it("成功路径:文本流出后落地 .md + chapter_versions 1 行", async () => {
+  it("成功路径:默认不流式输出正文,但落地 .md + chapter_versions 1 行", async () => {
     const evs = await consume(
       writeChapterSimple(
         {
@@ -57,6 +57,7 @@ describe("writeChapterSimple", () => {
       ),
     );
     expect(evs.find((e) => e.type === "done")).toBeTruthy();
+    expect(evs.some((e) => e.type === "text_delta")).toBe(false);
     const file = path.join(tmp, "chapters", "0001.md");
     expect(fs.existsSync(file)).toBe(true);
     const md = fs.readFileSync(file, "utf-8");

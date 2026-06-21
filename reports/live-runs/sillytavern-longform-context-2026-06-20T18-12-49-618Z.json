@@ -1,0 +1,746 @@
+{
+  "generatedAt": "2026-06-20T18:12:49.701Z",
+  "mode": "context",
+  "bookId": "b6d2f9af-acbe-4cbc-8ad3-dd201c1f93cb",
+  "paths": {
+    "presetPath": "d:/DESKTOP/Scribe/samples/sillytavern/Izumi 0503.json",
+    "worldbookPath": "d:/DESKTOP/Scribe/samples/sillytavern/宠物捕捉系统-世界书.json",
+    "reportPath": "D:\\DESKTOP\\Scribe\\reports\\live-runs\\sillytavern-longform-context-2026-06-20T18-12-49-618Z.json",
+    "partialPath": "D:\\DESKTOP\\Scribe\\reports\\live-runs\\sillytavern-longform-context-2026-06-20T18-12-49-618Z.partial.json"
+  },
+  "config": {
+    "mode": "context-only"
+  },
+  "ignoreExistingCritical": false,
+  "imports": {
+    "preset": {
+      "promptPresets": 1,
+      "promptBlocks": 2,
+      "worldbookEntries": 0
+    },
+    "worldbook": {
+      "promptPresets": 0,
+      "promptBlocks": 0,
+      "worldbookEntries": 38
+    }
+  },
+  "chapterCount": 15,
+  "presetInjectedChapters": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+  ],
+  "regexAppliedChapters": [],
+  "worldbookTriggeredChapters": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+  ],
+  "readerIssueInjectionCount": 11,
+  "verdict": {
+    "passed": false,
+    "failureReasons": [
+      "no imported regex script affected any chapter context",
+      "context-only monitor does not prove final prose quality; rerun with --live"
+    ]
+  },
+  "reports": [
+    {
+      "chapterNo": 1,
+      "userIntent": "第 1 章。 继续，但不要急着解释系统全貌；让主角在压力下做选择，并保持捕捉规则一致。 本章必须自然触发这些关键词：捕捉、捕捉、状态栏、系统。",
+      "wordCount": 0,
+      "presetBlockCount": 2,
+      "presetBlockIds": [
+        "8bdb66d6-5ceb-4ed5-a81f-a3319ae58f06",
+        "68c18ad0-1d68-493b-ad16-2b05e5e39d20"
+      ],
+      "regexScriptsApplied": [],
+      "worldbookEntryCount": 15,
+      "worldbookEntryIds": [
+        "8b18622a-f262-48c6-bb3e-da5631da398a",
+        "b4a16cb4-2063-4854-bf78-8b602253a4c5",
+        "a2061454-22fd-4e29-a8ba-6cda5175aaa3",
+        "c819532f-22f4-47e3-bd6d-0da2fa721abd",
+        "5734d4cc-61e0-4715-be81-2b6f282950e0",
+        "493c7312-08b9-42e5-a24f-d7b72ee7ec9b",
+        "55bc5a31-4a5d-43f2-a1ea-174e102a2730",
+        "a50a61ff-e52c-4f6e-acac-2e9dbb07bd4c",
+        "50dce18a-6413-4075-a8f4-f3f23bfeef6f",
+        "c70b726a-146b-42f7-ad17-7c44ab47efa5",
+        "60cd93f3-a9e2-4929-a8be-bbb3742b462d",
+        "3ed3f6cd-46f9-4f5e-873e-3d20b2abd274",
+        "25c54b84-1de5-4d97-8b51-6127b48821b6",
+        "41dbcf48-5f92-4cf2-9518-8a0ed24dac0a",
+        "ee7c862f-014a-44b1-93b7-31d34c360b59"
+      ],
+      "readerIssueIds": [],
+      "readerIssuesBefore": [],
+      "readerIssuesAfter": [],
+      "messageCount": 6,
+      "containsWorldbook": true,
+      "continuityNotes": [],
+      "styleNotes": [],
+      "hardContinuityPresent": false,
+      "hardContinuitySnippets": [],
+      "readerIssueSnippets": []
+    },
+    {
+      "chapterNo": 2,
+      "userIntent": "第 2 章。 上一章的状态栏、捕捉规则、契约数量和代价要延续，不要突然换设定。 本章必须自然触发这些关键词：状态栏、捕捉、状态栏、系统。",
+      "wordCount": 0,
+      "presetBlockCount": 2,
+      "presetBlockIds": [
+        "8bdb66d6-5ceb-4ed5-a81f-a3319ae58f06",
+        "68c18ad0-1d68-493b-ad16-2b05e5e39d20"
+      ],
+      "regexScriptsApplied": [],
+      "worldbookEntryCount": 15,
+      "worldbookEntryIds": [
+        "8b18622a-f262-48c6-bb3e-da5631da398a",
+        "b4a16cb4-2063-4854-bf78-8b602253a4c5",
+        "a2061454-22fd-4e29-a8ba-6cda5175aaa3",
+        "c819532f-22f4-47e3-bd6d-0da2fa721abd",
+        "5734d4cc-61e0-4715-be81-2b6f282950e0",
+        "493c7312-08b9-42e5-a24f-d7b72ee7ec9b",
+        "55bc5a31-4a5d-43f2-a1ea-174e102a2730",
+        "a50a61ff-e52c-4f6e-acac-2e9dbb07bd4c",
+        "50dce18a-6413-4075-a8f4-f3f23bfeef6f",
+        "c70b726a-146b-42f7-ad17-7c44ab47efa5",
+        "60cd93f3-a9e2-4929-a8be-bbb3742b462d",
+        "3ed3f6cd-46f9-4f5e-873e-3d20b2abd274",
+        "25c54b84-1de5-4d97-8b51-6127b48821b6",
+        "41dbcf48-5f92-4cf2-9518-8a0ed24dac0a",
+        "ee7c862f-014a-44b1-93b7-31d34c360b59"
+      ],
+      "readerIssueIds": [],
+      "readerIssuesBefore": [],
+      "readerIssuesAfter": [],
+      "messageCount": 6,
+      "containsWorldbook": true,
+      "continuityNotes": [],
+      "styleNotes": [],
+      "hardContinuityPresent": false,
+      "hardContinuitySnippets": [],
+      "readerIssueSnippets": []
+    },
+    {
+      "chapterNo": 3,
+      "userIntent": "第 3 章。 让世界书里的核心设定自然进入剧情，不要写成百科说明。 本章必须自然触发这些关键词：宠物、捕捉、状态栏、系统。",
+      "wordCount": 0,
+      "presetBlockCount": 2,
+      "presetBlockIds": [
+        "8bdb66d6-5ceb-4ed5-a81f-a3319ae58f06",
+        "68c18ad0-1d68-493b-ad16-2b05e5e39d20"
+      ],
+      "regexScriptsApplied": [],
+      "worldbookEntryCount": 15,
+      "worldbookEntryIds": [
+        "8b18622a-f262-48c6-bb3e-da5631da398a",
+        "b4a16cb4-2063-4854-bf78-8b602253a4c5",
+        "a2061454-22fd-4e29-a8ba-6cda5175aaa3",
+        "c819532f-22f4-47e3-bd6d-0da2fa721abd",
+        "5734d4cc-61e0-4715-be81-2b6f282950e0",
+        "493c7312-08b9-42e5-a24f-d7b72ee7ec9b",
+        "55bc5a31-4a5d-43f2-a1ea-174e102a2730",
+        "a50a61ff-e52c-4f6e-acac-2e9dbb07bd4c",
+        "50dce18a-6413-4075-a8f4-f3f23bfeef6f",
+        "c70b726a-146b-42f7-ad17-7c44ab47efa5",
+        "60cd93f3-a9e2-4929-a8be-bbb3742b462d",
+        "3ed3f6cd-46f9-4f5e-873e-3d20b2abd274",
+        "25c54b84-1de5-4d97-8b51-6127b48821b6",
+        "41dbcf48-5f92-4cf2-9518-8a0ed24dac0a",
+        "ee7c862f-014a-44b1-93b7-31d34c360b59"
+      ],
+      "readerIssueIds": [],
+      "readerIssuesBefore": [],
+      "readerIssuesAfter": [],
+      "messageCount": 6,
+      "containsWorldbook": true,
+      "continuityNotes": [],
+      "styleNotes": [],
+      "hardContinuityPresent": false,
+      "hardContinuitySnippets": [],
+      "readerIssueSnippets": []
+    },
+    {
+      "chapterNo": 4,
+      "userIntent": "第 4 章。 以读者视角检查前文伏笔，推进一个矛盾，但不要一次性回收全部。 本章必须自然触发这些关键词：契约、捕捉、状态栏、系统。",
+      "wordCount": 0,
+      "presetBlockCount": 2,
+      "presetBlockIds": [
+        "8bdb66d6-5ceb-4ed5-a81f-a3319ae58f06",
+        "68c18ad0-1d68-493b-ad16-2b05e5e39d20"
+      ],
+      "regexScriptsApplied": [],
+      "worldbookEntryCount": 15,
+      "worldbookEntryIds": [
+        "8b18622a-f262-48c6-bb3e-da5631da398a",
+        "b4a16cb4-2063-4854-bf78-8b602253a4c5",
+        "a2061454-22fd-4e29-a8ba-6cda5175aaa3",
+        "c819532f-22f4-47e3-bd6d-0da2fa721abd",
+        "5734d4cc-61e0-4715-be81-2b6f282950e0",
+        "493c7312-08b9-42e5-a24f-d7b72ee7ec9b",
+        "55bc5a31-4a5d-43f2-a1ea-174e102a2730",
+        "a50a61ff-e52c-4f6e-acac-2e9dbb07bd4c",
+        "50dce18a-6413-4075-a8f4-f3f23bfeef6f",
+        "c70b726a-146b-42f7-ad17-7c44ab47efa5",
+        "60cd93f3-a9e2-4929-a8be-bbb3742b462d",
+        "3ed3f6cd-46f9-4f5e-873e-3d20b2abd274",
+        "25c54b84-1de5-4d97-8b51-6127b48821b6",
+        "41dbcf48-5f92-4cf2-9518-8a0ed24dac0a",
+        "ee7c862f-014a-44b1-93b7-31d34c360b59"
+      ],
+      "readerIssueIds": [],
+      "readerIssuesBefore": [],
+      "readerIssuesAfter": [],
+      "messageCount": 6,
+      "containsWorldbook": true,
+      "continuityNotes": [],
+      "styleNotes": [],
+      "hardContinuityPresent": false,
+      "hardContinuitySnippets": [],
+      "readerIssueSnippets": []
+    },
+    {
+      "chapterNo": 5,
+      "userIntent": "第 5 章。 继续，但不要急着解释系统全貌；让主角在压力下做选择，并保持捕捉规则一致。 本章必须自然触发这些关键词：天界、捕捉、状态栏、系统。",
+      "wordCount": 0,
+      "presetBlockCount": 2,
+      "presetBlockIds": [
+        "8bdb66d6-5ceb-4ed5-a81f-a3319ae58f06",
+        "68c18ad0-1d68-493b-ad16-2b05e5e39d20"
+      ],
+      "regexScriptsApplied": [],
+      "worldbookEntryCount": 15,
+      "worldbookEntryIds": [
+        "8b18622a-f262-48c6-bb3e-da5631da398a",
+        "b4a16cb4-2063-4854-bf78-8b602253a4c5",
+        "a2061454-22fd-4e29-a8ba-6cda5175aaa3",
+        "c819532f-22f4-47e3-bd6d-0da2fa721abd",
+        "5734d4cc-61e0-4715-be81-2b6f282950e0",
+        "493c7312-08b9-42e5-a24f-d7b72ee7ec9b",
+        "55bc5a31-4a5d-43f2-a1ea-174e102a2730",
+        "a50a61ff-e52c-4f6e-acac-2e9dbb07bd4c",
+        "50dce18a-6413-4075-a8f4-f3f23bfeef6f",
+        "c70b726a-146b-42f7-ad17-7c44ab47efa5",
+        "60cd93f3-a9e2-4929-a8be-bbb3742b462d",
+        "3ed3f6cd-46f9-4f5e-873e-3d20b2abd274",
+        "25c54b84-1de5-4d97-8b51-6127b48821b6",
+        "41dbcf48-5f92-4cf2-9518-8a0ed24dac0a",
+        "ee7c862f-014a-44b1-93b7-31d34c360b59"
+      ],
+      "readerIssueIds": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesBefore": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesAfter": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "messageCount": 7,
+      "containsWorldbook": true,
+      "continuityNotes": [],
+      "styleNotes": [],
+      "hardContinuityPresent": false,
+      "hardContinuitySnippets": [],
+      "readerIssueSnippets": [
+        "- [warning] Chapter 4 continuity: 状态栏、捕捉规则、契约数量与代价必须在后续章节保持连续，不能突然改设定。"
+      ]
+    },
+    {
+      "chapterNo": 6,
+      "userIntent": "第 6 章。 上一章的状态栏、捕捉规则、契约数量和代价要延续，不要突然换设定。 本章必须自然触发这些关键词：魔界、捕捉、状态栏、系统。",
+      "wordCount": 0,
+      "presetBlockCount": 2,
+      "presetBlockIds": [
+        "8bdb66d6-5ceb-4ed5-a81f-a3319ae58f06",
+        "68c18ad0-1d68-493b-ad16-2b05e5e39d20"
+      ],
+      "regexScriptsApplied": [],
+      "worldbookEntryCount": 15,
+      "worldbookEntryIds": [
+        "8b18622a-f262-48c6-bb3e-da5631da398a",
+        "b4a16cb4-2063-4854-bf78-8b602253a4c5",
+        "a2061454-22fd-4e29-a8ba-6cda5175aaa3",
+        "c819532f-22f4-47e3-bd6d-0da2fa721abd",
+        "5734d4cc-61e0-4715-be81-2b6f282950e0",
+        "493c7312-08b9-42e5-a24f-d7b72ee7ec9b",
+        "55bc5a31-4a5d-43f2-a1ea-174e102a2730",
+        "a50a61ff-e52c-4f6e-acac-2e9dbb07bd4c",
+        "50dce18a-6413-4075-a8f4-f3f23bfeef6f",
+        "c70b726a-146b-42f7-ad17-7c44ab47efa5",
+        "60cd93f3-a9e2-4929-a8be-bbb3742b462d",
+        "3ed3f6cd-46f9-4f5e-873e-3d20b2abd274",
+        "25c54b84-1de5-4d97-8b51-6127b48821b6",
+        "41dbcf48-5f92-4cf2-9518-8a0ed24dac0a",
+        "ee7c862f-014a-44b1-93b7-31d34c360b59"
+      ],
+      "readerIssueIds": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesBefore": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesAfter": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "messageCount": 7,
+      "containsWorldbook": true,
+      "continuityNotes": [],
+      "styleNotes": [],
+      "hardContinuityPresent": false,
+      "hardContinuitySnippets": [],
+      "readerIssueSnippets": [
+        "- [warning] Chapter 4 continuity: 状态栏、捕捉规则、契约数量与代价必须在后续章节保持连续，不能突然改设定。"
+      ]
+    },
+    {
+      "chapterNo": 7,
+      "userIntent": "第 7 章。 让世界书里的核心设定自然进入剧情，不要写成百科说明。 本章必须自然触发这些关键词：宠物捕捉系统、捕捉、状态栏、系统。",
+      "wordCount": 0,
+      "presetBlockCount": 2,
+      "presetBlockIds": [
+        "8bdb66d6-5ceb-4ed5-a81f-a3319ae58f06",
+        "68c18ad0-1d68-493b-ad16-2b05e5e39d20"
+      ],
+      "regexScriptsApplied": [],
+      "worldbookEntryCount": 15,
+      "worldbookEntryIds": [
+        "8b18622a-f262-48c6-bb3e-da5631da398a",
+        "b4a16cb4-2063-4854-bf78-8b602253a4c5",
+        "a2061454-22fd-4e29-a8ba-6cda5175aaa3",
+        "c819532f-22f4-47e3-bd6d-0da2fa721abd",
+        "5734d4cc-61e0-4715-be81-2b6f282950e0",
+        "493c7312-08b9-42e5-a24f-d7b72ee7ec9b",
+        "55bc5a31-4a5d-43f2-a1ea-174e102a2730",
+        "a50a61ff-e52c-4f6e-acac-2e9dbb07bd4c",
+        "50dce18a-6413-4075-a8f4-f3f23bfeef6f",
+        "c70b726a-146b-42f7-ad17-7c44ab47efa5",
+        "60cd93f3-a9e2-4929-a8be-bbb3742b462d",
+        "3ed3f6cd-46f9-4f5e-873e-3d20b2abd274",
+        "25c54b84-1de5-4d97-8b51-6127b48821b6",
+        "41dbcf48-5f92-4cf2-9518-8a0ed24dac0a",
+        "ee7c862f-014a-44b1-93b7-31d34c360b59"
+      ],
+      "readerIssueIds": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesBefore": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesAfter": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "messageCount": 7,
+      "containsWorldbook": true,
+      "continuityNotes": [],
+      "styleNotes": [],
+      "hardContinuityPresent": false,
+      "hardContinuitySnippets": [],
+      "readerIssueSnippets": [
+        "- [warning] Chapter 4 continuity: 状态栏、捕捉规则、契约数量与代价必须在后续章节保持连续，不能突然改设定。"
+      ]
+    },
+    {
+      "chapterNo": 8,
+      "userIntent": "第 8 章。 以读者视角检查前文伏笔，推进一个矛盾，但不要一次性回收全部。 本章必须自然触发这些关键词：系统、捕捉、状态栏、系统。",
+      "wordCount": 0,
+      "presetBlockCount": 2,
+      "presetBlockIds": [
+        "8bdb66d6-5ceb-4ed5-a81f-a3319ae58f06",
+        "68c18ad0-1d68-493b-ad16-2b05e5e39d20"
+      ],
+      "regexScriptsApplied": [],
+      "worldbookEntryCount": 15,
+      "worldbookEntryIds": [
+        "8b18622a-f262-48c6-bb3e-da5631da398a",
+        "b4a16cb4-2063-4854-bf78-8b602253a4c5",
+        "a2061454-22fd-4e29-a8ba-6cda5175aaa3",
+        "c819532f-22f4-47e3-bd6d-0da2fa721abd",
+        "5734d4cc-61e0-4715-be81-2b6f282950e0",
+        "493c7312-08b9-42e5-a24f-d7b72ee7ec9b",
+        "55bc5a31-4a5d-43f2-a1ea-174e102a2730",
+        "a50a61ff-e52c-4f6e-acac-2e9dbb07bd4c",
+        "50dce18a-6413-4075-a8f4-f3f23bfeef6f",
+        "c70b726a-146b-42f7-ad17-7c44ab47efa5",
+        "60cd93f3-a9e2-4929-a8be-bbb3742b462d",
+        "3ed3f6cd-46f9-4f5e-873e-3d20b2abd274",
+        "25c54b84-1de5-4d97-8b51-6127b48821b6",
+        "41dbcf48-5f92-4cf2-9518-8a0ed24dac0a",
+        "ee7c862f-014a-44b1-93b7-31d34c360b59"
+      ],
+      "readerIssueIds": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesBefore": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesAfter": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "messageCount": 7,
+      "containsWorldbook": true,
+      "continuityNotes": [],
+      "styleNotes": [],
+      "hardContinuityPresent": false,
+      "hardContinuitySnippets": [],
+      "readerIssueSnippets": [
+        "- [warning] Chapter 4 continuity: 状态栏、捕捉规则、契约数量与代价必须在后续章节保持连续，不能突然改设定。"
+      ]
+    },
+    {
+      "chapterNo": 9,
+      "userIntent": "第 9 章。 继续，但不要急着解释系统全貌；让主角在压力下做选择，并保持捕捉规则一致。 本章必须自然触发这些关键词：捕捉、捕捉、状态栏、系统。",
+      "wordCount": 0,
+      "presetBlockCount": 2,
+      "presetBlockIds": [
+        "8bdb66d6-5ceb-4ed5-a81f-a3319ae58f06",
+        "68c18ad0-1d68-493b-ad16-2b05e5e39d20"
+      ],
+      "regexScriptsApplied": [],
+      "worldbookEntryCount": 15,
+      "worldbookEntryIds": [
+        "8b18622a-f262-48c6-bb3e-da5631da398a",
+        "b4a16cb4-2063-4854-bf78-8b602253a4c5",
+        "a2061454-22fd-4e29-a8ba-6cda5175aaa3",
+        "c819532f-22f4-47e3-bd6d-0da2fa721abd",
+        "5734d4cc-61e0-4715-be81-2b6f282950e0",
+        "493c7312-08b9-42e5-a24f-d7b72ee7ec9b",
+        "55bc5a31-4a5d-43f2-a1ea-174e102a2730",
+        "a50a61ff-e52c-4f6e-acac-2e9dbb07bd4c",
+        "50dce18a-6413-4075-a8f4-f3f23bfeef6f",
+        "c70b726a-146b-42f7-ad17-7c44ab47efa5",
+        "60cd93f3-a9e2-4929-a8be-bbb3742b462d",
+        "3ed3f6cd-46f9-4f5e-873e-3d20b2abd274",
+        "25c54b84-1de5-4d97-8b51-6127b48821b6",
+        "41dbcf48-5f92-4cf2-9518-8a0ed24dac0a",
+        "ee7c862f-014a-44b1-93b7-31d34c360b59"
+      ],
+      "readerIssueIds": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesBefore": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesAfter": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "messageCount": 7,
+      "containsWorldbook": true,
+      "continuityNotes": [],
+      "styleNotes": [],
+      "hardContinuityPresent": false,
+      "hardContinuitySnippets": [],
+      "readerIssueSnippets": [
+        "- [warning] Chapter 4 continuity: 状态栏、捕捉规则、契约数量与代价必须在后续章节保持连续，不能突然改设定。"
+      ]
+    },
+    {
+      "chapterNo": 10,
+      "userIntent": "第 10 章。 上一章的状态栏、捕捉规则、契约数量和代价要延续，不要突然换设定。 本章必须自然触发这些关键词：状态栏、捕捉、状态栏、系统。",
+      "wordCount": 0,
+      "presetBlockCount": 2,
+      "presetBlockIds": [
+        "8bdb66d6-5ceb-4ed5-a81f-a3319ae58f06",
+        "68c18ad0-1d68-493b-ad16-2b05e5e39d20"
+      ],
+      "regexScriptsApplied": [],
+      "worldbookEntryCount": 15,
+      "worldbookEntryIds": [
+        "8b18622a-f262-48c6-bb3e-da5631da398a",
+        "b4a16cb4-2063-4854-bf78-8b602253a4c5",
+        "a2061454-22fd-4e29-a8ba-6cda5175aaa3",
+        "c819532f-22f4-47e3-bd6d-0da2fa721abd",
+        "5734d4cc-61e0-4715-be81-2b6f282950e0",
+        "493c7312-08b9-42e5-a24f-d7b72ee7ec9b",
+        "55bc5a31-4a5d-43f2-a1ea-174e102a2730",
+        "a50a61ff-e52c-4f6e-acac-2e9dbb07bd4c",
+        "50dce18a-6413-4075-a8f4-f3f23bfeef6f",
+        "c70b726a-146b-42f7-ad17-7c44ab47efa5",
+        "60cd93f3-a9e2-4929-a8be-bbb3742b462d",
+        "3ed3f6cd-46f9-4f5e-873e-3d20b2abd274",
+        "25c54b84-1de5-4d97-8b51-6127b48821b6",
+        "41dbcf48-5f92-4cf2-9518-8a0ed24dac0a",
+        "ee7c862f-014a-44b1-93b7-31d34c360b59"
+      ],
+      "readerIssueIds": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesBefore": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesAfter": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "messageCount": 7,
+      "containsWorldbook": true,
+      "continuityNotes": [],
+      "styleNotes": [],
+      "hardContinuityPresent": false,
+      "hardContinuitySnippets": [],
+      "readerIssueSnippets": [
+        "- [warning] Chapter 4 continuity: 状态栏、捕捉规则、契约数量与代价必须在后续章节保持连续，不能突然改设定。"
+      ]
+    },
+    {
+      "chapterNo": 11,
+      "userIntent": "第 11 章。 让世界书里的核心设定自然进入剧情，不要写成百科说明。 本章必须自然触发这些关键词：宠物、捕捉、状态栏、系统。",
+      "wordCount": 0,
+      "presetBlockCount": 2,
+      "presetBlockIds": [
+        "8bdb66d6-5ceb-4ed5-a81f-a3319ae58f06",
+        "68c18ad0-1d68-493b-ad16-2b05e5e39d20"
+      ],
+      "regexScriptsApplied": [],
+      "worldbookEntryCount": 15,
+      "worldbookEntryIds": [
+        "8b18622a-f262-48c6-bb3e-da5631da398a",
+        "b4a16cb4-2063-4854-bf78-8b602253a4c5",
+        "a2061454-22fd-4e29-a8ba-6cda5175aaa3",
+        "c819532f-22f4-47e3-bd6d-0da2fa721abd",
+        "5734d4cc-61e0-4715-be81-2b6f282950e0",
+        "493c7312-08b9-42e5-a24f-d7b72ee7ec9b",
+        "55bc5a31-4a5d-43f2-a1ea-174e102a2730",
+        "a50a61ff-e52c-4f6e-acac-2e9dbb07bd4c",
+        "50dce18a-6413-4075-a8f4-f3f23bfeef6f",
+        "c70b726a-146b-42f7-ad17-7c44ab47efa5",
+        "60cd93f3-a9e2-4929-a8be-bbb3742b462d",
+        "3ed3f6cd-46f9-4f5e-873e-3d20b2abd274",
+        "25c54b84-1de5-4d97-8b51-6127b48821b6",
+        "41dbcf48-5f92-4cf2-9518-8a0ed24dac0a",
+        "ee7c862f-014a-44b1-93b7-31d34c360b59"
+      ],
+      "readerIssueIds": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesBefore": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesAfter": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "messageCount": 7,
+      "containsWorldbook": true,
+      "continuityNotes": [],
+      "styleNotes": [],
+      "hardContinuityPresent": false,
+      "hardContinuitySnippets": [],
+      "readerIssueSnippets": [
+        "- [warning] Chapter 4 continuity: 状态栏、捕捉规则、契约数量与代价必须在后续章节保持连续，不能突然改设定。"
+      ]
+    },
+    {
+      "chapterNo": 12,
+      "userIntent": "第 12 章。 以读者视角检查前文伏笔，推进一个矛盾，但不要一次性回收全部。 本章必须自然触发这些关键词：契约、捕捉、状态栏、系统。",
+      "wordCount": 0,
+      "presetBlockCount": 2,
+      "presetBlockIds": [
+        "8bdb66d6-5ceb-4ed5-a81f-a3319ae58f06",
+        "68c18ad0-1d68-493b-ad16-2b05e5e39d20"
+      ],
+      "regexScriptsApplied": [],
+      "worldbookEntryCount": 15,
+      "worldbookEntryIds": [
+        "8b18622a-f262-48c6-bb3e-da5631da398a",
+        "b4a16cb4-2063-4854-bf78-8b602253a4c5",
+        "a2061454-22fd-4e29-a8ba-6cda5175aaa3",
+        "c819532f-22f4-47e3-bd6d-0da2fa721abd",
+        "5734d4cc-61e0-4715-be81-2b6f282950e0",
+        "493c7312-08b9-42e5-a24f-d7b72ee7ec9b",
+        "55bc5a31-4a5d-43f2-a1ea-174e102a2730",
+        "a50a61ff-e52c-4f6e-acac-2e9dbb07bd4c",
+        "50dce18a-6413-4075-a8f4-f3f23bfeef6f",
+        "c70b726a-146b-42f7-ad17-7c44ab47efa5",
+        "60cd93f3-a9e2-4929-a8be-bbb3742b462d",
+        "3ed3f6cd-46f9-4f5e-873e-3d20b2abd274",
+        "25c54b84-1de5-4d97-8b51-6127b48821b6",
+        "41dbcf48-5f92-4cf2-9518-8a0ed24dac0a",
+        "ee7c862f-014a-44b1-93b7-31d34c360b59"
+      ],
+      "readerIssueIds": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesBefore": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesAfter": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "messageCount": 7,
+      "containsWorldbook": true,
+      "continuityNotes": [],
+      "styleNotes": [],
+      "hardContinuityPresent": false,
+      "hardContinuitySnippets": [],
+      "readerIssueSnippets": [
+        "- [warning] Chapter 4 continuity: 状态栏、捕捉规则、契约数量与代价必须在后续章节保持连续，不能突然改设定。"
+      ]
+    },
+    {
+      "chapterNo": 13,
+      "userIntent": "第 13 章。 继续，但不要急着解释系统全貌；让主角在压力下做选择，并保持捕捉规则一致。 本章必须自然触发这些关键词：天界、捕捉、状态栏、系统。",
+      "wordCount": 0,
+      "presetBlockCount": 2,
+      "presetBlockIds": [
+        "8bdb66d6-5ceb-4ed5-a81f-a3319ae58f06",
+        "68c18ad0-1d68-493b-ad16-2b05e5e39d20"
+      ],
+      "regexScriptsApplied": [],
+      "worldbookEntryCount": 15,
+      "worldbookEntryIds": [
+        "8b18622a-f262-48c6-bb3e-da5631da398a",
+        "b4a16cb4-2063-4854-bf78-8b602253a4c5",
+        "a2061454-22fd-4e29-a8ba-6cda5175aaa3",
+        "c819532f-22f4-47e3-bd6d-0da2fa721abd",
+        "5734d4cc-61e0-4715-be81-2b6f282950e0",
+        "493c7312-08b9-42e5-a24f-d7b72ee7ec9b",
+        "55bc5a31-4a5d-43f2-a1ea-174e102a2730",
+        "a50a61ff-e52c-4f6e-acac-2e9dbb07bd4c",
+        "50dce18a-6413-4075-a8f4-f3f23bfeef6f",
+        "c70b726a-146b-42f7-ad17-7c44ab47efa5",
+        "60cd93f3-a9e2-4929-a8be-bbb3742b462d",
+        "3ed3f6cd-46f9-4f5e-873e-3d20b2abd274",
+        "25c54b84-1de5-4d97-8b51-6127b48821b6",
+        "41dbcf48-5f92-4cf2-9518-8a0ed24dac0a",
+        "ee7c862f-014a-44b1-93b7-31d34c360b59"
+      ],
+      "readerIssueIds": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesBefore": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesAfter": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "messageCount": 7,
+      "containsWorldbook": true,
+      "continuityNotes": [],
+      "styleNotes": [],
+      "hardContinuityPresent": false,
+      "hardContinuitySnippets": [],
+      "readerIssueSnippets": [
+        "- [warning] Chapter 4 continuity: 状态栏、捕捉规则、契约数量与代价必须在后续章节保持连续，不能突然改设定。"
+      ]
+    },
+    {
+      "chapterNo": 14,
+      "userIntent": "第 14 章。 上一章的状态栏、捕捉规则、契约数量和代价要延续，不要突然换设定。 本章必须自然触发这些关键词：魔界、捕捉、状态栏、系统。",
+      "wordCount": 0,
+      "presetBlockCount": 2,
+      "presetBlockIds": [
+        "8bdb66d6-5ceb-4ed5-a81f-a3319ae58f06",
+        "68c18ad0-1d68-493b-ad16-2b05e5e39d20"
+      ],
+      "regexScriptsApplied": [],
+      "worldbookEntryCount": 15,
+      "worldbookEntryIds": [
+        "8b18622a-f262-48c6-bb3e-da5631da398a",
+        "b4a16cb4-2063-4854-bf78-8b602253a4c5",
+        "a2061454-22fd-4e29-a8ba-6cda5175aaa3",
+        "c819532f-22f4-47e3-bd6d-0da2fa721abd",
+        "5734d4cc-61e0-4715-be81-2b6f282950e0",
+        "493c7312-08b9-42e5-a24f-d7b72ee7ec9b",
+        "55bc5a31-4a5d-43f2-a1ea-174e102a2730",
+        "a50a61ff-e52c-4f6e-acac-2e9dbb07bd4c",
+        "50dce18a-6413-4075-a8f4-f3f23bfeef6f",
+        "c70b726a-146b-42f7-ad17-7c44ab47efa5",
+        "60cd93f3-a9e2-4929-a8be-bbb3742b462d",
+        "3ed3f6cd-46f9-4f5e-873e-3d20b2abd274",
+        "25c54b84-1de5-4d97-8b51-6127b48821b6",
+        "41dbcf48-5f92-4cf2-9518-8a0ed24dac0a",
+        "ee7c862f-014a-44b1-93b7-31d34c360b59"
+      ],
+      "readerIssueIds": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesBefore": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesAfter": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "messageCount": 7,
+      "containsWorldbook": true,
+      "continuityNotes": [],
+      "styleNotes": [],
+      "hardContinuityPresent": false,
+      "hardContinuitySnippets": [],
+      "readerIssueSnippets": [
+        "- [warning] Chapter 4 continuity: 状态栏、捕捉规则、契约数量与代价必须在后续章节保持连续，不能突然改设定。"
+      ]
+    },
+    {
+      "chapterNo": 15,
+      "userIntent": "第 15 章。 让世界书里的核心设定自然进入剧情，不要写成百科说明。 本章必须自然触发这些关键词：宠物捕捉系统、捕捉、状态栏、系统。",
+      "wordCount": 0,
+      "presetBlockCount": 2,
+      "presetBlockIds": [
+        "8bdb66d6-5ceb-4ed5-a81f-a3319ae58f06",
+        "68c18ad0-1d68-493b-ad16-2b05e5e39d20"
+      ],
+      "regexScriptsApplied": [],
+      "worldbookEntryCount": 15,
+      "worldbookEntryIds": [
+        "8b18622a-f262-48c6-bb3e-da5631da398a",
+        "b4a16cb4-2063-4854-bf78-8b602253a4c5",
+        "a2061454-22fd-4e29-a8ba-6cda5175aaa3",
+        "c819532f-22f4-47e3-bd6d-0da2fa721abd",
+        "5734d4cc-61e0-4715-be81-2b6f282950e0",
+        "493c7312-08b9-42e5-a24f-d7b72ee7ec9b",
+        "55bc5a31-4a5d-43f2-a1ea-174e102a2730",
+        "a50a61ff-e52c-4f6e-acac-2e9dbb07bd4c",
+        "50dce18a-6413-4075-a8f4-f3f23bfeef6f",
+        "c70b726a-146b-42f7-ad17-7c44ab47efa5",
+        "60cd93f3-a9e2-4929-a8be-bbb3742b462d",
+        "3ed3f6cd-46f9-4f5e-873e-3d20b2abd274",
+        "25c54b84-1de5-4d97-8b51-6127b48821b6",
+        "41dbcf48-5f92-4cf2-9518-8a0ed24dac0a",
+        "ee7c862f-014a-44b1-93b7-31d34c360b59"
+      ],
+      "readerIssueIds": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesBefore": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "readerIssuesAfter": [
+        "c8497fd9-d978-4cc1-b76b-ccd48a0948fe"
+      ],
+      "messageCount": 7,
+      "containsWorldbook": true,
+      "continuityNotes": [],
+      "styleNotes": [],
+      "hardContinuityPresent": false,
+      "hardContinuitySnippets": [],
+      "readerIssueSnippets": [
+        "- [warning] Chapter 4 continuity: 状态栏、捕捉规则、契约数量与代价必须在后续章节保持连续，不能突然改设定。"
+      ]
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { parseSlashCommand } from "@scribe/shared";
 import { t } from "../../i18n/zh-CN.js";
-import { useConversationStore } from "../../stores/conversation.js";
+import { useConversationStore, type ChatMessage } from "../../stores/conversation.js";
 import { startSseStream, type SseStreamHandle, type StartStreamOptions } from "../../api/streaming.js";
 import { Message } from "./message.js";
 import { StreamingMessage } from "./streaming-message.js";
@@ -9,11 +9,38 @@ import { SlashSuggestions } from "./slash-suggestions.js";
 
 export type StreamFn = (opts: StartStreamOptions) => SseStreamHandle;
 
+/** 工具名 → 人类可读中文进度提示 */
+const TOOL_LABELS: Record<string, string> = {
+  chapter_write: "正在写正文",
+  chapter_audit: "正在审查章节质量",
+  chapter_repair: "发现质量问题,正在修复",
+  chapter_repair_audit: "修复后再次审查",
+  hard_fact_gate: "正在检查硬事实一致性",
+  record_chapter_state: "正在记录角色状态和设定",
+  create_character: "正在登记新角色",
+  update_character_state: "正在更新角色状态",
+  add_character_appearance: "正在记录角色出场",
+  add_foreshadowing: "正在登记伏笔",
+  pay_foreshadowing: "正在回收伏笔",
+  add_timeline_event: "正在记录时间线",
+  upsert_record_item: "正在更新通用记录",
+  create_record_collection: "正在创建记录集合",
+};
+
+/** 判断是否是写作流程(而非纯对话) */
+const WRITING_TOOLS = new Set(["chapter_write", "chapter_audit", "record_chapter_state", "hard_fact_gate", "chapter_repair", "chapter_repair_audit"]);
+const WRITING_STAGES = [
+  { id: "chapter_write", label: "写正文", status: "pending" as const },
+  { id: "chapter_audit", label: "审查", status: "pending" as const },
+  { id: "hard_fact_gate", label: "硬事实检查", status: "pending" as const },
+  { id: "chapter_repair", label: "修复", status: "pending" as const },
+  { id: "record_chapter_state", label: "记录状态", status: "pending" as const },
+  { id: "done", label: "完成", status: "pending" as const },
+];
+
 export interface ConversationPaneProps {
   bookId: string;
-  /** 流式端点;默认普通对话,onboard 页可覆盖 */
   endpoint?: (bookId: string) => string;
-  /** 测试注入用 */
   streamFn?: StreamFn;
 }
 
@@ -25,11 +52,38 @@ export function ConversationPane(props: ConversationPaneProps) {
   const {
     messages, streaming, error, autoStatus,
     appendUserMessage, appendSystemMessage, beginStream, appendDelta, appendReasoning,
-    pushToolEvent, finishStream, setError, clearError, setAutoStatus,
+    pushToolEvent, setWorkflowStages, updateWorkflowStage, setSuppressText,
+    finishStream, setError, clearError, setAutoStatus,
+    triggerChapterRefresh, hydrate,
   } = useConversationStore();
   const handleRef = useRef<SseStreamHandle | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [lastSent, setLastSent] = useState<string | null>(null);
+  /** 追踪本次流是否是写作流程 */
+  const writingFlowRef = useRef(false);
+
+  // 加载持久化对话历史（首次挂载或 bookId 变化时）
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/books/${encodeURIComponent(props.bookId)}/conversation?limit=100`);
+        if (!res.ok) return;
+        const j = await res.json() as { messages: Array<{ id: number; role: "user" | "assistant" | "system"; content: string; metadata: { kind?: string } | null; createdAt: number }> };
+        if (cancelled) return;
+        // 只回放 chat 类消息（排除 note / onboard / worldbook 等操作记录）
+        const msgs: ChatMessage[] = j.messages
+          .filter(m => m.metadata?.kind === "chat" && (m.role === "user" || m.role === "assistant"))
+          .map(m => ({
+            id: `hist-${m.id}`,
+            role: m.role,
+            content: m.content,
+          }));
+        hydrate(msgs);
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [props.bookId, hydrate]);
 
   // 自动滚到底
   useEffect(() => {
@@ -43,6 +97,7 @@ export function ConversationPane(props: ConversationPaneProps) {
     clearError();
     setLastSent(content);
     appendUserMessage(content);
+    writingFlowRef.current = false;
 
     // /auto N → 自动模式端点
     const parsed = parseSlashCommand(content);
@@ -66,19 +121,50 @@ export function ConversationPane(props: ConversationPaneProps) {
           case "reasoning_delta":
             appendReasoning(String(ev.delta ?? ""));
             break;
-          case "tool_call_start":
-            pushToolEvent({ kind: "start", toolName: String(ev.toolName ?? "") });
+          case "tool_call_start": {
+            const toolName = String(ev.toolName ?? "");
+            pushToolEvent({ kind: "start", toolName });
+            // 检测写作流程
+            if (WRITING_TOOLS.has(toolName)) {
+              writingFlowRef.current = true;
+              setSuppressText(true);
+              setWorkflowStages(WRITING_STAGES);
+              updateWorkflowStage(toolName, "active");
+            }
+            // 人类可读进度提示
+            const label = TOOL_LABELS[toolName];
+            if (label) appendSystemMessage(label);
             break;
-          case "tool_call_end":
-            pushToolEvent({ kind: "end", toolName: String(ev.toolName ?? ""), payload: ev.result });
+          }
+          case "tool_call_end": {
+            const toolName = String(ev.toolName ?? "");
+            pushToolEvent({ kind: "end", toolName, payload: ev.result });
+            if (WRITING_TOOLS.has(toolName)) updateWorkflowStage(toolName, "done");
+            // 写作流程的关键节点提示
+            if (toolName === "chapter_audit") {
+              const result = ev.result as { verdict?: string };
+              const verdict = result?.verdict ?? "unknown";
+              const verdictLabel = verdict === "ok" ? "通过" : verdict === "warning" ? "有小问题" : "严重问题";
+              appendSystemMessage(`审查完成: ${verdictLabel}`);
+            } else if (toolName === "hard_fact_gate") {
+              const result = ev.result as { passed?: boolean; blockingIssues?: string[] };
+              if (result?.passed) {
+                appendSystemMessage("硬事实检查通过");
+              } else if (result?.blockingIssues?.length) {
+                appendSystemMessage(`硬事实检查发现 ${result.blockingIssues.length} 个矛盾`);
+              }
+            } else if (toolName === "record_chapter_state") {
+              const result = ev.result as { success?: boolean };
+              if (result?.success) appendSystemMessage("状态记录完成");
+            }
             break;
+          }
           case "intent": {
-            // spec §7.3:展示识别到的意图(仅对会触发动作的意图提示,避免噪音)
             const labels: Record<string, string> = {
-              writing_intent: "✍️ 识别意图:写下一章",
-              revise_intent: "✏️ 识别意图:修改内容",
-              query: "🔍 识别意图:查询设定/前情",
-              genre_section_op: "🗂️ 识别意图:整理题材资料",
+              writing_intent: "开始写下一章...",
+              revise_intent: "准备修改内容...",
+              query: "查询设定/前情中...",
+              genre_section_op: "整理题材资料中...",
               command_explicit: "",
             };
             const label = labels[String(ev.category ?? "")];
@@ -98,9 +184,15 @@ export function ConversationPane(props: ConversationPaneProps) {
             break;
           }
           case "done":
+            if (writingFlowRef.current) updateWorkflowStage("done", "done");
             finishStream();
             setAutoStatus(null);
             handleRef.current = null;
+            // 如果是写作流程,通知编辑器刷新章节列表
+            if (writingFlowRef.current) {
+              appendSystemMessage("本章已完成,请在右侧编辑器查看。");
+              triggerChapterRefresh();
+            }
             break;
           case "error":
             setError(String(ev.message ?? t.errors.unknown), String(ev.errorClass ?? "unknown"));
@@ -112,7 +204,7 @@ export function ConversationPane(props: ConversationPaneProps) {
         }
       },
     });
-  }, [props.bookId, endpoint, streamFn, streaming, appendUserMessage, appendSystemMessage, beginStream, appendDelta, appendReasoning, pushToolEvent, finishStream, setError, clearError, setAutoStatus]);
+  }, [props.bookId, endpoint, streamFn, streaming, appendUserMessage, appendSystemMessage, beginStream, appendDelta, appendReasoning, pushToolEvent, setWorkflowStages, updateWorkflowStage, setSuppressText, finishStream, setError, clearError, setAutoStatus, triggerChapterRefresh]);
 
   const cancel = useCallback(() => {
     if (autoStatus) {

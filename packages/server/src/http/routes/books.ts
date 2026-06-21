@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import * as fs from "node:fs";
 import type { LanguageModel } from "ai";
 import { streamSseResponse } from "../sse.js";
 import type { BookRegistry } from "../book-registry.js";
@@ -60,6 +61,56 @@ export function bookRoutes(deps: BookRoutesDeps) {
   app.get("/api/books", async (c) => {
     const books = deps.registry.booksRepo.list();
     return c.json({ books });
+  });
+
+  // 删除书:关闭 DB 连接 → 删除 library.db 记录 → 删除书目录文件
+  app.delete("/api/books/:bookId", async (c) => {
+    const bookId = c.req.param("bookId");
+    const book = deps.registry.booksRepo.get(bookId);
+    if (!book) return c.json({ error: "书不存在" }, 404);
+    // 先关闭 workspace.db 连接,避免文件锁
+    deps.registry.closeBook(bookId);
+    // 删除 library.db 里的书记录
+    deps.registry.booksRepo.delete(bookId);
+    // 删除书目录(章节 md、workspace.db 等)
+    try {
+      const bookDir = deps.registry.paths.bookDir(bookId);
+      if (fs.existsSync(bookDir)) {
+        fs.rmSync(bookDir, { recursive: true, force: true });
+      }
+    } catch (e) {
+      // 文件删除失败不阻断 API 响应,只记录
+      console.error(`删除书目录失败(${bookId}):`, (e as Error).message);
+    }
+    return c.json({ ok: true });
+  });
+
+  // ---- Meta 设置 API ----
+  // 作者直接填表设置 premise/tone/genre,不需要走对话流程
+  app.get("/api/books/:bookId/meta", async (c) => {
+    const bookId = c.req.param("bookId");
+    if (!deps.registry.booksRepo.get(bookId)) return c.json({ error: "书不存在" }, 404);
+    const handle = deps.registry.open(bookId);
+    return c.json({
+      title: handle.bookMetaRepo.get("title") ?? "",
+      premise: handle.bookMetaRepo.get("premise") ?? "",
+      tone: handle.bookMetaRepo.get("tone") ?? "",
+      genre: handle.bookMetaRepo.get("genre") ?? "",
+    });
+  });
+
+  app.put("/api/books/:bookId/meta", async (c) => {
+    const bookId = c.req.param("bookId");
+    if (!deps.registry.booksRepo.get(bookId)) return c.json({ error: "书不存在" }, 404);
+    const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+    const handle = deps.registry.open(bookId);
+    if (typeof body.premise === "string") handle.bookMetaRepo.set("premise", body.premise);
+    if (typeof body.tone === "string") handle.bookMetaRepo.set("tone", body.tone);
+    if (typeof body.genre === "string") handle.bookMetaRepo.set("genre", body.genre);
+    if (typeof body.title === "string" && body.title.trim()) {
+      handle.bookMetaRepo.set("title", body.title.trim());
+    }
+    return c.json({ ok: true });
   });
 
   app.post("/api/books/:bookId/onboard", async (c) => {

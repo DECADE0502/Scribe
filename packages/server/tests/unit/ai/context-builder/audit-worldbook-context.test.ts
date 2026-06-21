@@ -73,6 +73,13 @@ describe("audit context worldbook and reader issue integration", () => {
         note: "Pet ball inventory must not change without an explicit cause.",
         status: "open",
       });
+      // 创建角色使 dynamicTerms 包含 "SP" 和 "Lin"(动态词表需要角色状态 key)
+      handle.charactersRepo.create({
+        name: "Lin",
+        role: "protagonist",
+        baseData: {},
+        currentState: { SP: 3 },
+      });
 
       const result = buildChapterAuditContext(
         handle as never,

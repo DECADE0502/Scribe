@@ -31,11 +31,11 @@ describe("isOnboardComplete", () => {
     expect(r.ok).toBe(false);
     expect(r.missing).toContain("题材");
     expect(r.missing).toContain("主角");
-    expect(r.missing).toContain("一级大纲");
+    expect(r.missing).toContain("章级大纲");
     expect(r.missing).toContain("调性/篇幅/premise(至少两项)");
   });
 
-  it("齐全(genre + protagonist + volume + 2 项 extras):ok=true", () => {
+  it("齐全(genre + protagonist + chapter outline + 2 项 extras):ok=true", () => {
     const r = isOnboardComplete(
       makeSnap({
         meta: {
@@ -59,9 +59,9 @@ describe("isOnboardComplete", () => {
           {
             id: "o1",
             parentId: null,
-            level: "volume",
-            title: "卷一",
-            summary: null,
+            level: "chapter",
+            title: "第1章 雨夜来信",
+            summary: "本章写主角收到信并决定出发",
             status: "planned",
             sortOrder: 0,
             metadata: null,
@@ -86,9 +86,9 @@ describe("isOnboardComplete", () => {
           {
             id: "o1",
             parentId: null,
-            level: "volume",
-            title: "卷一",
-            summary: null,
+            level: "chapter",
+            title: "第1章 雨夜来信",
+            summary: "本章写主角收到信并决定出发",
             status: "planned",
             sortOrder: 0,
             metadata: null,
@@ -119,9 +119,9 @@ describe("isOnboardComplete", () => {
           {
             id: "o1",
             parentId: null,
-            level: "volume",
-            title: "卷一",
-            summary: null,
+            level: "chapter",
+            title: "第1章 雨夜来信",
+            summary: "本章写主角收到信并决定出发",
             status: "planned",
             sortOrder: 0,
             metadata: null,
@@ -133,7 +133,7 @@ describe("isOnboardComplete", () => {
     expect(r.missing).toEqual(["调性/篇幅/premise(至少两项)"]);
   });
 
-  it("arc 也算一级大纲", () => {
+  it("arc alone is not enough because onboarding requires a precise chapter outline", () => {
     const r = isOnboardComplete(
       makeSnap({
         meta: { title: "x", premise: "p", tone: "t", genre: "仙侠" },
@@ -162,10 +162,11 @@ describe("isOnboardComplete", () => {
         ],
       }),
     );
-    expect(r.ok).toBe(true);
+    expect(r.ok).toBe(false);
+    expect(r.missing).toContain("章级大纲");
   });
 
-  it("chapter 不算一级大纲", () => {
+  it("chapter outline satisfies the outline requirement", () => {
     const r = isOnboardComplete(
       makeSnap({
         meta: { title: "x", premise: "p", tone: "t", genre: "仙侠" },
@@ -194,8 +195,7 @@ describe("isOnboardComplete", () => {
         ],
       }),
     );
-    expect(r.ok).toBe(false);
-    expect(r.missing).toContain("一级大纲");
+    expect(r.ok).toBe(true);
   });
 
   it("配角不算主角", () => {
@@ -217,9 +217,9 @@ describe("isOnboardComplete", () => {
           {
             id: "o1",
             parentId: null,
-            level: "volume",
-            title: "卷一",
-            summary: null,
+            level: "chapter",
+            title: "第1章 雨夜来信",
+            summary: "本章写主角收到信并决定出发",
             status: "planned",
             sortOrder: 0,
             metadata: null,
