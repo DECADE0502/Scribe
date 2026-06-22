@@ -3,9 +3,11 @@ import type { LanguageModel } from "ai";
 import {
   NewWorldbookEntryInputSchema,
   WorldbookEntryPatchSchema,
+  type ModelInfo,
 } from "@scribe/shared";
-import type { BookRegistry } from "../book-registry.js";
+import { holdBook, type BookRegistry } from "../book-registry.js";
 import { streamSseResponse } from "../sse.js";
+import { withUsageRecording } from "../../ai/usage-tracker.js";
 import {
   renderWorldbookEntries,
   retrieveWorldbookEntries,
@@ -15,6 +17,7 @@ import { runWorldbookChat } from "../../ai/orchestrator/worldbook-chat.js";
 export interface WorldbookRoutesDeps {
   registry: BookRegistry;
   getModel?: () => LanguageModel | undefined;
+  writeModelInfo?: ModelInfo;
 }
 
 export function worldbookRoutes(deps: WorldbookRoutesDeps) {
@@ -110,13 +113,22 @@ export function worldbookRoutes(deps: WorldbookRoutesDeps) {
         metadata: { kind: "worldbook" },
       });
       let buffer = "";
-      for await (const event of runWorldbookChat(
+      for await (const event of withUsageRecording(
+        runWorldbookChat(
+          {
+            model: chatModel,
+            toolDeps: { repo: chatHandle.worldbookRepo },
+            abortSignal: c.req.raw.signal,
+          },
+          { message, history: history as never },
+        ),
         {
-          model: chatModel,
-          toolDeps: { repo: chatHandle.worldbookRepo },
-          abortSignal: c.req.raw.signal,
+          tokenUsageRepo: chatHandle.tokenUsageRepo,
+          booksRepo: deps.registry.booksRepo,
+          bookId: c.req.param("bookId"),
+          modelInfo: deps.writeModelInfo,
+          taskType: "other",
         },
-        { message, history: history as never },
       )) {
         if (event.type === "text_delta") buffer += event.delta;
         if (event.type === "done" && buffer.trim()) {
@@ -130,7 +142,7 @@ export function worldbookRoutes(deps: WorldbookRoutesDeps) {
       }
     }
 
-    return streamSseResponse(persisting());
+    return streamSseResponse(holdBook(deps.registry, c.req.param("bookId"), persisting()));
   });
 
   return app;

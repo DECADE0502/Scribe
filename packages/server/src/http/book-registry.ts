@@ -49,6 +49,12 @@ export interface BookRegistry {
   /** 关闭某本书的 workspace 连接(快照恢复前必须调用) */
   closeBook(bookId: string): void;
   closeAll(): void;
+  /** 标记一个长任务(SSE 写作流等)开始占用某书,期间禁止关连接/删书 */
+  acquire(bookId: string): BookHandle;
+  /** 长任务结束,释放占用 */
+  release(bookId: string): void;
+  /** 该书是否有进行中的长任务(快照/删书前应检查,避免 use-after-close 崩溃) */
+  isBusy(bookId: string): boolean;
 }
 
 export interface BookRegistryOpts {
@@ -92,6 +98,24 @@ export function createBookRegistry(opts: BookRegistryOpts): BookRegistry {
     return handle;
   }
 
+  const inFlight = new Map<string, number>();
+
+  function acquire(bookId: string): BookHandle {
+    const handle = open(bookId);
+    inFlight.set(bookId, (inFlight.get(bookId) ?? 0) + 1);
+    return handle;
+  }
+
+  function release(bookId: string): void {
+    const n = (inFlight.get(bookId) ?? 0) - 1;
+    if (n <= 0) inFlight.delete(bookId);
+    else inFlight.set(bookId, n);
+  }
+
+  function isBusy(bookId: string): boolean {
+    return (inFlight.get(bookId) ?? 0) > 0;
+  }
+
   function closeBook(bookId: string): void {
     const h = handles.get(bookId);
     if (h) {
@@ -112,5 +136,22 @@ export function createBookRegistry(opts: BookRegistryOpts): BookRegistry {
     return [...handles.keys()];
   }
 
-  return { libraryDb, booksRepo, paths: opts.paths, open, openBookIds, closeBook, closeAll };
+  return { libraryDb, booksRepo, paths: opts.paths, open, openBookIds, closeBook, closeAll, acquire, release, isBusy };
+}
+
+/**
+ * 包裹一个 SSE 事件生成器,使其执行期间占用该书(acquire/release),
+ * 这样快照/删书会因 isBusy 而被拒绝,不会在写作中途关掉数据库连接导致崩溃。
+ */
+export async function* holdBook<T>(
+  registry: Pick<BookRegistry, "acquire" | "release">,
+  bookId: string,
+  gen: AsyncIterable<T>,
+): AsyncIterable<T> {
+  registry.acquire(bookId);
+  try {
+    yield* gen;
+  } finally {
+    registry.release(bookId);
+  }
 }

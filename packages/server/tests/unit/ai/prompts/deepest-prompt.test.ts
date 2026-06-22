@@ -15,6 +15,18 @@ describe("resolveDeepestPrompt(全局默认 + 每本覆盖)", () => {
   it("都没有则空串", () => {
     expect(resolveDeepestPrompt({})).toBe("");
   });
+  it("本书开关关掉则完全不注入(连全局也不回落)", () => {
+    expect(resolveDeepestPrompt({ perBook: "本书规则", global: "全局规则", perBookEnabled: false })).toBe("");
+    expect(resolveDeepestPrompt({ perBook: "", global: "全局规则", perBookEnabled: false })).toBe("");
+  });
+  it("全局开关关掉则本书空时不回落全局", () => {
+    expect(resolveDeepestPrompt({ perBook: "", global: "全局规则", globalEnabled: false })).toBe("");
+    // 本书有内容时仍生效
+    expect(resolveDeepestPrompt({ perBook: "本书规则", global: "全局规则", globalEnabled: false })).toBe("本书规则");
+  });
+  it("开关为 true(默认)时行为不变", () => {
+    expect(resolveDeepestPrompt({ perBook: "本书规则", perBookEnabled: true, globalEnabled: true })).toBe("本书规则");
+  });
 });
 
 describe("prependDeepestPrompt(原文拼到最前端)", () => {

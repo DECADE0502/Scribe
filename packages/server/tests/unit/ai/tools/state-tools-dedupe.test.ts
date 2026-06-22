@@ -72,3 +72,34 @@ describe("state tools dedupe", () => {
     expect(timelineRepo.listAll()[0]?.event).toBe("Lin leaves");
   });
 });
+
+describe("state tools 每章新增预算(防暴涨)", () => {
+  async function execOn(t: ReturnType<typeof makeStateTools>, name: string, args: Record<string, unknown>) {
+    const tool = t[name]!;
+    return await tool.execute!(tool.parameters.parse(args), { toolCallId: "x", messages: [] } as any);
+  }
+
+  it("超过每章新增角色上限后拒绝新建,提示改用 update", async () => {
+    const capped = makeStateTools({ charactersRepo, foreshadowingRepo, timelineRepo, chapterNo: 5, maxNewCharacters: 1, maxNewForeshadowing: 1 });
+    const r1 = await execOn(capped, "create_character", { name: "甲", role: "supporting" });
+    expect(r1.created).toBe("甲");
+    const r2 = await execOn(capped, "create_character", { name: "乙", role: "supporting" });
+    expect(r2.skipped).toContain("上限");
+    // 只建了 1 个(外加 beforeEach 的 Lin)
+    expect(charactersRepo.list().map(c => c.name)).toEqual(expect.arrayContaining(["Lin", "甲"]));
+    expect(charactersRepo.list().some(c => c.name === "乙")).toBe(false);
+  });
+
+  it("超过每章新埋伏笔上限后拒绝新建", async () => {
+    const capped = makeStateTools({ charactersRepo, foreshadowingRepo, timelineRepo, chapterNo: 5, maxNewCharacters: 3, maxNewForeshadowing: 1 });
+    expect((await execOn(capped, "add_foreshadowing", { label: "线索A" })).planted).toBe("线索A");
+    expect((await execOn(capped, "add_foreshadowing", { label: "线索B" })).skipped).toContain("上限");
+    expect(foreshadowingRepo.list().some(f => f.label === "线索B")).toBe(false);
+  });
+
+  it("默认上限不影响正常的少量新增(回归保护)", async () => {
+    const def = makeStateTools({ charactersRepo, foreshadowingRepo, timelineRepo, chapterNo: 5 });
+    expect((await execOn(def, "create_character", { name: "丙", role: "supporting" })).created).toBe("丙");
+    expect((await execOn(def, "add_foreshadowing", { label: "线索C" })).planted).toBe("线索C");
+  });
+});

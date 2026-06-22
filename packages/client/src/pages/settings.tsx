@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { t } from "../i18n/zh-CN.js";
 import { useToastStore } from "../stores/toast.js";
@@ -152,6 +152,7 @@ export function SettingsPage() {
     setModelsError(null);
     if (defaults?.write) setWriteModelId(defaults.write);
     if (defaults?.audit) setAuditModelId(defaults.audit);
+    void refreshModels(nextProvider);
   };
 
   const saveProviderDialog = () => {
@@ -171,6 +172,7 @@ export function SettingsPage() {
     if (config.defaultWriteModelId) setWriteModelId(config.defaultWriteModelId);
     if (config.defaultAuditModelId) setAuditModelId(config.defaultAuditModelId);
     setProviderDialog(null);
+    void refreshModels(config.id);
   };
 
   const reload = useCallback(async () => {
@@ -187,51 +189,26 @@ export function SettingsPage() {
     setCustomProviders(Array.isArray(j.customProviders) ? j.customProviders.map(customToDraft) : []);
   }, []);
 
-  const refreshModels = useCallback(async (syncCurrentSettings = false) => {
+  // 预览模型列表:仅用当前草稿(供应商 + 刚填的 Key + 自定义供应商)向服务端要列表,
+  // 不保存任何设置。服务端会在草稿没填 Key 时回退到该供应商已存的 Key。
+  const refreshModels = useCallback(async (overrideProvider?: string) => {
     setModelsError(null);
     setModelsLoading(true);
     try {
-      if (syncCurrentSettings) {
-        const budgetNum = Number(budget);
-        const savedStyleReferences = styleReferences
-          .map(ref => ({ ...ref, name: ref.name.trim() }))
-          .filter(ref => ref.id);
-        const savedCustomProviders = customProviders
-          .map(draftToConfig)
-          .filter((item): item is CustomProviderConfig => !!item);
-        const body: Record<string, unknown> = {
-          provider,
-          writeModelId,
-          auditModelId,
-          masterPrompt,
-          styleReferences: savedStyleReferences,
-          customProviders: savedCustomProviders,
-          ...(budgetNum > 0 ? { singleBudgetUsd: budgetNum } : {}),
-        };
-        if (apiKeyInput.trim()) body.apiKey = apiKeyInput.trim();
-        const settingsRes = await fetch("/api/settings", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        if (!settingsRes.ok) throw new Error(`HTTP ${settingsRes.status}`);
-        const updated = await settingsRes.json().catch(() => null) as Partial<SettingsData> | null;
-        if (updated) {
-          setSettings(current => ({
-            provider,
-            writeModelId,
-            auditModelId,
-            masterPrompt,
-            styleReferences: savedStyleReferences,
-            customProviders: savedCustomProviders,
-            providerKeys: updated.providerKeys ?? current?.providerKeys ?? {},
-            singleBudgetUsd: budgetNum > 0 ? budgetNum : current?.singleBudgetUsd ?? 5,
-            apiKeyMasked: updated.apiKeyMasked ?? keyStatusFor(current, provider).apiKeyMasked,
-            hasApiKey: updated.hasApiKey ?? keyStatusFor(current, provider).hasApiKey,
-          }));
-        }
-      }
-      const res = await fetch("/api/models");
+      const useProvider = overrideProvider ?? provider;
+      const draftCustomProviders = customProviders
+        .map(draftToConfig)
+        .filter((item): item is CustomProviderConfig => !!item);
+      const body: Record<string, unknown> = {
+        provider: useProvider,
+        customProviders: draftCustomProviders,
+      };
+      if (apiKeyInput.trim()) body.apiKey = apiKeyInput.trim();
+      const res = await fetch("/api/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
       if (!res.ok) {
         const j = await res.json().catch(() => ({})) as { error?: string };
         throw new Error(j.error ?? `HTTP ${res.status}`);
@@ -244,16 +221,27 @@ export function SettingsPage() {
     } finally {
       setModelsLoading(false);
     }
-  }, [apiKeyInput, auditModelId, budget, customProviders, masterPrompt, provider, styleReferences, writeModelId]);
+  }, [apiKeyInput, customProviders, provider]);
 
   useEffect(() => {
     void reload();
-    void refreshModels(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [reload]);
+
+  // 设置首次加载完成后,按已保存的当前供应商拉一次模型列表(此时 provider 已是真实值,避免用默认值误拉)
+  const didInitModels = useRef(false);
+  useEffect(() => {
+    if (settings && !didInitModels.current) {
+      didInitModels.current = true;
+      void refreshModels();
+    }
+  }, [settings, refreshModels]);
 
   const save = async () => {
     const budgetNum = Number(budget);
+    if (!Number.isFinite(budgetNum) || budgetNum <= 0) {
+      pushToast({ level: "error", text: "预算上限必须是大于 0 的数字" });
+      return;
+    }
     if (settings && budgetNum > settings.singleBudgetUsd) {
       const ok = window.confirm("调高预算上限可能产生意外消费,确认?");
       if (!ok) return;
@@ -334,7 +322,6 @@ export function SettingsPage() {
           data-testid={testId}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          onFocus={() => void refreshModels(true)}
           style={{ flex: 1, padding: 6 }}
         >
           {options.map(id => <option key={id} value={id}>{id}</option>)}
@@ -409,80 +396,6 @@ export function SettingsPage() {
               </button>
             </div>
           ))}
-          {false && customProviders.map((item) => (
-            <div key={item.localId} data-testid={`custom-provider-${item.localId}`} style={{ display: "grid", gap: 8, paddingBottom: 10, borderBottom: "1px solid #eee" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                <input
-                  data-testid={`custom-provider-id-${item.localId}`}
-                  value={item.id}
-                  placeholder="供应商 ID，如 my-openai"
-                  onChange={(e) => setCustomProviders(items => items.map(providerItem =>
-                    providerItem.localId === item.localId ? { ...providerItem, id: normalizeProviderId(e.target.value) } : providerItem
-                  ))}
-                  style={{ padding: 7 }}
-                />
-                <input
-                  data-testid={`custom-provider-name-${item.localId}`}
-                  value={item.name}
-                  placeholder="显示名称"
-                  onChange={(e) => setCustomProviders(items => items.map(providerItem =>
-                    providerItem.localId === item.localId ? { ...providerItem, name: e.target.value } : providerItem
-                  ))}
-                  style={{ padding: 7 }}
-                />
-              </div>
-              <input
-                data-testid={`custom-provider-base-url-${item.localId}`}
-                value={item.baseUrl}
-                placeholder="Base URL，如 https://api.example.com/v1"
-                onChange={(e) => setCustomProviders(items => items.map(providerItem =>
-                  providerItem.localId === item.localId ? { ...providerItem, baseUrl: e.target.value } : providerItem
-                ))}
-                style={{ padding: 7 }}
-              />
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px auto", gap: 8, alignItems: "center" }}>
-                <input
-                  data-testid={`custom-provider-write-model-${item.localId}`}
-                  value={item.defaultWriteModelId}
-                  placeholder="默认写作模型"
-                  onChange={(e) => setCustomProviders(items => items.map(providerItem =>
-                    providerItem.localId === item.localId ? { ...providerItem, defaultWriteModelId: e.target.value } : providerItem
-                  ))}
-                  style={{ padding: 7 }}
-                />
-                <input
-                  data-testid={`custom-provider-audit-model-${item.localId}`}
-                  value={item.defaultAuditModelId}
-                  placeholder="默认审查模型"
-                  onChange={(e) => setCustomProviders(items => items.map(providerItem =>
-                    providerItem.localId === item.localId ? { ...providerItem, defaultAuditModelId: e.target.value } : providerItem
-                  ))}
-                  style={{ padding: 7 }}
-                />
-                <select
-                  data-testid={`custom-provider-auth-${item.localId}`}
-                  value={item.auth}
-                  onChange={(e) => setCustomProviders(items => items.map(providerItem =>
-                    providerItem.localId === item.localId ? { ...providerItem, auth: e.target.value === "api-key" ? "api-key" : "bearer" } : providerItem
-                  ))}
-                  style={{ padding: 7 }}
-                >
-                  <option value="bearer">Bearer</option>
-                  <option value="api-key">api-key</option>
-                </select>
-                <button
-                  className="ios-btn-small"
-                  data-testid={`custom-provider-delete-${item.localId}`}
-                  onClick={() => {
-                    setCustomProviders(items => items.filter(providerItem => providerItem.localId !== item.localId));
-                    if (provider === item.id) handleProviderChange("anyrouter");
-                  }}
-                >
-                  删除
-                </button>
-              </div>
-            </div>
-          ))}
           {customProviders.length === 0 && <p style={{ color: "#999", fontSize: 13, margin: 0 }}>暂无自定义供应商</p>}
           <button
             className="ios-btn-small"
@@ -525,7 +438,7 @@ export function SettingsPage() {
 
       <p className="settings-caption" style={{ paddingLeft: 4, display: "flex", alignItems: "center", gap: 8 }}>
         {t.settings.model}
-        <button className="ios-btn-small" data-testid="refresh-models" onClick={() => void refreshModels(true)} disabled={modelsLoading}>
+        <button className="ios-btn-small" data-testid="refresh-models" onClick={() => void refreshModels()} disabled={modelsLoading}>
           {modelsLoading ? t.app.loading : t.settings.refreshModels}
         </button>
       </p>

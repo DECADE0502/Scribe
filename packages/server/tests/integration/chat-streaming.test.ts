@@ -101,6 +101,37 @@ describe("runChat 流式", () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
+  it("对话流把 LLM 用量与成本落库(修复前 /write 路径恒为 $0)", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "scribe-cost-"));
+    const paths = makePaths(tmp);
+    fs.mkdirSync(paths.booksDir, { recursive: true });
+    const registry = createBookRegistry({ paths });
+    const app = createApp({
+      getModel: () => makeStubModel(["写", "完"]),
+      bookRegistry: registry,
+      writeModelInfo: { id: "claude-sonnet-4-6", pricing: { input: 3, output: 15, cachedInput: 0.3 } } as any,
+    });
+    const created = await app.request("/api/books", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "计费测试" }),
+    });
+    const book = await created.json() as { id: string };
+
+    await new Response((await app.request(`/api/books/${book.id}/conversation?mode=chat`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "在吗" }),
+    })).body).text();
+
+    const handle = registry.open(book.id);
+    const records = handle.tokenUsageRepo.listRecent(10);
+    expect(records.length).toBeGreaterThan(0);
+    expect(records[0]!.model).toBe("claude-sonnet-4-6");
+    expect(handle.tokenUsageRepo.totalCost()).toBeGreaterThan(0);
+
+    registry.closeAll();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
   it("accepts executionMode and emits workflow_mode over SSE", async () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "scribe-chat-"));
     const paths = makePaths(tmp);

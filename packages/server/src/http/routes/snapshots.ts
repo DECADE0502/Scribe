@@ -30,6 +30,9 @@ export function snapshotRoutes(deps: SnapshotRoutesDeps) {
     const bookId = c.req.param("bookId");
     const book = deps.registry.booksRepo.get(bookId);
     if (!book) return c.json({ error: "书不存在" }, 404);
+    if (deps.registry.isBusy(bookId)) {
+      return c.json({ error: "这本书正在写作/生成中,请稍后再创建快照" }, 409);
+    }
     deps.registry.open(bookId); // 确保目录在
     // Windows 下打包打开中的 SQLite(WAL)会锁,先关连接
     deps.registry.closeBook(bookId);
@@ -59,9 +62,16 @@ export function snapshotRoutes(deps: SnapshotRoutesDeps) {
     const snapshotPath = path.posix.join(deps.paths.bookBackupsDir(bookId), filename);
     if (!fs.existsSync(snapshotPath)) return c.json({ error: "快照不存在" }, 404);
 
+    if (deps.registry.isBusy(bookId)) {
+      return c.json({ error: "这本书正在写作/生成中,请稍后再恢复快照" }, 409);
+    }
     // 关闭当前 workspace 连接(restore 要覆盖 db 文件)
     deps.registry.closeBook(bookId);
-    await restoreSnapshot({ snapshotPath, destDir: deps.paths.bookDir(bookId) });
+    try {
+      await restoreSnapshot({ snapshotPath, destDir: deps.paths.bookDir(bookId) });
+    } catch (e) {
+      return c.json({ error: `恢复快照失败:${(e as Error).message}` }, 500);
+    }
     return c.json({ restored: filename });
   });
 

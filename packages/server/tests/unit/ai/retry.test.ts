@@ -1,5 +1,25 @@
 import { describe, it, expect, vi } from "vitest";
-import { withRetry } from "../../../src/ai/retry.js";
+import { withRetry, classifyLlmError } from "../../../src/ai/retry.js";
+
+describe("classifyLlmError", () => {
+  it("429 / rate limit → rate_limit", () => {
+    expect(classifyLlmError(Object.assign(new Error("x"), { statusCode: 429 }))).toBe("rate_limit");
+    expect(classifyLlmError(new Error("Rate limit exceeded"))).toBe("rate_limit");
+  });
+  it("401/403 → auth", () => {
+    expect(classifyLlmError(Object.assign(new Error("x"), { status: 401 }))).toBe("auth");
+  });
+  it("超时/网络/5xx → timeout(可重试)", () => {
+    expect(classifyLlmError(new Error("socket hang up"))).toBe("timeout");
+    expect(classifyLlmError(Object.assign(new Error("x"), { statusCode: 503 }))).toBe("timeout");
+  });
+  it("AbortError → unknown(不重试)", () => {
+    expect(classifyLlmError(Object.assign(new Error("aborted"), { name: "AbortError" }))).toBe("unknown");
+  });
+  it("上下文超长 → context_overflow", () => {
+    expect(classifyLlmError(new Error("maximum context length is 200000"))).toBe("context_overflow");
+  });
+});
 
 describe("withRetry", () => {
   it("rate_limit 指数退避至多 3 次", async () => {

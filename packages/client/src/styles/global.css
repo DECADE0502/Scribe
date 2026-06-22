@@ -122,7 +122,8 @@ code {
 
 .three-pane {
   display: grid;
-  grid-template-columns: minmax(260px, 0.84fr) minmax(440px, 1.55fr) minmax(280px, 0.95fr);
+  /* 右栏内联显示详情,需要足够宽度;编辑器仍占主区 */
+  grid-template-columns: minmax(252px, 0.76fr) minmax(440px, 1.6fr) minmax(312px, 1.02fr);
   height: 100vh;
   min-width: 0;
   gap: 0;
@@ -150,79 +151,64 @@ code {
   overflow: hidden;
 }
 
+/* 右栏:顶部横向标签条(图标 + 完整中文,可横向滚动)+ 下方内联详情 */
 .side-panel-shell {
-  display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   height: 100%;
   min-width: 0;
   min-height: 0;
 }
 
-.side-tab-rail {
+.side-tab-bar {
+  flex: none;
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-  min-height: 0;
-  padding: 10px 6px;
-  overflow-y: auto;
-  border-right: 0.5px solid var(--ios-sep);
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px;
+  border-bottom: 0.5px solid var(--ios-sep);
   background: rgba(255, 255, 255, 0.58);
-  scrollbar-width: thin;
 }
 
-.side-tab-button {
-  width: 40px;
-  min-height: 38px;
-  padding: 5px 3px;
+.side-tab-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
   border-radius: 8px;
   background: transparent;
   color: var(--ios-text-2);
-  font-size: 12px;
-  line-height: 1.1;
-  font-weight: 500;
+  font-size: 13px;
+  white-space: nowrap;
+  transition: background 0.15s ease;
 }
 
-.side-tab-button:hover {
+.side-tab-chip:hover {
   background: var(--ios-fill);
   color: var(--ios-text);
 }
 
-.side-tab-button.active {
+.side-tab-chip.active {
   background: var(--ios-card);
   color: var(--ios-blue);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
-  font-weight: 700;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  font-weight: 600;
 }
 
-.side-tab-label {
-  display: block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.side-tab-chip-icon { font-size: 14px; }
 
 .side-panel-content {
+  flex: 1;
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding: 10px 12px 14px;
+  padding: 12px 14px 16px;
 }
 
 @media (max-width: 1180px) {
   .three-pane {
-    grid-template-columns: minmax(240px, 0.78fr) minmax(400px, 1.4fr) minmax(260px, 0.92fr);
-  }
-
-  .side-panel-shell {
-    grid-template-columns: 48px minmax(0, 1fr);
-  }
-
-  .side-tab-button {
-    width: 36px;
-    min-height: 36px;
-    font-size: 11px;
+    grid-template-columns: minmax(240px, 0.74fr) minmax(420px, 1.5fr) minmax(288px, 1fr);
   }
 }
 
@@ -391,4 +377,44 @@ code {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* ===== AI 状态指示(对话/创书) ===== */
+/* 流式打字光标 */
+@keyframes caret-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+.typing-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  background: currentColor;
+  vertical-align: text-bottom;
+  animation: caret-blink 1s step-start infinite;
+}
+
+/* “正在思考”脉动三点 */
+@keyframes dot-pulse {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-3px); }
+}
+.typing-dots { display: inline-flex; align-items: center; gap: 4px; }
+.typing-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ios-text-3, #aab);
+  animation: dot-pulse 1.2s infinite ease-in-out;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+/* 工具调用进行中的小转圈 */
+.chip-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid #c9d2ff;
+  border-top-color: #5b73ff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
 }

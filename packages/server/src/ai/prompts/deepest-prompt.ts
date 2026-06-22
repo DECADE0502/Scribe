@@ -13,12 +13,22 @@ export interface DeepestPromptSource {
   perBook?: string | null;
   /** 全局默认(config.masterPrompt) */
   global?: string | null;
+  /** 本书是否启用最深处提示词(book_meta.master_prompt_enabled,默认 true)。关掉则完全不注入。 */
+  perBookEnabled?: boolean;
+  /** 全局是否启用(config.masterPromptEnabled,默认 true) */
+  globalEnabled?: boolean;
 }
 
-/** 解析生效的最深处提示词:每本覆盖优先,否则全局,都没有则空串。 */
+/**
+ * 解析生效的最深处提示词:每本覆盖优先,否则全局,都没有则空串。
+ * 显式开关:perBookEnabled=false 时整本书都不注入(连全局也不回落,语义=本书关掉深层提示词);
+ * globalEnabled=false 时全局那份不参与。
+ */
 export function resolveDeepestPrompt(src: DeepestPromptSource): string {
+  if (src.perBookEnabled === false) return "";
   const perBook = (src.perBook ?? "").trim();
   if (perBook) return perBook;
+  if (src.globalEnabled === false) return "";
   return (src.global ?? "").trim();
 }
 

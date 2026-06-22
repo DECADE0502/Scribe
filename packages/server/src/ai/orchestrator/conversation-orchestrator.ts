@@ -14,6 +14,7 @@ import {
   buildBookPromptContext,
   buildChapterWriteMessages,
   enrichUserIntentWithOutline,
+  resolveChapterTitle,
 } from "../context-builder/book-context.js";
 import { makeGenreSectionTools } from "../tools/genre-section-tools.js";
 import { makeBookTools } from "../tools/book-tools.js";
@@ -168,6 +169,7 @@ async function* writeChapterFlow(
     {
       chapterNo,
       userIntent: fullUserIntent,
+      chapterTitle: resolveChapterTitle(handle.outlineRepo, chapterNo),
       prebuiltMessages: buildChapterWriteMessages(
         handle,
         chapterNo,
@@ -318,18 +320,44 @@ async function* recallFlow(
   deps: ConversationOrchestratorDeps,
   keyword: string,
 ): AsyncIterable<SseEvent> {
-  const all = deps.handle.chaptersRepo.listSummaries();
+  const summaries = deps.handle.chaptersRepo.listSummaries();
+  const summaryByNo = new Map(summaries.map((s) => [s.chapterNo, s]));
   const max = deps.handle.chaptersRepo.maxChapterNo();
-  const hits = recallChapters({
-    allSummaries: all,
-    currentChapterNo: max + 1,
-    intentCharacters: keyword ? [keyword] : deps.handle.charactersRepo.list().map((c) => c.name),
-    intentForeshadowing: keyword ? [keyword] : deps.handle.foreshadowingRepo.list("active").map((f) => f.label),
-    topK: 5,
-  });
+  const kw = keyword.trim();
+
+  let hits: Array<{ chapterNo: number; oneLiner: string }>;
+  if (kw) {
+    // 用户主动检索:对全书(含最近章)做"摘要 + 正文"全文子串匹配。
+    // 这才符合"找某个人/某件事在哪些章出现"的直觉,而不是只在稀疏摘要里找。
+    hits = [];
+    for (let no = 1; no <= max; no++) {
+      const s = summaryByNo.get(no);
+      const chapter = deps.handle.chapterFiles.read(no);
+      const haystack = [
+        s?.oneLiner ?? "",
+        s?.paragraph ?? "",
+        ...(s?.keyEvents ?? []).flatMap((ev) => [ev.event, ...ev.characters, ...ev.foreshadowingRefs]),
+        chapter?.content ?? "",
+      ].join("\n");
+      if (haystack.includes(kw)) {
+        hits.push({ chapterNo: no, oneLiner: s?.oneLiner ?? chapter?.title ?? `第${no}章` });
+      }
+    }
+  } else {
+    // 无关键词:按全书活跃角色/伏笔打分召回(含最近章)。
+    hits = recallChapters({
+      allSummaries: summaries,
+      currentChapterNo: max + 1,
+      intentCharacters: deps.handle.charactersRepo.list().map((c) => c.name),
+      intentForeshadowing: deps.handle.foreshadowingRepo.list("active").map((f) => f.label),
+      topK: 5,
+      includeRecent: true,
+    }).map((s) => ({ chapterNo: s.chapterNo, oneLiner: s.oneLiner }));
+  }
+
   const text = hits.length
-    ? [`找到 ${hits.length} 个相关章节:`, ...hits.map((s) => `· 第${s.chapterNo}章 ${s.oneLiner}`)].join("\n")
-    : `没有找到与「${keyword || "当前线索"}」相关的历史章节。`;
+    ? [`找到 ${hits.length} 个相关章节:`, ...hits.map((h) => `· 第${h.chapterNo}章 ${h.oneLiner}`)].join("\n")
+    : `没有找到与「${kw || "当前线索"}」相关的历史章节。`;
   yield* cannedText(text);
 }
 
@@ -688,6 +716,16 @@ export async function* runConversation(
   // 其余全部走 agenticChat 让 AI 自己理解需求 + 调轻量工具。
 
   const analysis = await analyzeIntent(deps.auditModel, input.message, deps.abortSignal);
+  // 全量计费:意图分类也是一次 LLM 调用
+  if (analysis.usage) {
+    yield {
+      type: "usage",
+      promptTokens: analysis.usage.promptTokens,
+      completionTokens: analysis.usage.completionTokens,
+      cachedTokens: analysis.usage.cachedTokens,
+      reasoningTokens: analysis.usage.reasoningTokens,
+    };
+  }
   if (analysis.category === "writing_intent") {
     yield { type: "intent", category: "writing_intent" };
     const count = analysis.chapterCount ?? 1;

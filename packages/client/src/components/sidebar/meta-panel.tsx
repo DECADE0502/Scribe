@@ -6,12 +6,21 @@ interface BookMeta {
   premise: string;
   tone: string;
   genre: string;
+  goalForm: string;
+  goalTargetChapters: string;
+  goalEnding: string;
+  goalSequel: string;
 }
+
+const EMPTY_META: BookMeta = {
+  title: "", premise: "", tone: "", genre: "",
+  goalForm: "", goalTargetChapters: "", goalEnding: "", goalSequel: "",
+};
 
 export function MetaPanel(props: { bookId: string }) {
   const { bookId } = props;
   const pushToast = useToastStore((s) => s.push);
-  const [meta, setMeta] = useState<BookMeta>({ title: "", premise: "", tone: "", genre: "" });
+  const [meta, setMeta] = useState<BookMeta>(EMPTY_META);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
@@ -20,7 +29,7 @@ export function MetaPanel(props: { bookId: string }) {
       try {
         const res = await fetch(`/api/books/${encodeURIComponent(bookId)}/meta`);
         if (!res.ok) return;
-        setMeta(await res.json() as BookMeta);
+        setMeta({ ...EMPTY_META, ...(await res.json() as Partial<BookMeta>) });
       } catch {
         // ignore
       } finally {
@@ -92,6 +101,62 @@ export function MetaPanel(props: { bookId: string }) {
           value={meta.premise}
           onChange={(e) => setMeta({ ...meta, premise: e.target.value })}
           placeholder="一句话或一段话描述故事的核心设定和主角动机..."
+        />
+      </div>
+      <div style={{ borderTop: "1px solid var(--ios-sep, #e5e5e5)", margin: "4px 0", paddingTop: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "#666", marginBottom: 8 }}>📌 创作目标(影响 AI 的篇幅与节奏把控)</div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ display: "block", fontSize: 13, marginBottom: 4, color: "#888" }}>篇幅形态</label>
+            <select
+              data-testid="meta-goal-form"
+              className="ios-input"
+              style={{ width: "100%", boxSizing: "border-box" }}
+              value={meta.goalForm}
+              onChange={(e) => setMeta({ ...meta, goalForm: e.target.value })}
+            >
+              <option value="">未定</option>
+              <option value="短篇">短篇</option>
+              <option value="中篇">中篇</option>
+              <option value="长篇">长篇</option>
+              <option value="长篇连载">长篇连载</option>
+            </select>
+          </div>
+          <div style={{ width: 120 }}>
+            <label style={{ display: "block", fontSize: 13, marginBottom: 4, color: "#888" }}>目标章数</label>
+            <input
+              data-testid="meta-goal-chapters"
+              type="number"
+              min="1"
+              className="ios-input"
+              style={{ width: "100%", boxSizing: "border-box" }}
+              value={meta.goalTargetChapters}
+              onChange={(e) => setMeta({ ...meta, goalTargetChapters: e.target.value })}
+              placeholder="如 100"
+            />
+          </div>
+        </div>
+      </div>
+      <div>
+        <label style={{ display: "block", fontSize: 13, marginBottom: 4, color: "#888" }}>最终目标 / 结局走向</label>
+        <textarea
+          data-testid="meta-goal-ending"
+          className="ios-input"
+          style={{ width: "100%", boxSizing: "border-box", minHeight: 70, resize: "vertical", fontFamily: "inherit" }}
+          value={meta.goalEnding}
+          onChange={(e) => setMeta({ ...meta, goalEnding: e.target.value })}
+          placeholder="主角最终要达成或走向什么、全书要收束到哪里..."
+        />
+      </div>
+      <div>
+        <label style={{ display: "block", fontSize: 13, marginBottom: 4, color: "#888" }}>续集考虑</label>
+        <input
+          data-testid="meta-goal-sequel"
+          className="ios-input"
+          style={{ width: "100%", boxSizing: "border-box" }}
+          value={meta.goalSequel}
+          onChange={(e) => setMeta({ ...meta, goalSequel: e.target.value })}
+          placeholder="如：不考虑 / 预留续集钩子 / 三部曲第一部"
         />
       </div>
       <button

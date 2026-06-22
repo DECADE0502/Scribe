@@ -75,11 +75,24 @@ export function createForeshadowingRepo(db: Database) {
       ).run(paidChapter, id);
       return this.get(id)!;
     },
-    /** 删 planted_chapter 或 paid_chapter >= fromChapterNo 的伏笔（回档语义） */
+    /**
+     * 回档语义:从 fromChapterNo 起的内容被删时同步伏笔。
+     * - planted_chapter >= from:埋设本身在回档范围内 → 整条删除。
+     * - planted_chapter < from 但 paid_chapter >= from:伏笔早就埋下(应保留),
+     *   只是“回收”发生在被删范围内 → 撤销回收,恢复为 active(不要把有效线索删掉)。
+     * 返回实际删除的条数。
+     */
     deleteFromChapter(fromChapterNo: number): number {
-      return db
-        .prepare("DELETE FROM foreshadowing WHERE planted_chapter >= ? OR paid_chapter >= ?")
-        .run(fromChapterNo, fromChapterNo).changes;
+      const tx = db.transaction(() => {
+        const deleted = db
+          .prepare("DELETE FROM foreshadowing WHERE planted_chapter >= ?")
+          .run(fromChapterNo).changes;
+        db.prepare(
+          "UPDATE foreshadowing SET status='active', paid_chapter=NULL WHERE planted_chapter < ? AND paid_chapter >= ?"
+        ).run(fromChapterNo, fromChapterNo);
+        return deleted;
+      });
+      return tx();
     },
   };
 }

@@ -18,6 +18,7 @@ import {
   enrichUserIntentWithOutline,
   extractRequiredOutputSections,
   findChapterOutlineNode,
+  resolveChapterTitle,
   findChapterOutlineSummary,
   renderCharacterStateContinuity,
   renderHardContinuityConstraints,
@@ -144,6 +145,11 @@ describe("chapter outline matching", () => {
 
     expect(findChapterOutlineNode(outlineRepo, 1)?.id).toBe("ch1");
     expect(findChapterOutlineSummary(outlineRepo, 1)).toBe("第一章必须写主角在雨夜收到信");
+    // resolveChapterTitle:用大纲真标题,匹配章号(回归 #章节标题占位符)
+    expect(resolveChapterTitle(outlineRepo, 1)).toBe("第1章 雨夜开局");
+    expect(resolveChapterTitle(outlineRepo, 10)).toBe("第10章 旧敌回归");
+    // 没有对应大纲节点 → 回退占位符
+    expect(resolveChapterTitle(outlineRepo, 3)).toBe("第 3 章");
   });
 
   it("does not fall back to arc text when a chapter node is missing", () => {

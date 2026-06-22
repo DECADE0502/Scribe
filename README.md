@@ -15,7 +15,7 @@ pnpm install
 
 ## 配置 API Key
 
-在数据目录创建 `secrets.env`(默认 `%APPDATA%\scribe\secrets.env`,可用环境变量 `SCRIBE_HOME` 改根目录):
+在数据目录创建 `secrets.env`(默认 `<项目目录>/.scribe-data/secrets.env`,可用环境变量 `SCRIBE_HOME` 改根目录):
 
 ```
 DEEPSEEK_API_KEY=sk-xxxx
@@ -56,7 +56,7 @@ reports/        历史验证报告和 live-run 证据
 
 ## 数据存放
 
-- 默认根目录:`%APPDATA%\scribe\`(Windows)/ `~/.config/scribe`(Linux)
+- 默认根目录:**项目目录下的 `.scribe-data/`**(已在 `.gitignore`),删掉项目目录即可彻底清除,不在系统配置目录残留;可用环境变量 `SCRIBE_HOME` 改到任意位置
 - 每本书:`books/<id>/`(workspace.db + chapters/*.md + rules.md)
 - 自动快照:`backups/<id>/*.tar.gz`(30 天滚动 + 每周保留)
 

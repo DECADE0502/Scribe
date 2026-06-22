@@ -31,9 +31,11 @@ export const RECORD_STATE_PROMPT = `你是 Scribe 的设定记录员。刚写完
 5. **伏笔**(add_foreshadowing / pay_foreshadowing):本章埋下或回收的悬念。**注意主动回收**:本章若揭晓/兑现了某条活跃伏笔,务必用 pay_foreshadowing 标记,别让它一直挂着。
 6. **时间线**(add_timeline_event):本章 1-3 个关键事件。
 
-纪律:
+纪律(防止档案暴涨,务必遵守):
 - 只记录本章**确实出现**的内容,不要脑补未出现的设定
-- 已记录过的角色不要重复添加;通用记录条目一律用 upsert_record_item 交给本地按 identityFields 去重
+- **克制建档**:每章最多新建 2-3 个角色、最多新埋 2 条伏笔。只为有实质戏份的关键人物建档,路人/一次性配角一律不建;每个悬念/疑问不要都登记成伏笔,只登记后续真的会回收的核心伏笔。(工具有每章上限,超额会被拒绝——这是提醒你优先取舍,而不是凑满。)
+- **更新优先于新建**:已存在的角色用 update_character_state,不要重复 create_character。
+- 通用记录条目一律用 upsert_record_item 交给本地按 identityFields 去重
 - 全部记录完后,输出一行中文总结(记录了几条什么)`;
 
 export interface RecordStateDeps {
@@ -52,10 +54,6 @@ export interface RecordStateInput {
   archiveSummary: string;
   /** If present and failed, durable state recording must not run. */
   qualityGateResult?: { passed: boolean; blockingIssues: string[] };
-}
-
-function hasGenericCollections(archiveSummary: string): boolean {
-  return /^- .+\(identity:.+; display:.+; search:.+; 字段:.+\)$/m.test(archiveSummary);
 }
 
 function shouldCountSuccessfulUpsert(ev: SseEvent): boolean {
@@ -123,25 +121,10 @@ export async function* recordChapterState(
     { role: "system" as const, content: RECORD_STATE_PROMPT },
     { role: "user" as const, content: userMsg },
   ];
+  // 单趟记录:此前"没写 upsert 就把 16 步整轮重跑"会让 record-state 成本/延迟翻倍,
+  // 收益却很有限(模型本就被提示要落库)。改为只跑一趟,显著降本提速。
   const first = yield* runRecordPass(deps, tools, baseMessages);
-  if (first.hadError || first.hadSuccessfulUpsert || !hasGenericCollections(input.archiveSummary)) {
-    yield* first.terminal;
-    return;
-  }
-
-  const retryMessages = [
-    ...baseMessages,
-    {
-      role: "user" as const,
-      content: [
-        "复核:当前档案里已有通用记录集合,但刚才没有写入任何 upsert_record_item。",
-        "请重新阅读本章正文和现有集合。只要本章出现任何需要后续保持一致的对象、规则、资源、关系、线索或状态,必须用最合适的通用集合调用 upsert_record_item 落库。",
-        "如果现有集合缺字段,先 update_record_collection_schema;如果没有合适集合,先 create_record_collection。只有本章完全没有可长期追踪信息时,才输出一句说明不写条目。",
-      ].join("\n"),
-    },
-  ];
-  const second = yield* runRecordPass(deps, tools, retryMessages);
-  yield* second.terminal;
+  yield* first.terminal;
 }
 
 /** 组装档案概要(给 record prompt 用) */

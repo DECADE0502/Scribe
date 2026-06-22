@@ -57,6 +57,10 @@ export interface StateToolsDeps {
   foreshadowingRepo: StateForeshadowingRepoLike;
   timelineRepo: StateTimelineRepoLike;
   chapterNo: number;
+  /** 本章最多新建角色数(防暴涨;超额工具拒绝并提示改用 update)。默认 3 */
+  maxNewCharacters?: number;
+  /** 本章最多新埋伏笔数(防暴涨)。默认 2 */
+  maxNewForeshadowing?: number;
 }
 
 const stateRecordSchema = z.union([z.record(z.unknown()), z.string()]);
@@ -91,9 +95,15 @@ function parseStateRecord(value: z.infer<typeof stateRecordSchema>): Record<stri
 }
 
 export function makeStateTools(deps: StateToolsDeps): Record<string, Tool> {
+  const maxNewCharacters = deps.maxNewCharacters ?? 3;
+  const maxNewForeshadowing = deps.maxNewForeshadowing ?? 2;
+  // 本章新建计数(makeStateTools 每章构建一次,计数即每章预算)
+  let newCharacters = 0;
+  let newForeshadowing = 0;
+
   return {
     create_character: tool({
-      description: "Create a character that appears in this chapter and is not already in the character list.",
+      description: "Create a NEW, story-significant character that appears in this chapter and is not already in the character list. Do not create walk-ons/one-off extras. Prefer update_character_state for existing characters. There is a per-chapter creation budget.",
       parameters: z.object({
         name: z.string().describe("Character name"),
         role: z.enum(["protagonist", "antagonist", "supporting"]).describe("Character role"),
@@ -105,11 +115,15 @@ export function makeStateTools(deps: StateToolsDeps): Record<string, Tool> {
         const cleanName = normalizeText(name);
         const existing = deps.charactersRepo.list().find(x => normalizeText(x.name) === cleanName);
         if (existing) return { skipped: "character already exists", name: cleanName };
+        if (newCharacters >= maxNewCharacters) {
+          return { skipped: `本章新增角色已达上限(${maxNewCharacters})。只为有实质戏份的关键人物建档,路人/一次性配角不要建;已有人物请用 update_character_state。`, name: cleanName };
+        }
         const baseData: Record<string, unknown> = {};
         if (background) baseData.background = normalizeText(background);
         if (motivation) baseData.motivation = normalizeText(motivation);
         if (languageHabits) baseData.languageHabits = normalizeText(languageHabits);
         const c = deps.charactersRepo.create({ name: cleanName, role, baseData, currentState: {} });
+        newCharacters += 1;
         return { created: c.name, role };
       },
     }),
@@ -156,6 +170,9 @@ export function makeStateTools(deps: StateToolsDeps): Record<string, Tool> {
         const cleanLabel = normalizeText(label);
         const existing = deps.foreshadowingRepo.list().find(f => normalizeText(f.label) === cleanLabel);
         if (existing) return { skipped: "foreshadowing already exists", label: cleanLabel };
+        if (newForeshadowing >= maxNewForeshadowing) {
+          return { skipped: `本章新埋伏笔已达上限(${maxNewForeshadowing})。只登记真正会在后续回收的核心伏笔,不要把每个悬念/疑问都登记成伏笔。`, label: cleanLabel };
+        }
         deps.foreshadowingRepo.create({
           label: cleanLabel,
           description: description ? normalizeText(description) : null,
@@ -164,6 +181,7 @@ export function makeStateTools(deps: StateToolsDeps): Record<string, Tool> {
           status: "active",
           relatedCharacters: relatedCharacters?.map(normalizeText) ?? [],
         });
+        newForeshadowing += 1;
         return { planted: cleanLabel, chapterNo: deps.chapterNo };
       },
     }),

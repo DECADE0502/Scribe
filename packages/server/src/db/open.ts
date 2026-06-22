@@ -2,13 +2,15 @@ import Database, { type Database as DatabaseType } from "better-sqlite3";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { runMigrations, type Migration } from "./migrations/runner.js";
+import { runMigrations, compareMigrations, type Migration } from "./migrations/runner.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 function loadMigrations(dir: string): Migration[] {
   if (!fs.existsSync(dir)) return [];
-  const files = fs.readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
+  const files = fs.readdirSync(dir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort((a, b) => compareMigrations({ name: a }, { name: b }));
   return files.map((name) => ({
     name,
     sql: fs.readFileSync(path.join(dir, name), "utf8"),

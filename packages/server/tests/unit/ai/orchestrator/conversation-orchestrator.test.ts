@@ -234,6 +234,15 @@ describe("runConversation 斜杠命令路由(§7.4)", () => {
     expect(text).toMatch(/第1章|第2章/);
   });
 
+  it("/recall 检索全书(含最近 3 章,短篇也能搜到)", async () => {
+    // 5 章里 林尘 贯穿全书;修复前 -3 cutoff 会漏掉最近的第3/4/5章
+    const evs = await collect(runConversation(deps, { message: "/recall 林尘" }));
+    const text = textOf(evs);
+    expect(text).toContain("第5章"); // 最近章不再被排除
+    expect(text).toContain("第3章");
+    expect(text).toContain("找到 5 个相关章节");
+  });
+
   it("/revise 引导去编辑器选段", async () => {
     const evs = await collect(runConversation(deps, { message: "/revise" }));
     expect(textOf(evs)).toContain("编辑器");

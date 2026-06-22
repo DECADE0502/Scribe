@@ -7,6 +7,12 @@ export interface RecallInput {
   intentForeshadowing: string[];
   intentRecords?: string[];
   topK?: number;
+  /**
+   * 是否把最近 3 章也纳入打分。默认 false:写作上下文构建时,最近章是单独以"近章摘要"
+   * 注入的,这里要排除以免重复。但用户主动 /recall 检索全书时应置 true,否则永远搜不到最近章
+   * (短篇里更是直接一片空白)。
+   */
+  includeRecent?: boolean;
 }
 
 /** 一章摘要的全部可检索文本(一句话 + 段落 + 事件文本 + 标注)。 */
@@ -37,7 +43,7 @@ export function recallChapters(input: RecallInput): ChapterSummary[] {
   const rs = (input.intentRecords ?? []).filter((r) => r && r.trim());
   const csSet = new Set(cs);
   const fsSet = new Set(fs);
-  const cutoff = input.currentChapterNo - 3;
+  const cutoff = input.includeRecent ? input.currentChapterNo : input.currentChapterNo - 3;
 
   const scored = input.allSummaries
     .filter((s) => s.chapterNo < cutoff)

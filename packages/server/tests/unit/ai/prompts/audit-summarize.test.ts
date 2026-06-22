@@ -62,6 +62,34 @@ describe("parseAuditOutput", () => {
     expect(out.summary.oneLiner).toContain("林尘");
   });
 
+  it("硬事实 factType 越界(如模型输出 time)被丢弃,但审查不再整体失败(回归 /audit audit_failed)", () => {
+    const withTime = {
+      ...validOutput,
+      hardFacts: [
+        { entity: "案发", attribute: "时间", value: { text: "五年前" }, factType: "time", scope: "book", evidence: "笔录" },
+      ],
+    };
+    const out = parseAuditOutput(JSON.stringify(withTime));
+    expect(out.verdict).toBe("ok");          // 此前这里会抛 ZodError → audit_failed
+    expect(out.hardFacts).toHaveLength(0);    // 越界条目被丢弃,不拖垮审查
+  });
+
+  it("越界/畸形的硬事实条目被丢弃,但整份审查仍解析成功(verdict/summary 不受影响)", () => {
+    const withBad = {
+      ...validOutput,
+      hardFacts: [
+        { entity: "剑", attribute: "数量", value: { quantity: 1 }, factType: "quantity", scope: "character", evidence: "x" },
+        { entity: "坏", attribute: "坏", value: { text: "x" }, factType: "不存在的类型", scope: "book", evidence: "x" },
+        { entity: "缺字段" }, // 畸形
+      ],
+    };
+    const out = parseAuditOutput(JSON.stringify(withBad));
+    expect(out.verdict).toBe("ok");          // 核心审查不受影响
+    expect(out.summary.oneLiner).toContain("林尘");
+    expect(out.hardFacts).toHaveLength(1);    // 只保留合法那条
+    expect(out.hardFacts![0]!.factType).toBe("quantity");
+  });
+
   it("剥 ```json 围栏后能解析", () => {
     const wrapped = "```json\n" + JSON.stringify(validOutput) + "\n```";
     const out = parseAuditOutput(wrapped);

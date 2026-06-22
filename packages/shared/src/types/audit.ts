@@ -97,7 +97,14 @@ export const ChapterAuditOutputSchema = z.object({
     ),
   }),
   stateUpdates: z.array(z.unknown()).optional(),
-  hardFacts: z.array(HardFactClaimOutputSchema).optional().default([]),
+  // 容错:逐条校验硬事实,丢弃越界/畸形的条目,而不是让整份审查(verdict/issues/summary)失败。
+  // 此前一条 factType 越界(如模型输出 "time")就会让 /audit 整体 audit_failed。
+  hardFacts: z.array(z.unknown()).optional().default([]).transform((arr) =>
+    arr.flatMap((item) => {
+      const parsed = HardFactClaimOutputSchema.safeParse(item);
+      return parsed.success ? [parsed.data] : [];
+    }),
+  ),
 });
 export type ChapterAuditOutput = z.infer<typeof ChapterAuditOutputSchema>;
 export type HardFactClaimOutput = z.infer<typeof HardFactClaimOutputSchema>;

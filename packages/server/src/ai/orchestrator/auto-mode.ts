@@ -28,6 +28,8 @@ export interface AutoModeDeps extends Omit<WriteWithAuditDeps, "model" | "auditM
    */
   buildWriteMessages?: (chapterNo: number) => CoreMessage[];
   buildAuditCtx?: (chapterNo: number) => WriteWithAuditInput["auditCtx"];
+  /** 可选:解析每章标题(取自大纲),用于章节落盘标题 */
+  resolveChapterTitle?: (chapterNo: number) => string;
   /** 用户最深处提示词,原文拼到最前端(写作与审查) */
   deepestPrompt?: string;
 }
@@ -116,6 +118,7 @@ export async function* runAutoMode(
         {
           chapterNo: next,
           userIntent: "",
+          chapterTitle: deps.resolveChapterTitle?.(next),
           ctx: input.writeCtx,
           prebuiltMessages: deps.buildWriteMessages?.(next),
           auditCtx: deps.buildAuditCtx?.(next) ?? input.auditCtx,

@@ -22,27 +22,19 @@ type BuiltinTabId =
   | "worldbook"
   | "rules";
 
-const BUILTIN_TABS: Array<{ id: BuiltinTabId; label: string }> = [
-  { id: "meta", label: "设定" },
-  { id: "characters", label: t.sidebar.sectionCharacters },
-  { id: "outline", label: t.sidebar.sectionOutline },
-  { id: "foreshadowing", label: t.sidebar.sectionForeshadowing },
-  { id: "timeline", label: t.sidebar.sectionTimeline },
-  { id: "import", label: "导入" },
-  { id: "presets", label: "预设" },
-  { id: "worldbook", label: "世界书" },
-  { id: "rules", label: t.sidebar.sectionRules },
+const BUILTIN_TABS: Array<{ id: BuiltinTabId; label: string; icon: string }> = [
+  { id: "meta", label: "设定", icon: "⚙️" },
+  { id: "characters", label: t.sidebar.sectionCharacters, icon: "👤" },
+  { id: "outline", label: t.sidebar.sectionOutline, icon: "🗂️" },
+  { id: "foreshadowing", label: t.sidebar.sectionForeshadowing, icon: "🔖" },
+  { id: "timeline", label: t.sidebar.sectionTimeline, icon: "🕒" },
+  { id: "import", label: "导入", icon: "⬇️" },
+  { id: "presets", label: "预设", icon: "🎛️" },
+  { id: "worldbook", label: "世界书", icon: "🌐" },
+  { id: "rules", label: t.sidebar.sectionRules, icon: "📐" },
 ];
 
-function compactTabLabel(label: string) {
-  const chars = Array.from(label);
-  const isAsciiWord = chars.length > 0 && chars.every((char) => {
-    const code = char.charCodeAt(0);
-    return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
-  });
-  if (isAsciiWord) return chars.slice(0, 3).join("");
-  return Array.from(label).slice(0, 2).join("");
-}
+const GENRE_ICON = "🏷️";
 
 export function SidePanel(props: { bookId: string }) {
   const [tab, setTab] = useState<string>("meta");
@@ -61,38 +53,47 @@ export function SidePanel(props: { bookId: string }) {
     })();
   }, [props.bookId]);
 
-  const isBuiltin = (id: string): id is BuiltinTabId =>
-    BUILTIN_TABS.some((b) => b.id === id);
+  const allItems: Array<{ id: string; label: string; icon: string }> = [
+    ...BUILTIN_TABS,
+    ...genreTabs.map((g) => ({ ...g, icon: GENRE_ICON })),
+  ];
+
+  const renderPanel = (id: string) => {
+    switch (id) {
+      case "meta": return <MetaPanel bookId={props.bookId} />;
+      case "characters": return <CharactersPanel bookId={props.bookId} />;
+      case "outline": return <OutlinePanel bookId={props.bookId} />;
+      case "foreshadowing": return <ForeshadowingPanel bookId={props.bookId} />;
+      case "timeline": return <TimelinePanel bookId={props.bookId} />;
+      case "import": return <ImportDialog bookId={props.bookId} onImported={() => undefined} />;
+      case "presets": return <PresetPanel bookId={props.bookId} />;
+      case "worldbook": return <WorldbookPanel bookId={props.bookId} />;
+      case "rules": return <RulesPanel bookId={props.bookId} />;
+      default:
+        return id.startsWith("genre:")
+          ? <GenreSectionPanel bookId={props.bookId} sectionId={id.slice("genre:".length)} />
+          : null;
+    }
+  };
 
   return (
     <div data-testid="side-panel" className="side-panel-shell">
-      <nav className="side-tab-rail" data-testid="side-panel-tab-rail" aria-label="Sidebar sections">
-        {[...BUILTIN_TABS, ...genreTabs].map((item) => (
+      <nav className="side-tab-bar" data-testid="side-panel-tab-rail" aria-label="资料板块">
+        {allItems.map((item) => (
           <button
             key={item.id}
             data-testid={`tab-${item.id}`}
-            className={`side-tab-button${tab === item.id ? " active" : ""}`}
+            className={`side-tab-chip${tab === item.id ? " active" : ""}`}
             title={item.label}
-            aria-label={item.label}
             onClick={() => setTab(item.id)}
           >
-            <span className="side-tab-label">{compactTabLabel(item.label)}</span>
+            <span className="side-tab-chip-icon" aria-hidden>{item.icon}</span>
+            <span className="side-tab-chip-text">{item.label}</span>
           </button>
         ))}
       </nav>
       <div className="side-panel-content">
-        {tab === "meta" && <MetaPanel bookId={props.bookId} />}
-        {tab === "characters" && <CharactersPanel bookId={props.bookId} />}
-        {tab === "outline" && <OutlinePanel bookId={props.bookId} />}
-        {tab === "foreshadowing" && <ForeshadowingPanel bookId={props.bookId} />}
-        {tab === "timeline" && <TimelinePanel bookId={props.bookId} />}
-        {tab === "import" && <ImportDialog bookId={props.bookId} onImported={() => undefined} />}
-        {tab === "presets" && <PresetPanel bookId={props.bookId} />}
-        {tab === "worldbook" && <WorldbookPanel bookId={props.bookId} />}
-        {tab === "rules" && <RulesPanel bookId={props.bookId} />}
-        {!isBuiltin(tab) && tab.startsWith("genre:") && (
-          <GenreSectionPanel bookId={props.bookId} sectionId={tab.slice("genre:".length)} />
-        )}
+        {renderPanel(tab)}
       </div>
     </div>
   );

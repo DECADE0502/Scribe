@@ -41,7 +41,8 @@ describe("SettingsPage", () => {
     });
     render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByTestId("api-key-input")).toBeInTheDocument());
-    expect(screen.getByText(/加载模型列表失败/)).toBeInTheDocument();
+    // 模型预览在设置加载完成后才发起,错误提示随后出现
+    expect(await screen.findByText(/加载模型列表失败/)).toBeInTheDocument();
     expect(screen.getByTestId("write-model-select").tagName).toBe("SELECT");
     expect(screen.getByTestId("write-model-select")).toHaveValue("gemini-2.5-pro");
   });
@@ -220,12 +221,16 @@ describe("SettingsPage", () => {
     fireEvent.change(screen.getByTestId("api-key-input"), { target: { value: "sk-custom-provider" } });
     fireEvent.click(screen.getByTestId("refresh-models"));
 
+    // 刷新模型只做预览(POST /api/models 携带草稿),绝不触发保存(PUT)
     await waitFor(() => {
-      const put = calls.find(c => c[1]?.method === "PUT");
-      expect(put).toBeTruthy();
-      const body = JSON.parse(put![1]!.body as string);
+      const preview = calls.find(c =>
+        String(c[0]).includes("/api/models") &&
+        c[1]?.method === "POST" &&
+        typeof c[1]?.body === "string" &&
+        (JSON.parse(c[1]!.body as string) as { apiKey?: string }).apiKey === "sk-custom-provider");
+      expect(preview).toBeTruthy();
+      const body = JSON.parse(preview![1]!.body as string);
       expect(body.provider).toMatch(/^custom-/);
-      expect(body.apiKey).toBe("sk-custom-provider");
       expect(body.customProviders).toEqual([expect.objectContaining({
         id: body.provider,
         name: "熊猫",
@@ -233,6 +238,8 @@ describe("SettingsPage", () => {
         auth: "bearer",
       })]);
     });
+    // 关键:刷新模型没有偷偷保存设置
+    expect(calls.some(c => c[1]?.method === "PUT")).toBe(false);
   });
 
   it("can type a custom model id even when it is not in the fetched list", async () => {

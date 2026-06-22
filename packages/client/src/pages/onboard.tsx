@@ -184,8 +184,10 @@ export function OnboardPage() {
               <span key={tc.id} data-testid="onboard-tool-chip" style={{
                 fontSize: 12, padding: "3px 9px", borderRadius: 12,
                 background: tc.done ? "#e8f7ec" : "#eef1ff", color: "#444",
+                display: "inline-flex", alignItems: "center", gap: 5,
               }}>
-                {tc.done ? "✓ " : "⋯ "}{toolLabel(tc.toolName)}
+                {tc.done ? <span style={{ color: "#34a853" }}>✓</span> : <span className="chip-spinner" aria-hidden />}
+                {toolLabel(tc.toolName)}
               </span>
             ))}
           </div>
@@ -212,6 +214,15 @@ export function OnboardPage() {
           <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 10 }}>
             <div className="bubble bubble-assistant" style={{ maxWidth: "78%", padding: "9px 13px", borderRadius: 16, whiteSpace: "pre-wrap", lineHeight: 1.5, background: "#fff", border: "1px solid #ececf0", fontSize: 15 }}>
               {streamingText}
+              <span className="typing-caret" aria-hidden />
+            </div>
+          </div>
+        )}
+        {busy && !streamingText && (
+          <div data-testid="onboard-thinking" style={{ display: "flex", justifyContent: "flex-start", marginBottom: 10 }}>
+            <div className="bubble bubble-assistant" style={{ padding: "11px 14px", borderRadius: 16, background: "#fff", border: "1px solid #ececf0", display: "flex", alignItems: "center", gap: 9 }}>
+              <span className="typing-dots" aria-hidden><span /><span /><span /></span>
+              <span style={{ fontSize: 13, color: "#8a8a8e" }}>AI 正在思考…</span>
             </div>
           </div>
         )}

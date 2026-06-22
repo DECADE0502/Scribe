@@ -37,6 +37,42 @@ export interface ModelManager {
 const DEFAULT_WRITE_MODEL = "gemini-2.5-pro";
 const DEFAULT_AUDIT_MODEL = "gemini-2.5-pro";
 
+/**
+ * 根据给定的供应商/Key/自定义供应商构建一个 provider adapter。
+ * 纯函数,不依赖任何全局状态——既给全局单例 ModelManager 用,
+ * 也给「预览列模型」这类一次性、不落盘的场景复用。
+ */
+export function buildProvider(opts: {
+  provider: ProviderId;
+  apiKey: string | null;
+  customProviders?: CustomProviderConfig[];
+}): ProviderAdapter | undefined {
+  if (!opts.apiKey) return undefined;
+  if (opts.provider === "mimo") return new MiMoProvider({ apiKey: opts.apiKey });
+  if (opts.provider === "deepseek") return new DeepSeekProvider({ apiKey: opts.apiKey });
+  const custom = (opts.customProviders ?? []).find((item) => item.id === opts.provider);
+  if (custom) {
+    return new CustomOpenAICompatibleProvider({
+      id: custom.id,
+      baseUrl: custom.baseUrl,
+      auth: custom.auth,
+      apiKey: opts.apiKey,
+    });
+  }
+  return new AnyRouterProvider({ apiKey: opts.apiKey });
+}
+
+/** 一次性列出某套配置下的可用模型,不触碰任何全局状态。无 key 时抛错。 */
+export async function listModelsFor(opts: {
+  provider: ProviderId;
+  apiKey: string | null;
+  customProviders?: CustomProviderConfig[];
+}): Promise<ModelInfo[]> {
+  const p = buildProvider(opts);
+  if (!p) throw new Error("未配置 API Key");
+  return p.listModels();
+}
+
 export function createModelManager(initial?: Partial<ModelManagerState>): ModelManager {
   const state: ModelManagerState = {
     provider: initial?.provider ?? "anyrouter",
@@ -48,19 +84,11 @@ export function createModelManager(initial?: Partial<ModelManagerState>): ModelM
   };
 
   function provider(): ProviderAdapter | undefined {
-    if (!state.apiKey) return undefined;
-    if (state.provider === "mimo") return new MiMoProvider({ apiKey: state.apiKey });
-    if (state.provider === "deepseek") return new DeepSeekProvider({ apiKey: state.apiKey });
-    const custom = state.customProviders.find((item) => item.id === state.provider);
-    if (custom) {
-      return new CustomOpenAICompatibleProvider({
-        id: custom.id,
-        baseUrl: custom.baseUrl,
-        auth: custom.auth,
-        apiKey: state.apiKey,
-      });
-    }
-    return new AnyRouterProvider({ apiKey: state.apiKey });
+    return buildProvider({
+      provider: state.provider,
+      apiKey: state.apiKey,
+      customProviders: state.customProviders,
+    });
   }
 
   function infoFor(modelId: string): ModelInfo {

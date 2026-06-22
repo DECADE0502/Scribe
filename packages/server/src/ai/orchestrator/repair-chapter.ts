@@ -39,6 +39,8 @@ export interface RepairDeps {
 export interface RepairInput {
   chapterNo: number;
   ctx: RepairContext;
+  /** 章节标题(取自大纲);缺省回退"第N章" */
+  chapterTitle?: string;
 }
 
 /**
@@ -75,6 +77,14 @@ export async function* repairChapter(
     };
     return;
   }
+  // 全量计费:修复也是一次完整 LLM 调用,记账。
+  yield {
+    type: "usage",
+    promptTokens: generated.usage.promptTokens,
+    completionTokens: generated.usage.completionTokens,
+    cachedTokens: generated.usage.cachedTokens,
+    reasoningTokens: generated.usage.reasoningTokens,
+  };
   const content = sanitizeChapterOutput(generated.text);
   if (!content.trim()) return;
 
@@ -87,7 +97,7 @@ export async function* repairChapter(
     });
     deps.chapterFiles.save({
       chapterNo: input.chapterNo,
-      title: `第${input.chapterNo}章`,
+      title: input.chapterTitle?.trim() || `第 ${input.chapterNo} 章`,
       content,
       versionNo: saved.versionNo,
     });

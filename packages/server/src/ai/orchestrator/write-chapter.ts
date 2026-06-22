@@ -41,6 +41,8 @@ export interface WriteChapterInput {
   source?: "ai_write" | "ai_rewrite";
   deepestPrompt?: string;
   abortSignal?: AbortSignal;
+  /** 章节标题(通常取自大纲节点,如"第1章 雨夜重返");缺省回退"第 N 章" */
+  chapterTitle?: string;
 }
 
 export async function* writeChapterSimple(
@@ -78,6 +80,15 @@ export async function* writeChapterSimple(
     return;
   }
 
+  // 全量计费:写作是最大的 token 消耗,无论产出是否为空都先记账(token 已经花了)。
+  yield {
+    type: "usage",
+    promptTokens: generated.usage.promptTokens,
+    completionTokens: generated.usage.completionTokens,
+    cachedTokens: generated.usage.cachedTokens,
+    reasoningTokens: generated.usage.reasoningTokens,
+  };
+
   const content = sanitizeChapterOutput(generated.text);
   if (!content.trim()) {
     yield { type: "tool_call_end", toolName: "chapter_write", result: { success: false, reason: "empty" } };
@@ -94,7 +105,7 @@ export async function* writeChapterSimple(
     });
     deps.chapterFiles.save({
       chapterNo: input.chapterNo,
-      title: `第 ${input.chapterNo} 章`,
+      title: input.chapterTitle?.trim() || `第 ${input.chapterNo} 章`,
       content,
       versionNo: saved.versionNo,
     });

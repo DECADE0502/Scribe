@@ -248,6 +248,47 @@ describe("settings 路由(含 API key + 模型)", () => {
     expect(j.error).toContain("API Key");
   });
 
+  it("POST /api/models 预览:无 key 时 503,且不写入 config.json", async () => {
+    const { app, paths } = makeApp();
+    const res = await app.request("/api/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "deepseek" }),
+    });
+    expect(res.status).toBe(503);
+    const j = await res.json() as { error: string };
+    expect(j.error).toContain("API Key");
+    // 预览绝不落盘
+    expect(fs.existsSync(paths.configJson)).toBe(false);
+  });
+
+  it("POST /api/models 预览:不持久化草稿设置,也不改动 ModelManager", async () => {
+    const { app, mm, paths } = makeApp();
+    // 先保存一份基线配置(anyrouter)
+    await app.request("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: "sk-baseline1234567890", masterPrompt: "原始指令" }),
+    });
+    expect(mm.getState().provider).toBe("anyrouter");
+
+    // 用一份「切到 deepseek + 改了 masterPrompt」的草稿去预览(预期会因无 deepseek key 而 503)
+    await app.request("/api/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "deepseek", masterPrompt: "被污染的指令" }),
+    });
+
+    // 关键断言:预览没有把草稿写进去
+    const get = await app.request("/api/settings");
+    const persisted = await get.json() as { provider: string; masterPrompt: string };
+    expect(persisted.provider).toBe("anyrouter");
+    expect(persisted.masterPrompt).toBe("原始指令");
+    // 活实例也没被改
+    expect(mm.getState().provider).toBe("anyrouter");
+    expect(loadSecrets(paths.secretsEnv).DEEPSEEK_API_KEY).toBeUndefined();
+  });
+
   it("GET /api/settings 永不返回明文 key", async () => {
     const { app } = makeApp();
     await app.request("/api/settings", {

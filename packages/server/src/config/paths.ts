@@ -1,5 +1,6 @@
-import * as os from "node:os";
+import * as fs from "node:fs";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 
 export interface AppPaths {
   appRoot: string;
@@ -16,19 +17,36 @@ export interface AppPaths {
   bookBackupsDir(id: string): string;
 }
 
-export function resolveAppPaths(opts: { env: Record<string, string | undefined> }): AppPaths {
+/** 向上查找项目根(以 pnpm-workspace.yaml 为标记),定位失败则退回当前工作目录。 */
+function findProjectRoot(): string {
+  let dir: string;
+  try {
+    dir = path.dirname(fileURLToPath(import.meta.url));
+  } catch {
+    return process.cwd();
+  }
+  for (let i = 0; i < 12; i++) {
+    if (fs.existsSync(path.join(dir, "pnpm-workspace.yaml"))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return process.cwd();
+}
+
+/**
+ * 解析数据根目录。默认把所有数据放在**项目目录**下的 `.scribe-data/`,
+ * 这样删掉项目目录即可彻底清除,不会在系统配置目录(%APPDATA% 等)残留。
+ * 可用环境变量 `SCRIBE_HOME` 覆盖到任意位置。
+ */
+export function resolveAppPaths(opts: { env: Record<string, string | undefined>; projectRoot?: string }): AppPaths {
   const env = opts.env;
-  const home = os.homedir();
   let root: string;
   if (env.SCRIBE_HOME) {
-    root = env.SCRIBE_HOME;
-  } else if (os.platform() === "win32") {
-    const appData = env.APPDATA ?? path.join(home, "AppData", "Roaming");
-    root = path.posix.join(appData.replace(/\\/g, "/"), "scribe");
-  } else if (os.platform() === "darwin") {
-    root = path.posix.join(home, "Library", "Application Support", "scribe");
+    root = env.SCRIBE_HOME.replace(/\\/g, "/");
   } else {
-    root = path.posix.join(home, ".config", "scribe");
+    const projectRoot = (opts.projectRoot ?? findProjectRoot()).replace(/\\/g, "/");
+    root = path.posix.join(projectRoot, ".scribe-data");
   }
   const j = (...parts: string[]) => path.posix.join(root, ...parts);
   return {

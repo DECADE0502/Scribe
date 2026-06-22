@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { writeFileAtomic } from "../fs/atomic-write.js";
 
 /** 读 secrets.env(KEY=VALUE 每行一条) */
 export function loadSecrets(secretsEnvPath: string): Record<string, string> {
@@ -19,7 +20,7 @@ export function saveSecret(secretsEnvPath: string, key: string, value: string): 
   const secrets = loadSecrets(secretsEnvPath);
   secrets[key] = value;
   const content = Object.entries(secrets).map(([k, v]) => `${k}=${v}`).join("\n") + "\n";
-  fs.writeFileSync(secretsEnvPath, content, { encoding: "utf-8", mode: 0o600 });
+  writeFileAtomic(secretsEnvPath, content, { mode: 0o600 });
 }
 
 function secretSegment(value: string): string {

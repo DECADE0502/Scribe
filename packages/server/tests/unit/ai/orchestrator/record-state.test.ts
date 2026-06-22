@@ -147,7 +147,7 @@ describe("recordChapterState", () => {
     }
   });
 
-  it("有通用集合且首轮未写条目时,自动补一次记录落库", async () => {
+  it("单趟记录:模型在唯一一趟里写入 upsert 即落库(已取消二次重跑)", async () => {
     const repos = createRepos();
     try {
       repos.genreSectionsRepo.createSection({
@@ -165,12 +165,6 @@ describe("recordChapterState", () => {
 
       const model = makeMultiTurnStub((turn) => {
         if (turn === 0) {
-          return [
-            { type: "text-delta", textDelta: "已检查,无需记录。" },
-            { type: "finish", finishReason: "stop", usage: { promptTokens: 20, completionTokens: 5 } },
-          ];
-        }
-        if (turn === 1) {
           return [
             {
               type: "tool-call",
@@ -190,7 +184,7 @@ describe("recordChapterState", () => {
           ];
         }
         return [
-          { type: "text-delta", textDelta: "已补记航线状态。" },
+          { type: "text-delta", textDelta: "已记录航线状态。" },
           { type: "finish", finishReason: "stop", usage: { promptTokens: 60, completionTokens: 8 } },
         ];
       });

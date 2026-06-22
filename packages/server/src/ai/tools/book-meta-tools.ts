@@ -54,7 +54,7 @@ export function makeBookMetaTools(
   return {
     set_book_meta: tool({
       description:
-        "设置或更新本书的基础元信息(title / premise / tone / genre / lengthTarget)。partial 合并,只更新传入的字段。",
+        "设置或更新本书的基础元信息与创作目标(title / premise / tone / genre / 以及 goal* 目标字段)。partial 合并,只更新传入的字段。",
       parameters: z.object({
         title: z.string().min(1).optional().describe("书名"),
         premise: z.string().optional().describe("一句话故事前提"),
@@ -66,19 +66,41 @@ export function makeBookMetaTools(
           .string()
           .optional()
           .describe("题材或类型,按用户原话或书籍实际设定记录"),
-        lengthTarget: z
+        goalForm: z
           .string()
           .optional()
-          .describe("篇幅预期,如 '短篇' / '长篇' / '50 万字'"),
+          .describe("篇幅形态:短篇 / 中篇 / 长篇 / 长篇连载"),
+        goalTargetChapters: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("计划写多少章(整数;用于全书进度与节奏把控)"),
+        goalEnding: z
+          .string()
+          .optional()
+          .describe("最终目标 / 结局走向(主角最终要达成或走向什么)"),
+        goalSequel: z
+          .string()
+          .optional()
+          .describe("是否考虑续集及说明,如 '不考虑' / '预留续集钩子'"),
       }),
       execute: async (args) => {
         const updated: Record<string, string> = {};
-        for (const [k, v] of Object.entries(args)) {
-          if (v !== undefined && v !== null) {
-            deps.bookMetaRepo.set(k, String(v));
-            updated[k] = String(v);
+        const setIf = (key: string, v: unknown) => {
+          if (v !== undefined && v !== null && String(v).trim() !== "") {
+            deps.bookMetaRepo.set(key, String(v));
+            updated[key] = String(v);
           }
-        }
+        };
+        setIf("title", args.title);
+        setIf("premise", args.premise);
+        setIf("tone", args.tone);
+        setIf("genre", args.genre);
+        setIf("goal_form", args.goalForm);
+        setIf("goal_target_chapters", args.goalTargetChapters);
+        setIf("goal_ending", args.goalEnding);
+        setIf("goal_sequel", args.goalSequel);
         return { updated };
       },
     }),

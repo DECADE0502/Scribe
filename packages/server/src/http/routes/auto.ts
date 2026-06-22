@@ -2,13 +2,14 @@ import { Hono } from "hono";
 import type { LanguageModel } from "ai";
 import type { ModelInfo, SseEvent } from "@scribe/shared";
 import { streamSseResponse } from "../sse.js";
-import type { BookRegistry } from "../book-registry.js";
+import { holdBook, type BookRegistry } from "../book-registry.js";
 import { runAutoMode } from "../../ai/orchestrator/auto-mode.js";
 import { computeUsageCost } from "../../ai/usage-tracker.js";
 import { resolveDeepestPrompt } from "../../ai/prompts/deepest-prompt.js";
 import {
   buildBookPromptContext,
   buildChapterWriteMessages,
+  resolveChapterTitle,
   buildChapterAuditContext,
   enrichUserIntentWithOutline,
 } from "../../ai/context-builder/book-context.js";
@@ -99,6 +100,7 @@ export function autoRoutes(deps: AutoRoutesDeps) {
     // 最深处提示词:每本覆盖 || 全局
     const deepestPrompt = resolveDeepestPrompt({
       perBook: handle.bookMetaRepo.get("master_prompt"),
+      perBookEnabled: handle.bookMetaRepo.get("master_prompt_enabled") !== "0",
       global: deps.getMasterPrompt?.() ?? "",
     });
 
@@ -196,6 +198,7 @@ export function autoRoutes(deps: AutoRoutesDeps) {
               ).messages,
             buildAuditCtx: (chapterNo) =>
               buildChapterAuditContext(handle, chapterNo, "").auditCtx,
+            resolveChapterTitle: (chapterNo) => resolveChapterTitle(handle.outlineRepo, chapterNo),
             deepestPrompt,
           },
           { n, writeCtx: promptCtx.writeCtx, auditCtx: promptCtx.auditCtx },
@@ -231,7 +234,7 @@ export function autoRoutes(deps: AutoRoutesDeps) {
         running.delete(bookId);
       }
     }
-    return streamSseResponse(withCleanup());
+    return streamSseResponse(holdBook(deps.registry, bookId, withCleanup()));
   });
 
   app.post("/api/books/:bookId/auto/cancel", async (c) => {

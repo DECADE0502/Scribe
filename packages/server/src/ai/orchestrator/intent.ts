@@ -25,6 +25,8 @@ export interface IntentAnalysis {
   category: IntentCategory;
   chapterCount?: number;
   targetChapter?: number;
+  /** 本次分类调用的 token 用量(全量计费用) */
+  usage?: { promptTokens: number; completionTokens: number; cachedTokens: number; reasoningTokens: number };
 }
 
 const VALID: IntentCategory[] = [
@@ -113,6 +115,12 @@ export async function analyzeIntent(
       category,
       chapterCount: normalizePositiveInt(parsed.chapterCount, 10),
       targetChapter: normalizePositiveInt(parsed.targetChapter),
+      usage: {
+        promptTokens: result.usage.promptTokens ?? 0,
+        completionTokens: result.usage.completionTokens ?? 0,
+        cachedTokens: 0,
+        reasoningTokens: 0,
+      },
     };
   } catch {
     return { category: await classifyIntent(model, message, abortSignal) };

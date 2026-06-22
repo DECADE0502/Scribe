@@ -146,6 +146,15 @@ export async function* writeWithAudit(
     return;
   }
 
+  // 全量计费:审查也是一次 LLM 调用
+  yield {
+    type: "usage",
+    promptTokens: auditResult.usage.promptTokens,
+    completionTokens: auditResult.usage.completionTokens,
+    cachedTokens: auditResult.usage.cachedTokens,
+    reasoningTokens: auditResult.usage.reasoningTokens,
+  };
+
   // ---- 阶段 3: 落盘 audit + summary ----
   persistAuditResult(
     deps.chaptersRepo,
@@ -224,6 +233,7 @@ export async function* writeWithAudit(
     let repairStreamErrored = false;
     for await (const ev of repairChapter(repairDeps, {
       chapterNo: input.chapterNo,
+      chapterTitle: input.chapterTitle,
       ctx: {
         chapterContent: finalWrittenContent,
         issues: repairIssues,
@@ -266,6 +276,13 @@ export async function* writeWithAudit(
           deps.auditModelId,
           deps.readerIssuesRepo,
         );
+        yield {
+          type: "usage",
+          promptTokens: reAudit.usage.promptTokens,
+          completionTokens: reAudit.usage.completionTokens,
+          cachedTokens: reAudit.usage.cachedTokens,
+          reasoningTokens: reAudit.usage.reasoningTokens,
+        };
         const repairQualityIssues = await runQualityGate(input, {
           chapterNo: input.chapterNo,
           chapterContent: finalRepairContent,

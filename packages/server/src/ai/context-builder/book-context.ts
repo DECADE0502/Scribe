@@ -22,6 +22,8 @@ export function resolveSelectedStyleReference(
   handle: Pick<BookHandle, "bookMetaRepo">,
   references: StyleReference[] = [],
 ): StyleReference | undefined {
+  // 显式开关:关掉则不注入(即使已选了一组文风)
+  if (handle.bookMetaRepo.get("style_reference_enabled") === "0") return undefined;
   const selectedId = handle.bookMetaRepo.get("style_reference_id")?.trim();
   if (!selectedId) return undefined;
   return references.find((reference) => reference.id === selectedId && reference.content.trim());
@@ -128,6 +130,17 @@ export function findChapterOutlineNode(
   return nodes.find((node) =>
     node.level === "chapter" && titleMatchesChapterNo(node.title, chapterNo)
   );
+}
+
+/**
+ * 解析某章的标题:优先用对应章级大纲节点的标题(如"第1章 雨夜重返"),
+ * 没有则回退"第 N 章"。写章落盘时用它,避免章节标题永远是占位符。
+ */
+export function resolveChapterTitle(
+  outlineRepo: { listAll(): OutlineNode[] },
+  chapterNo: number,
+): string {
+  return findChapterOutlineNode(outlineRepo, chapterNo)?.title?.trim() || `第 ${chapterNo} 章`;
 }
 
 /**
@@ -492,6 +505,43 @@ function deriveRecallIntent(
  * - 故事设定 / 规则 / 角色卡 / 活跃伏笔 / 题材专属板块(静态块,prompt cache 友好)
  * - 最近 3 章摘要 + 召回的 5 章相关历史 + 用户意图(动态块)
  */
+/**
+ * 渲染「创作目标与进度」块:让模型知道全书篇幅形态、目标章数、当前进度百分比、
+ * 最终结局走向与续集考虑,并据此把控节奏(开篇铺垫 / 中段推进 / 临近收束)。
+ * 目标信息存在 book_meta 的 goal_* 键里;未设置则返回 undefined(不注入)。
+ */
+export function renderGoalAndProgress(
+  bookMetaRepo: { get(key: string): string | undefined },
+  chapterNo: number,
+): string | undefined {
+  const form = bookMetaRepo.get("goal_form")?.trim();
+  const ending = bookMetaRepo.get("goal_ending")?.trim();
+  const sequel = bookMetaRepo.get("goal_sequel")?.trim();
+  const targetRaw = bookMetaRepo.get("goal_target_chapters")?.trim();
+  const target = targetRaw ? parseInt(targetRaw, 10) : NaN;
+
+  const lines: string[] = [];
+  if (form) lines.push(`篇幅形态:${form}`);
+  if (Number.isFinite(target) && target > 0) {
+    const pct = Math.min(100, Math.round((chapterNo / target) * 100));
+    lines.push(`目标总章数:约 ${target} 章;当前写第 ${chapterNo} 章(进度约 ${pct}%)`);
+    const ratio = chapterNo / target;
+    const hint = ratio <= 0.15
+      ? "处于开篇铺垫阶段:立人物、抛钩子,埋线为主,不要急于摊牌或加速主线。"
+      : ratio >= 0.85
+        ? "已接近全书结尾:推进主线收束、回收已埋伏笔、为结局蓄势,避免再引入大量新人物/新设定。"
+        : "处于故事中段:稳步推进主线冲突与人物关系,适度加深或回收伏笔。";
+    lines.push(`节奏把控:${hint}`);
+  } else if (form || ending || sequel) {
+    lines.push(`当前写第 ${chapterNo} 章。`);
+  }
+  if (ending) lines.push(`最终目标/结局走向:${ending}`);
+  if (sequel) lines.push(`续集考虑:${sequel}`);
+
+  if (lines.length === 0) return undefined;
+  return `## 创作目标与进度\n${lines.join("\n")}`;
+}
+
 export function buildChapterWriteMessages(
   handle: BookHandle,
   chapterNo: number,
@@ -544,9 +594,14 @@ export function buildChapterWriteMessages(
     resolveSelectedStyleReference(handle, styleReferences),
   );
 
+  const goalBlock = renderGoalAndProgress(handle.bookMetaRepo, chapterNo);
+
   // 追加明确的产出指令(buildWriteContext 的动态块已含用户意图,这里固定任务框架)
   const messages: CoreMessage[] = [
     ...result.messages,
+    ...(goalBlock
+      ? [{ role: "user" as const, content: goalBlock }]
+      : []),
     ...(hardContinuity
       ? [{ role: "user" as const, content: hardContinuity }]
       : []),

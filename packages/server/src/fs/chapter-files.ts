@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import matter from "gray-matter";
+import { writeFileAtomic } from "./atomic-write.js";
 
 export interface ChapterRecord {
   chapterNo: number;
@@ -36,7 +37,7 @@ export function createChapterFiles(chaptersDir: string) {
         updatedAt: Date.now(),
       };
       const md = matter.stringify(input.content, fm);
-      fs.writeFileSync(filePath(input.chapterNo), md, "utf-8");
+      writeFileAtomic(filePath(input.chapterNo), md);
     },
     read(no: number): ChapterRecord | undefined {
       const fp = filePath(no);

@@ -15,6 +15,28 @@ interface Cfg {
   fetchImpl?: typeof fetch;
 }
 
+/**
+ * 包一层 fetch:对流式 chat 请求体注入 `stream_options.include_usage=true`。
+ * `@ai-sdk/openai-compatible@0.1.x` 不会自动带这个选项,导致很多 OpenAI 兼容网关
+ * 的流式响应不返回 token 用量(prompt/completion 全为 0,成本算出来恒为 $0)。
+ */
+function withIncludeUsage(baseFetch: typeof fetch): typeof fetch {
+  return (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+    if (init?.body && typeof init.body === "string") {
+      try {
+        const obj = JSON.parse(init.body);
+        if (obj && obj.stream === true) {
+          obj.stream_options = { ...(obj.stream_options ?? {}), include_usage: true };
+          init = { ...init, body: JSON.stringify(obj) };
+        }
+      } catch {
+        // 非 JSON body 原样透传
+      }
+    }
+    return baseFetch(input, init);
+  }) as typeof fetch;
+}
+
 export class OpenAICompatibleProvider implements ProviderAdapter {
   readonly id: string;
   protected readonly baseUrl: string;
@@ -92,17 +114,18 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
     const apiKey = opts.apiKey ?? this.apiKey;
     const headers = this.authHeaders(apiKey);
     const extractor = this.metadataExtractor();
+    const fetchImpl = withIncludeUsage(this.fetchImpl);
     if (!extractor) {
       const provider = createOpenAICompatible({
         name: this.id,
         baseURL: `${this.baseUrl}/v1`,
         headers, // 用自定义鉴权头(含 Bearer 默认或 api-key 等)
+        fetch: fetchImpl, // 注入 stream_options.include_usage,否则流式响应不带 token 用量
       });
       return provider.chatModel(modelId);
     }
     // 需要注入 metadataExtractor 时直接构造 chat 模型(工厂不透传该字段)。
     const baseURL = `${this.baseUrl}/v1`;
-    const fetchImpl = this.fetchImpl;
     return new OpenAICompatibleChatLanguageModel(modelId, {}, {
       provider: `${this.id}.chat`,
       url: ({ path }: { path: string }) => `${baseURL}${path}`,

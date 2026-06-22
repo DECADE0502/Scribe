@@ -135,4 +135,31 @@ describe("sillytavern import routes", () => {
       sillytavern: { uid: "0" },
     });
   });
+
+  it("列出内置示例并一键导入(#13)", async () => {
+    const listRes = await app.request("/api/sample-imports");
+    const { samples } = await json<{ samples: Array<{ id: string; sourceType: string }> }>(listRes);
+    const ids = samples.map((s) => s.id);
+    expect(ids).toContain("izumi-preset");
+    expect(ids).toContain("pet-worldbook");
+    expect(samples.find((s) => s.id === "pet-worldbook")?.sourceType).toBe("sillytavern_worldbook");
+    expect(samples.find((s) => s.id === "izumi-preset")?.sourceType).toBe("sillytavern_preset");
+
+    // 一键导入世界书示例
+    const imp = await app.request(`/api/books/${bookId}/imports/sample`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sampleId: "pet-worldbook" }),
+    });
+    expect(imp.status).toBe(201);
+    const result = await json<{ imported: { worldbookEntries: number } }>(imp);
+    expect(result.imported.worldbookEntries).toBeGreaterThan(0);
+    expect(registry.open(bookId).worldbookRepo.list().length).toBeGreaterThan(0);
+
+    // 未知 sampleId → 404
+    const bad = await app.request(`/api/books/${bookId}/imports/sample`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sampleId: "nope" }),
+    });
+    expect(bad.status).toBe(404);
+  });
 });

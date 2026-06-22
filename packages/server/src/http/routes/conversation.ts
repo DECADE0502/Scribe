@@ -5,13 +5,15 @@ import { streamSseResponse } from "../sse.js";
 import { runEcho } from "../../ai/orchestrator/chat.js";
 import { runConversation } from "../../ai/orchestrator/conversation-orchestrator.js";
 import { resolveDeepestPrompt } from "../../ai/prompts/deepest-prompt.js";
-import type { BookRegistry } from "../book-registry.js";
+import { computeUsageCost } from "../../ai/usage-tracker.js";
+import { holdBook, type BookRegistry } from "../book-registry.js";
 import type { StyleReference } from "../../config/load.js";
 
 export interface ConversationDeps {
   getModel?: () => LanguageModel | undefined;
   getAuditModel?: () => LanguageModel | undefined;
   registry?: BookRegistry;
+  writeModelInfo?: ModelInfo;
   auditModelInfo?: ModelInfo;
   onChapterCommitted?: (bookId: string) => void;
   getMasterPrompt?: () => string;
@@ -48,6 +50,7 @@ export function conversationRoutes(deps: ConversationDeps = {}) {
     if (mode === "chat" && model && deps.registry) {
       const auditModel = deps.getAuditModel?.() ?? model;
       const handle = deps.registry.open(bookId);
+      const booksRepo = deps.registry.booksRepo;
       // 多轮记忆:回放最近的 chat 历史(只取 chat,排除 note;不含当前这条)
       const history = handle.conversationsRepo
         .listLatest(12)
@@ -56,6 +59,7 @@ export function conversationRoutes(deps: ConversationDeps = {}) {
         .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
       const deepestPrompt = resolveDeepestPrompt({
         perBook: handle.bookMetaRepo.get("master_prompt"),
+        perBookEnabled: handle.bookMetaRepo.get("master_prompt_enabled") !== "0",
         global: deps.getMasterPrompt?.() ?? "",
       });
       const inner = runConversation(
@@ -76,6 +80,24 @@ export function conversationRoutes(deps: ConversationDeps = {}) {
         let buf = "";
         let wroteChapter = false;
         for await (const ev of inner) {
+          // 计费:对话流里的每次 LLM 用量都落库(写章/审查/聊天都经此路径)。
+          // 此前只有 /auto 端点记账,导致用对话框 /write 写的章成本恒为 0。
+          if (ev.type === "usage" && deps.writeModelInfo) {
+            const cost = computeUsageCost(
+              deps.writeModelInfo, ev.promptTokens, ev.completionTokens, ev.cachedTokens ?? 0,
+            );
+            handle.tokenUsageRepo.record({
+              taskType: "chat",
+              model: deps.writeModelInfo.id,
+              promptTokens: ev.promptTokens,
+              completionTokens: ev.completionTokens,
+              cachedTokens: ev.cachedTokens ?? 0,
+              reasoningTokens: ev.reasoningTokens ?? 0,
+              costUsd: cost,
+              chapterNo: null,
+            });
+            booksRepo.addCost(bookId, cost);
+          }
           if (ev.type === "text_delta") buf += ev.delta;
           if (ev.type === "tool_call_end" && ev.toolName === "chapter_write") {
             const result = ev.result as { success?: boolean } | undefined;
@@ -95,7 +117,7 @@ export function conversationRoutes(deps: ConversationDeps = {}) {
           yield ev;
         }
       }
-      return streamSseResponse(persisting());
+      return streamSseResponse(holdBook(deps.registry, bookId, persisting()));
     }
 
     return streamSseResponse(runEcho({ message }));

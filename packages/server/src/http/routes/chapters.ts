@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { LanguageModel } from "ai";
 import type { ModelInfo } from "@scribe/shared";
 import { streamSseResponse } from "../sse.js";
+import { withUsageRecording } from "../../ai/usage-tracker.js";
 import type { WriteChapterDeps } from "../../ai/orchestrator/write-chapter.js";
 import { writeChapterSimple } from "../../ai/orchestrator/write-chapter.js";
 import { writeWithAudit } from "../../ai/orchestrator/write-with-audit.js";
@@ -9,6 +10,7 @@ import {
   buildChapterWriteMessages,
   buildChapterAuditContext,
   enrichUserIntentWithOutline,
+  resolveChapterTitle,
 } from "../../ai/context-builder/book-context.js";
 import { resolveDeepestPrompt } from "../../ai/prompts/deepest-prompt.js";
 import { recordChapterState, buildArchiveSummary } from "../../ai/orchestrator/record-state.js";
@@ -18,7 +20,7 @@ import { repairChapter } from "../../ai/orchestrator/repair-chapter.js";
 import { sanitizeChapterOutput } from "../../ai/orchestrator/output-sanitize.js";
 import { createHardFactQualityGate } from "../../ai/quality-gates/hard-fact-gate.js";
 import { deleteChaptersFrom, type DeleteResult } from "../../ai/orchestrator/delete-chapter.js";
-import type { BookRegistry } from "../book-registry.js";
+import { holdBook, type BookRegistry } from "../book-registry.js";
 import type { StyleReference } from "../../config/load.js";
 import { log } from "../../logger.js";
 
@@ -30,6 +32,8 @@ export interface ChapterRoutesDeps {
   getStyleReferences?: () => StyleReference[];
   /** 审查模型(用于 audit + recordState);如果不提供则回退到写作模型 */
   getAuditModel?: () => LanguageModel | undefined;
+  /** 写作模型信息(全量计费用) */
+  writeModelInfo?: ModelInfo;
   /** 审查模型信息 */
   auditModelInfo?: ModelInfo;
 }
@@ -63,6 +67,7 @@ export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
     const auditCtx = buildChapterAuditContext(handle, no, userIntent).auditCtx;
     const deepestPrompt = resolveDeepestPrompt({
       perBook: handle.bookMetaRepo.get("master_prompt"),
+      perBookEnabled: handle.bookMetaRepo.get("master_prompt_enabled") !== "0",
       global: deps.getMasterPrompt?.() ?? "",
     });
 
@@ -82,6 +87,7 @@ export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
       {
         chapterNo: no,
         userIntent,
+        chapterTitle: resolveChapterTitle(handle.outlineRepo, no),
         prebuiltMessages: writeContext.messages,
         auditCtx,
         enableRepair: true,
@@ -162,7 +168,14 @@ export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
       deps.onChapterCommitted?.(bookId);
       yield { type: "done" as const };
     }
-    return streamSseResponse(withCommitAndRecord());
+    return streamSseResponse(holdBook(deps.registry, bookId, withUsageRecording(withCommitAndRecord(), {
+      tokenUsageRepo: handle.tokenUsageRepo,
+      booksRepo: deps.registry.booksRepo,
+      bookId,
+      modelInfo: deps.writeModelInfo,
+      taskType: "write",
+      chapterNo: no,
+    })));
   });
 
   // ---- 分步写作: /write-draft (只写正文) + /finalize (审计+闸门+记录) ----
@@ -183,11 +196,13 @@ export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
     const writeContext = buildChapterWriteMessages(handle, no, userIntent, undefined, styleReferences);
     const deepestPrompt = resolveDeepestPrompt({
       perBook: handle.bookMetaRepo.get("master_prompt"),
+      perBookEnabled: handle.bookMetaRepo.get("master_prompt_enabled") !== "0",
       global: deps.getMasterPrompt?.() ?? "",
     });
     const inner = writeChapterSimple(wcDeps, {
       chapterNo: no,
       userIntent,
+      chapterTitle: resolveChapterTitle(handle.outlineRepo, no),
       prebuiltMessages: writeContext.messages,
       deepestPrompt,
       abortSignal: c.req.raw.signal,
@@ -198,7 +213,14 @@ export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
         yield ev;
       }
     }
-    return streamSseResponse(withCommit());
+    return streamSseResponse(holdBook(deps.registry, bookId, withUsageRecording(withCommit(), {
+      tokenUsageRepo: handle.tokenUsageRepo,
+      booksRepo: deps.registry.booksRepo,
+      bookId,
+      modelInfo: deps.writeModelInfo,
+      taskType: "write",
+      chapterNo: no,
+    })));
   });
 
   // 在已落盘正文上跑 audit + hardFactGate + recordState。
@@ -220,6 +242,7 @@ export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
     const userIntent = String((await c.req.json().catch(() => ({})))?.userIntent ?? "");
     const deepestPrompt = resolveDeepestPrompt({
       perBook: handle.bookMetaRepo.get("master_prompt"),
+      perBookEnabled: handle.bookMetaRepo.get("master_prompt_enabled") !== "0",
       global: deps.getMasterPrompt?.() ?? "",
     });
     const auditCtx = buildChapterAuditContext(handle, no, userIntent).auditCtx;
@@ -360,7 +383,14 @@ export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
       deps.onChapterCommitted?.(bookId);
       yield { type: "done" as const };
     }
-    return streamSseResponse(finalizeFlow());
+    return streamSseResponse(holdBook(deps.registry, bookId, withUsageRecording(finalizeFlow(), {
+      tokenUsageRepo: handle.tokenUsageRepo,
+      booksRepo: deps.registry.booksRepo,
+      bookId,
+      modelInfo: deps.writeModelInfo ?? deps.auditModelInfo,
+      taskType: "audit",
+      chapterNo: no,
+    })));
   });
 
   // 读取章节(编辑器加载)

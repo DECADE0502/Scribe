@@ -23,16 +23,17 @@ function jsonResponse(data: unknown, status = 200) {
 }
 
 describe("SidePanel 容器", () => {
-  it("默认显示设定 tab,可切换到角色", async () => {
+  it("默认内联显示设定,切换标签替换详情面板", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ characters: [], outline: [], foreshadowing: [], timeline: [], content: "" }));
     render(<SidePanel bookId="b1" />);
     expect(screen.getByTestId("side-panel-tab-rail")).toBeInTheDocument();
-    // 默认显示 meta panel
+    // 默认内联显示 meta(无需点击、无弹出遮挡)
     await waitFor(() => expect(screen.getByTestId("meta-panel")).toBeInTheDocument());
-    // 切换到角色
+    // 切到角色
     fireEvent.click(screen.getByTestId("tab-characters"));
     await waitFor(() => expect(screen.getByTestId("characters-panel")).toBeInTheDocument());
-    // 切换到规则
+    expect(screen.queryByTestId("meta-panel")).not.toBeInTheDocument();
+    // 切到规则,角色面板卸载
     fireEvent.click(screen.getByTestId("tab-rules"));
     await waitFor(() => expect(screen.getByTestId("rules-panel")).toBeInTheDocument());
     expect(screen.queryByTestId("characters-panel")).not.toBeInTheDocument();

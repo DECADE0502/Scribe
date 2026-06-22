@@ -7,6 +7,7 @@ import {
 } from "ai";
 import type { SseEvent } from "@scribe/shared";
 import { readDeepSeekUsage } from "./providers/deepseek-metadata.js";
+import { withRetry, classifyLlmError } from "./retry.js";
 
 type JsonValue =
   | null
@@ -131,12 +132,16 @@ export async function* streamLlm(input: LlmCallInput): AsyncIterable<SseEvent> {
 }
 
 export async function generateLlmText(input: Omit<LlmCallInput, "tools" | "maxSteps">): Promise<GeneratedLlmText> {
-  const result = await generateText({
-    model: input.model,
-    messages: input.messages,
-    abortSignal: input.abortSignal,
-    providerOptions: input.providerOptions,
-  });
+  // 全程瞬时错误(429 / 5xx / 网络抖动)走退避重试;auth/取消等不重试。
+  const result = await withRetry(
+    () => generateText({
+      model: input.model,
+      messages: input.messages,
+      abortSignal: input.abortSignal,
+      providerOptions: input.providerOptions,
+    }),
+    { classify: classifyLlmError },
+  );
   const ds = readDeepSeekUsage(result.providerMetadata);
   return {
     text: result.text,

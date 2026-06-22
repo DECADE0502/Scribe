@@ -81,6 +81,14 @@ export interface ImportPreview {
   warnings: Array<{ code: string; message: string; path?: string }>;
 }
 
+export interface SampleImport {
+  id: string;
+  name: string;
+  description: string;
+  sourceType: string;
+  stats?: Record<string, unknown>;
+}
+
 export interface ImportResult {
   sourceType: string;
   imported: {
@@ -259,6 +267,16 @@ export const api = {
     return jsonFetch<ImportResult>(
       `/api/books/${encodeURIComponent(bookId)}/imports`,
       { method: "POST", body: JSON.stringify(input) },
+    );
+  },
+  async listSampleImports(): Promise<SampleImport[]> {
+    const r = await jsonFetch<{ samples?: SampleImport[] }>("/api/sample-imports");
+    return Array.isArray(r.samples) ? r.samples : [];
+  },
+  async importSample(bookId: string, sampleId: string): Promise<ImportResult> {
+    return jsonFetch<ImportResult>(
+      `/api/books/${encodeURIComponent(bookId)}/imports/sample`,
+      { method: "POST", body: JSON.stringify({ sampleId }) },
     );
   },
   async listPresets(bookId: string): Promise<PromptPreset[]> {

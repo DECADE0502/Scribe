@@ -1,9 +1,10 @@
 import { Hono } from "hono";
 import * as fs from "node:fs";
 import type { LanguageModel } from "ai";
-import { ExecutionModeSchema } from "@scribe/shared";
+import { ExecutionModeSchema, type ModelInfo } from "@scribe/shared";
 import { streamSseResponse } from "../sse.js";
-import type { BookRegistry } from "../book-registry.js";
+import { withUsageRecording } from "../../ai/usage-tracker.js";
+import { holdBook, type BookRegistry } from "../book-registry.js";
 import { runNewBookConversation } from "../../ai/orchestrator/new-book.js";
 import { resolveDeepestPrompt } from "../../ai/prompts/deepest-prompt.js";
 import { loadBookSnapshot } from "../../ai/context-builder/snapshot.js";
@@ -20,6 +21,7 @@ import type { StyleReference } from "../../config/load.js";
 export interface BookRoutesDeps {
   registry: BookRegistry;
   getModel?: () => LanguageModel | undefined;
+  writeModelInfo?: ModelInfo;
   getMasterPrompt?: () => string;
   getStyleReferences?: () => StyleReference[];
 }
@@ -71,6 +73,9 @@ export function bookRoutes(deps: BookRoutesDeps) {
     const bookId = c.req.param("bookId");
     const book = deps.registry.booksRepo.get(bookId);
     if (!book) return c.json({ error: "书不存在" }, 404);
+    if (deps.registry.isBusy(bookId)) {
+      return c.json({ error: "这本书正在写作/生成中,请停止后再删除" }, 409);
+    }
     // 先关闭 workspace.db 连接,避免文件锁
     deps.registry.closeBook(bookId);
     // 删除 library.db 里的书记录
@@ -99,6 +104,10 @@ export function bookRoutes(deps: BookRoutesDeps) {
       premise: handle.bookMetaRepo.get("premise") ?? "",
       tone: handle.bookMetaRepo.get("tone") ?? "",
       genre: handle.bookMetaRepo.get("genre") ?? "",
+      goalForm: handle.bookMetaRepo.get("goal_form") ?? "",
+      goalTargetChapters: handle.bookMetaRepo.get("goal_target_chapters") ?? "",
+      goalEnding: handle.bookMetaRepo.get("goal_ending") ?? "",
+      goalSequel: handle.bookMetaRepo.get("goal_sequel") ?? "",
     });
   });
 
@@ -112,6 +121,14 @@ export function bookRoutes(deps: BookRoutesDeps) {
     if (typeof body.genre === "string") handle.bookMetaRepo.set("genre", body.genre);
     if (typeof body.title === "string" && body.title.trim()) {
       handle.bookMetaRepo.set("title", body.title.trim());
+    }
+    // 创作目标(goal):空字符串表示清空
+    if (typeof body.goalForm === "string") handle.bookMetaRepo.set("goal_form", body.goalForm.trim());
+    if (typeof body.goalEnding === "string") handle.bookMetaRepo.set("goal_ending", body.goalEnding.trim());
+    if (typeof body.goalSequel === "string") handle.bookMetaRepo.set("goal_sequel", body.goalSequel.trim());
+    if (body.goalTargetChapters !== undefined) {
+      const n = Number(body.goalTargetChapters);
+      handle.bookMetaRepo.set("goal_target_chapters", Number.isFinite(n) && n > 0 ? String(Math.floor(n)) : "");
     }
     return c.json({ ok: true });
   });
@@ -167,17 +184,27 @@ export function bookRoutes(deps: BookRoutesDeps) {
         abortSignal: c.req.raw.signal,
         deepestPrompt: resolveDeepestPrompt({
           perBook: handle.bookMetaRepo.get("master_prompt"),
+          perBookEnabled: handle.bookMetaRepo.get("master_prompt_enabled") !== "0",
           global: deps.getMasterPrompt?.() ?? "",
         }),
       },
       { history, message, completenessHint, executionMode },
     );
 
+    // 全量计费:onboard 也会多次调用 LLM(记设定/角色/大纲)
+    const tracked = withUsageRecording(inner, {
+      tokenUsageRepo: handle.tokenUsageRepo,
+      booksRepo: deps.registry.booksRepo,
+      bookId,
+      modelInfo: deps.writeModelInfo,
+      taskType: "new_book",
+    });
+
     // 对话持久化:user 消息即刻入库,assistant 文本在流完后入库
     async function* persisting() {
       handle.conversationsRepo.append({ role: "user", content: message, metadata: { kind: "onboard" } });
       let buf = "";
-      for await (const ev of inner) {
+      for await (const ev of tracked) {
         if (ev.type === "text_delta") buf += ev.delta;
         if (ev.type === "done" && buf.trim()) {
           handle.conversationsRepo.append({ role: "assistant", content: buf, metadata: { kind: "onboard" } });
@@ -185,7 +212,7 @@ export function bookRoutes(deps: BookRoutesDeps) {
         yield ev;
       }
     }
-    return streamSseResponse(persisting());
+    return streamSseResponse(holdBook(deps.registry, bookId, persisting()));
   });
 
   app.get("/api/books/:bookId/onboard-status", async (c) => {
@@ -224,17 +251,21 @@ export function bookRoutes(deps: BookRoutesDeps) {
     return c.json({
       perBook: handle.bookMetaRepo.get("master_prompt") ?? "",
       global: deps.getMasterPrompt?.() ?? "",
+      enabled: handle.bookMetaRepo.get("master_prompt_enabled") !== "0",
     });
   });
 
   app.put("/api/books/:bookId/master-prompt", async (c) => {
     const bookId = c.req.param("bookId");
     if (!deps.registry.booksRepo.get(bookId)) return c.json({ error: "书不存在" }, 404);
-    const body = await c.req.json().catch(() => ({})) as { perBook?: unknown };
-    const value = typeof body.perBook === "string" ? body.perBook : "";
+    const body = await c.req.json().catch(() => ({})) as { perBook?: unknown; enabled?: unknown };
     const handle = deps.registry.open(bookId);
-    handle.bookMetaRepo.set("master_prompt", value);
-    return c.json({ perBook: value });
+    if (typeof body.perBook === "string") handle.bookMetaRepo.set("master_prompt", body.perBook);
+    if (typeof body.enabled === "boolean") handle.bookMetaRepo.set("master_prompt_enabled", body.enabled ? "1" : "0");
+    return c.json({
+      perBook: handle.bookMetaRepo.get("master_prompt") ?? "",
+      enabled: handle.bookMetaRepo.get("master_prompt_enabled") !== "0",
+    });
   });
 
   app.get("/api/books/:bookId/style-reference", async (c) => {
@@ -243,6 +274,7 @@ export function bookRoutes(deps: BookRoutesDeps) {
     const handle = deps.registry.open(bookId);
     return c.json({
       selectedId: handle.bookMetaRepo.get("style_reference_id") ?? "",
+      enabled: handle.bookMetaRepo.get("style_reference_enabled") !== "0",
       references: deps.getStyleReferences?.() ?? [],
     });
   });
@@ -250,11 +282,14 @@ export function bookRoutes(deps: BookRoutesDeps) {
   app.put("/api/books/:bookId/style-reference", async (c) => {
     const bookId = c.req.param("bookId");
     if (!deps.registry.booksRepo.get(bookId)) return c.json({ error: "书不存在" }, 404);
-    const body = await c.req.json().catch(() => ({})) as { selectedId?: unknown };
-    const selectedId = typeof body.selectedId === "string" ? body.selectedId.trim() : "";
+    const body = await c.req.json().catch(() => ({})) as { selectedId?: unknown; enabled?: unknown };
     const handle = deps.registry.open(bookId);
-    handle.bookMetaRepo.set("style_reference_id", selectedId);
-    return c.json({ selectedId });
+    if (typeof body.selectedId === "string") handle.bookMetaRepo.set("style_reference_id", body.selectedId.trim());
+    if (typeof body.enabled === "boolean") handle.bookMetaRepo.set("style_reference_enabled", body.enabled ? "1" : "0");
+    return c.json({
+      selectedId: handle.bookMetaRepo.get("style_reference_id") ?? "",
+      enabled: handle.bookMetaRepo.get("style_reference_enabled") !== "0",
+    });
   });
 
   return app;

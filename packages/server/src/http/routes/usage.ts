@@ -9,7 +9,7 @@ import {
   type AppConfig,
 } from "../../config/load.js";
 import { loadSecrets, saveSecret, maskKey, providerSecretName } from "../../config/secrets.js";
-import type { ModelManager } from "../../ai/model-manager.js";
+import { listModelsFor, type ModelManager } from "../../ai/model-manager.js";
 
 export interface UsageRoutesDeps {
   registry: BookRegistry;
@@ -134,11 +134,44 @@ export function usageRoutes(deps: UsageRoutesDeps) {
     });
   });
 
-  // 实时拉模型列表
+  // 实时拉模型列表(按已保存的当前配置)
   app.get("/api/models", async (c) => {
     if (!deps.modelManager) return c.json({ error: "服务未就绪" }, 503);
     try {
       const models = await deps.modelManager.listModels();
+      return c.json({ models });
+    } catch (e) {
+      return c.json({ error: (e as Error).message }, 503);
+    }
+  });
+
+  // 预览某套草稿配置下的模型列表:不落盘、不改动正在运行的 ModelManager。
+  // 用于「设置页选了供应商/填了 Key,想先看看有哪些模型」而无需先保存整张表单。
+  app.post("/api/models", async (c) => {
+    if (!deps.configJsonPath) return c.json({ error: "服务未就绪" }, 503);
+    const body = await c.req.json().catch(() => ({})) as {
+      provider?: string;
+      apiKey?: string;
+      customProviders?: unknown;
+    };
+    const config = loadConfig(deps.configJsonPath);
+    const customProviders = Array.isArray(body.customProviders)
+      ? normalizeCustomProviders(body.customProviders)
+      : config.customProviders;
+    const requestedProvider = typeof body.provider === "string" ? body.provider : config.provider;
+    const provider = isBuiltinProviderId(requestedProvider) ||
+      customProviders.some((item) => item.id === requestedProvider)
+      ? requestedProvider
+      : config.provider;
+    // Key:优先用草稿里刚填的(尚未保存),否则回退到该供应商已存的 Key
+    let apiKey: string | null = null;
+    if (typeof body.apiKey === "string" && body.apiKey.trim()) {
+      apiKey = body.apiKey.trim();
+    } else if (deps.secretsEnvPath) {
+      apiKey = loadSecrets(deps.secretsEnvPath)[providerSecretName(provider)] ?? null;
+    }
+    try {
+      const models = await listModelsFor({ provider, apiKey, customProviders });
       return c.json({ models });
     } catch (e) {
       return c.json({ error: (e as Error).message }, 503);

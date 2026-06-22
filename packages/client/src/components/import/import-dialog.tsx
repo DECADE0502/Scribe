@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { api, type ImportPreview } from "../../api/client.js";
+import { useEffect, useState } from "react";
+import { api, type ImportPreview, type SampleImport } from "../../api/client.js";
 
 function readFileText(file: File): Promise<string> {
   if (typeof file.text === "function") return file.text();
@@ -16,6 +16,30 @@ export function ImportDialog(props: { bookId: string; onImported: () => void }) 
   const [json, setJson] = useState<unknown>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [samples, setSamples] = useState<SampleImport[]>([]);
+  const [importingSample, setImportingSample] = useState<string | null>(null);
+  const [sampleDone, setSampleDone] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try { setSamples(await api.listSampleImports()); } catch { /* 忽略 */ }
+    })();
+  }, []);
+
+  async function importSample(id: string) {
+    setError(null);
+    setSampleDone(null);
+    setImportingSample(id);
+    try {
+      const r = await api.importSample(props.bookId, id);
+      setSampleDone(`已导入:预设 ${r.imported.promptPresets} / 提示块 ${r.imported.promptBlocks} / 世界书 ${r.imported.worldbookEntries}`);
+      props.onImported();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImportingSample(null);
+    }
+  }
 
   async function onFile(file: File | undefined) {
     setError(null);
@@ -44,6 +68,30 @@ export function ImportDialog(props: { bookId: string; onImported: () => void }) 
     <section data-testid="import-dialog" style={{ display: "grid", gap: 8 }}>
       <strong>导入</strong>
       {error && <p role="alert" style={{ color: "#c00" }}>{error}</p>}
+
+      {samples.length > 0 && (
+        <div data-testid="sample-imports" style={{ border: "1px solid #e5e5e5", borderRadius: 6, padding: 8, display: "grid", gap: 8 }}>
+          <strong style={{ fontSize: 13 }}>内置示例(一键导入)</strong>
+          {sampleDone && <p style={{ color: "#080", fontSize: 12, margin: 0 }}>{sampleDone}</p>}
+          {samples.map((s) => (
+            <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{s.name} <span style={{ color: "#999", fontWeight: 400 }}>· {s.sourceType}</span></div>
+                <div style={{ fontSize: 12, color: "#888" }}>{s.description}</div>
+              </div>
+              <button
+                data-testid={`sample-import-${s.id}`}
+                disabled={importingSample !== null}
+                onClick={() => void importSample(s.id)}
+              >
+                {importingSample === s.id ? "导入中…" : "导入"}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <p style={{ fontSize: 12, color: "#999", margin: "4px 0 0" }}>或从文件导入 SillyTavern 预设/世界书 JSON:</p>
       <input
         data-testid="import-file"
         type="file"

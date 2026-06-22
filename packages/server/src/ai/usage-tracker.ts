@@ -82,3 +82,50 @@ export function computeUsageCost(
   const outputCost = (completionTokens / 1e6) * p.output;
   return inputCost + cachedCost + outputCost;
 }
+
+/**
+ * 全量计费包装:透传一个 SSE 事件流,沿途把每个 `usage` 事件落库 + 累计成本。
+ * 任何产生 LLM 调用的路由都可以用它包一层,确保 token 用量不漏记。
+ * modelInfo 缺失(无价格表)时仍记录 token,只是 costUsd=0。
+ */
+export async function* withUsageRecording<T>(
+  stream: AsyncIterable<T>,
+  deps: {
+    tokenUsageRepo: TokenUsageRepoLike;
+    booksRepo: BooksRepoLike;
+    bookId: string;
+    modelInfo: ModelInfo | undefined;
+    taskType: TaskType;
+    chapterNo?: number | null;
+  },
+): AsyncIterable<T> {
+  for await (const ev of stream) {
+    const e = ev as unknown as {
+      type?: string;
+      promptTokens?: number;
+      completionTokens?: number;
+      cachedTokens?: number;
+      reasoningTokens?: number;
+    };
+    if (e?.type === "usage") {
+      const prompt = e.promptTokens ?? 0;
+      const completion = e.completionTokens ?? 0;
+      const cached = e.cachedTokens ?? 0;
+      const cost = deps.modelInfo
+        ? computeUsageCost(deps.modelInfo, prompt, completion, cached)
+        : 0;
+      deps.tokenUsageRepo.record({
+        taskType: deps.taskType,
+        model: deps.modelInfo?.id ?? "unknown",
+        promptTokens: prompt,
+        completionTokens: completion,
+        cachedTokens: cached,
+        reasoningTokens: e.reasoningTokens ?? 0,
+        costUsd: cost,
+        chapterNo: deps.chapterNo ?? null,
+      });
+      deps.booksRepo.addCost(deps.bookId, cost);
+    }
+    yield ev;
+  }
+}

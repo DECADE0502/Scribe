@@ -1,12 +1,15 @@
 import { Hono } from "hono";
 import type { LanguageModel } from "ai";
+import type { ModelInfo } from "@scribe/shared";
 import { streamSseResponse } from "../sse.js";
-import type { BookRegistry } from "../book-registry.js";
+import { withUsageRecording } from "../../ai/usage-tracker.js";
+import { holdBook, type BookRegistry } from "../book-registry.js";
 import { reviseSegment } from "../../ai/orchestrator/revise-segment.js";
 
 export interface ReviseRoutesDeps {
   registry: BookRegistry;
   getModel?: () => LanguageModel | undefined;
+  writeModelInfo?: ModelInfo;
 }
 
 export function reviseRoutes(deps: ReviseRoutesDeps) {
@@ -32,10 +35,20 @@ export function reviseRoutes(deps: ReviseRoutesDeps) {
     const chapter = handle.chapterFiles.read(no);
     if (!chapter) return c.json({ error: "章节不存在" }, 404);
 
-    return streamSseResponse(reviseSegment(
-      { model, abortSignal: c.req.raw.signal },
-      { chapterContent: chapter.content, segmentText, instruction },
-    ));
+    return streamSseResponse(holdBook(deps.registry, bookId, withUsageRecording(
+      reviseSegment(
+        { model, abortSignal: c.req.raw.signal },
+        { chapterContent: chapter.content, segmentText, instruction },
+      ),
+      {
+        tokenUsageRepo: handle.tokenUsageRepo,
+        booksRepo: deps.registry.booksRepo,
+        bookId,
+        modelInfo: deps.writeModelInfo,
+        taskType: "segment_revise",
+        chapterNo: no,
+      },
+    )));
   });
 
   // 用户接受改写后落盘(source = segment_revise)

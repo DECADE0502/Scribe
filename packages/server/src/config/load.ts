@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { writeFileAtomic } from "../fs/atomic-write.js";
 
 export type BuiltinProviderId = "anyrouter" | "deepseek" | "mimo";
 export type ProviderId = BuiltinProviderId | string;
@@ -149,5 +150,5 @@ export function loadConfig(configJsonPath: string): AppConfig {
 }
 
 export function saveConfig(configJsonPath: string, config: AppConfig): void {
-  fs.writeFileSync(configJsonPath, JSON.stringify(config, null, 2), "utf-8");
+  writeFileAtomic(configJsonPath, JSON.stringify(config, null, 2));
 }

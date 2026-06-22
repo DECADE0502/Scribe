@@ -120,6 +120,27 @@ describe("foreshadowing repo", () => {
     expect(repo.list()).toHaveLength(0);
   });
 
+  it("deleteFromChapter 回档:埋设在范围内的整条删,早埋后还的只撤销回收(回归 #3)", () => {
+    // A: 第5章埋 → 从第3章回档,埋设在范围内,应删除
+    const a = repo.create({ label: "A埋在范围内", description: null, plantedChapter: 5, paidChapter: null, status: "active", relatedCharacters: [] });
+    // B: 第2章埋、第10章还 → 从第3章回档,埋设在范围外(保留),回收在范围内(撤销→active)
+    const b = repo.create({ label: "B早埋后还", description: null, plantedChapter: 2, paidChapter: 10, status: "paid", relatedCharacters: [] });
+    // C: 第1章埋、未还 → 完全在范围外,不动
+    const c = repo.create({ label: "C早埋未还", description: null, plantedChapter: 1, paidChapter: null, status: "active", relatedCharacters: [] });
+
+    const deleted = repo.deleteFromChapter(3);
+    expect(deleted).toBe(1); // 只删了 A
+
+    expect(repo.get(a.id)).toBeUndefined(); // A 被删
+    const bAfter = repo.get(b.id);
+    expect(bAfter).toBeDefined();           // B 保留(没被误删)
+    expect(bAfter?.status).toBe("active");  // 回收被撤销
+    expect(bAfter?.paidChapter).toBeNull();
+    const cAfter = repo.get(c.id);
+    expect(cAfter?.status).toBe("active");  // C 不受影响
+    expect(cAfter?.plantedChapter).toBe(1);
+  });
+
   it("raw NULL related_characters 读出落到空数组", () => {
     db.prepare(
       `INSERT INTO foreshadowing(id,label,description,planted_chapter,paid_chapter,status,related_characters)

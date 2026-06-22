@@ -79,17 +79,18 @@ export function createApp(deps: AppDeps = {}) {
     getModel,
     getAuditModel,
     registry: deps.bookRegistry,
+    writeModelInfo,
     auditModelInfo,
     onChapterCommitted: deps.onChapterCommitted,
     getMasterPrompt,
     getStyleReferences,
   }));
-  app.route("/", chapterRoutes({ getDeps: getChapterDeps, registry: deps.bookRegistry, onChapterCommitted: deps.onChapterCommitted, getMasterPrompt, getStyleReferences, getAuditModel, auditModelInfo }));
+  app.route("/", chapterRoutes({ getDeps: getChapterDeps, registry: deps.bookRegistry, onChapterCommitted: deps.onChapterCommitted, getMasterPrompt, getStyleReferences, getAuditModel, writeModelInfo, auditModelInfo }));
   if (deps.bookRegistry) {
-    app.route("/", bookRoutes({ registry: deps.bookRegistry, getModel, getMasterPrompt, getStyleReferences }));
-    app.route("/", reviseRoutes({ registry: deps.bookRegistry, getModel }));
+    app.route("/", bookRoutes({ registry: deps.bookRegistry, getModel, writeModelInfo, getMasterPrompt, getStyleReferences }));
+    app.route("/", reviseRoutes({ registry: deps.bookRegistry, getModel, writeModelInfo }));
     app.route("/", sidebarRoutes({ registry: deps.bookRegistry }));
-    app.route("/", worldbookRoutes({ registry: deps.bookRegistry, getModel }));
+    app.route("/", worldbookRoutes({ registry: deps.bookRegistry, getModel, writeModelInfo }));
     app.route("/", importRoutes({ registry: deps.bookRegistry }));
     app.route("/", presetRoutes({ registry: deps.bookRegistry }));
     app.route("/", autoRoutes({
