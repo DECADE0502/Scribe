@@ -132,6 +132,32 @@ export function renderStaticBlock(snapshot: BookSnapshot): string {
     .join("\n\n");
 }
 
+/** 最近 10 章正文全文：叙事连续性的核心，让 AI 看到前文的原话、视角、文风。 */
+export function renderRecentFullChaptersBlock(
+  chapters: BookSnapshot["recentFullChapters"],
+): string {
+  if (!chapters.length) return "";
+  const parts: string[] = [`## 最近 ${chapters.length} 章正文（全文，按章节顺序）`];
+  for (const ch of chapters) {
+    parts.push(`### 第 ${ch.chapterNo} 章 — ${ch.title || ""}`);
+    parts.push(ch.content);
+  }
+  return parts.join("\n");
+}
+
+/** 11-20 章前的摘要（中距离记忆）。 */
+export function renderMidRangeBlock(
+  midRange: BookSnapshot["midRangeSummaries"],
+): string {
+  if (!midRange.length) return "";
+  const parts: string[] = [`## 更早章节摘要（第 ${midRange[midRange.length - 1]?.chapterNo}-${midRange[0]?.chapterNo} 章）`];
+  for (const s of midRange) {
+    parts.push(`### 第 ${s.chapterNo} 章 — ${s.oneLiner}`);
+    parts.push(s.paragraph);
+  }
+  return parts.join("\n");
+}
+
 /** 最近 N 章摘要:叙事连续性,优先级仅次于核心设定与用户指令。 */
 export function renderRecentBlock(recent: BookSnapshot["recentSummaries"]): string {
   if (!recent.length) return "";

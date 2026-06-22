@@ -10,6 +10,7 @@ import { createCharactersRepo } from "../../../../src/db/repositories/characters
 import { createForeshadowingRepo } from "../../../../src/db/repositories/foreshadowing.js";
 import { createTimelineRepo } from "../../../../src/db/repositories/timeline.js";
 import { createBookMetaRepo } from "../../../../src/db/repositories/book-meta.js";
+import { createWorldbookRepo } from "../../../../src/db/repositories/worldbook.js";
 import { makeBookTools } from "../../../../src/ai/tools/book-tools.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -35,6 +36,7 @@ beforeEach(() => {
       foreshadowingRepo: createForeshadowingRepo(db),
       timelineRepo: createTimelineRepo(db),
       bookMetaRepo: createBookMetaRepo(db),
+      worldbookRepo: createWorldbookRepo(db),
       close: () => db.close(),
     },
   } as any);
@@ -54,16 +56,20 @@ async function exec(toolName: string, args: unknown): Promise<any> {
 }
 
 describe("book tools", () => {
-  it("add_outline_node treats omitted parentId as a top-level node", async () => {
-    const result = await exec("add_outline_node", {
-      title: "Chapter 2",
-      level: "chapter",
-      summary: "The second chapter.",
+  it("list_outline returns all outline nodes", async () => {
+    outlineRepo.create({
+      parentId: null, level: "chapter", title: "第1章",
+      summary: "test", status: "planned", sortOrder: 0, metadata: null,
     });
 
-    expect(result.created).toBe(true);
-    expect(result.title).toBe("Chapter 2");
-    const node = outlineRepo.listAll().find(n => n.id === result.id);
-    expect(node?.parentId).toBeNull();
+    const result = await exec("list_outline", {});
+    expect(result.nodes).toHaveLength(1);
+    expect(result.nodes[0].title).toBe("第1章");
+  });
+
+  it("get_book_status returns current book state", async () => {
+    const result = await exec("get_book_status", {});
+    expect(result.chapters).toBe(0);
+    expect(result.characters).toBe("无");
   });
 });

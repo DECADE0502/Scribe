@@ -557,6 +557,7 @@ export function buildChapterWriteMessages(
       outlineRepo: handle.outlineRepo,
       foreshadowingRepo: handle.foreshadowingRepo,
       chaptersRepo: handle.chaptersRepo,
+      chapterFiles: handle.chapterFiles,
       genreSectionsRepo: handle.genreSectionsRepo,
       worldbookRepo: handle.worldbookRepo,
       promptPresetsRepo: handle.promptPresetsRepo,

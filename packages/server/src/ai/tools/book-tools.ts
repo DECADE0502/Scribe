@@ -3,21 +3,16 @@ import { z } from "zod";
 import type { BookHandle } from "../../http/book-registry.js";
 
 /**
- * 完整的书操作工具库。给 agentic 对话用——AI 自己看消息 + 工具描述，
- * 自己决定调什么。不再靠意图分类器硬路由。
- *
- * 分两类：
- * 1. 轻量 tool — 直接操作 DB，返回结果给 AI，AI 继续对话
- * 2. trigger tool — 返回 { __action, ... } 标记，agenticChat 在 streamLlm
- *    结束后检查标记并执行重流程（写章/删章/审查），因为重流程需要
- *    流式 yield SSE 事件给前端展示进度，不能在 tool execute 里跑。
+ * 查询工具库。只提供读取/检索工具，不提供写入工具。
+ * 写入工具统一用 book-meta-tools（set_book_meta / create_character / create_outline_node 等）
+ * 和 genre-section-tools / worldbook-tools，避免名字分裂。
  */
 
 export interface BookToolsDeps {
   handle: BookHandle;
 }
 
-/** 重流程 action 标记，agenticChat 检查这个来决定是否触发重流程 */
+/** 重流程 action 标记。agenticChat 检测到后 break streamLlm，执行对应流程。 */
 export interface TriggerAction {
   __action: "write_next_chapter" | "rewrite_chapter" | "delete_chapters" | "audit_chapter";
   [key: string]: unknown;
@@ -32,9 +27,6 @@ export function makeBookTools(deps: BookToolsDeps): Record<string, Tool> {
   const { handle } = deps;
 
   return {
-
-    // ========== 状态查询 ==========
-
     get_book_status: tool({
       description:
         "查看当前书的整体状态：章节数、最新章摘要、角色列表、大纲概览、活跃伏笔。用户问'现在写到哪了''有哪些角色'之类时调用。",
@@ -85,33 +77,6 @@ export function makeBookTools(deps: BookToolsDeps): Record<string, Tool> {
       },
     }),
 
-    // ========== 书设定 (meta) ==========
-
-    update_book_meta: tool({
-      description:
-        "修改书的设定。用户说'主题改为XXX''调性改成XXX''题材换成XXX''书名改为XXX'之类时调用。只传需要改的字段。",
-      parameters: z.object({
-        premise: z.string().optional().describe("故事前提/主题"),
-        tone: z.string().optional().describe("叙事调性"),
-        genre: z.string().optional().describe("题材类型"),
-        title: z.string().optional().describe("书名"),
-      }),
-      execute: async (args) => {
-        const updated: string[] = [];
-        if (args.premise !== undefined) { handle.bookMetaRepo.set("premise", args.premise); updated.push("前提"); }
-        if (args.tone !== undefined) { handle.bookMetaRepo.set("tone", args.tone); updated.push("调性"); }
-        if (args.genre !== undefined) { handle.bookMetaRepo.set("genre", args.genre); updated.push("题材"); }
-        if (args.title !== undefined) {
-          // title 存在 library DB 的 books 表
-          handle.bookMetaRepo.set("title", args.title);
-          updated.push("书名");
-        }
-        return { updated: updated, success: true };
-      },
-    }),
-
-    // ========== 大纲 ==========
-
     list_outline: tool({
       description: "查看完整大纲树。用户问'大纲是什么''有哪些章节规划'之类时调用。",
       parameters: z.object({}),
@@ -125,64 +90,6 @@ export function makeBookTools(deps: BookToolsDeps): Record<string, Tool> {
         };
       },
     }),
-
-    add_outline_node: tool({
-      description:
-        "向大纲添加节点。用户说'大纲加一个XXX''展开第X卷''规划接下来几章'之类时调用。写作计划优先添加 chapter 节点,chapter 标题需带明确章号;volume/arc 只作结构分组。parentId 传 null 表示顶层节点。",
-      parameters: z.object({
-        parentId: z.string().nullable().optional().describe("父节点 ID；顶层传 null"),
-        title: z.string().describe("节点标题。chapter 节点请写明确章号,如'第3章 雪夜重逢'"),
-        summary: z.string().nullable().optional().describe("节点摘要/内容描述。chapter 节点要写清本章事件、出场角色、冲突/推进点、结尾落点"),
-        level: z.enum(["volume", "arc", "chapter"]).describe("层级:chapter 是写作时精确注入的本章大纲;volume/arc 仅用于组织结构"),
-        status: z.enum(["planned", "in_progress", "done"]).optional().describe("状态，默认 planned"),
-      }),
-      execute: async (args) => {
-        const parentId = args.parentId ?? null;
-        const siblings = handle.outlineRepo.listChildren(parentId);
-        const node = handle.outlineRepo.create({
-          parentId,
-          level: args.level,
-          title: args.title,
-          summary: args.summary ?? null,
-          status: args.status ?? "planned",
-          sortOrder: siblings.length,
-          metadata: null,
-        });
-        return { created: true, id: node.id, title: node.title };
-      },
-    }),
-
-    update_outline_node: tool({
-      description:
-        "修改大纲节点。用户说'把第X卷改成XXX''大纲里那个节点改一下'之类时调用。只传需要改的字段。",
-      parameters: z.object({
-        id: z.string().describe("要修改的节点 ID"),
-        title: z.string().optional(),
-        summary: z.string().nullable().optional(),
-        status: z.enum(["planned", "in_progress", "done"]).optional(),
-      }),
-      execute: async (args) => {
-        const node = handle.outlineRepo.update(args.id, {
-          ...(args.title !== undefined && { title: args.title }),
-          ...(args.summary !== undefined && { summary: args.summary }),
-          ...(args.status !== undefined && { status: args.status }),
-        });
-        return { updated: true, id: node.id, title: node.title };
-      },
-    }),
-
-    delete_outline_node: tool({
-      description: "删除大纲节点。用户说'大纲里删掉那个节点'之类时调用。",
-      parameters: z.object({
-        id: z.string().describe("要删除的节点 ID"),
-      }),
-      execute: async ({ id }) => {
-        handle.outlineRepo.delete(id);
-        return { deleted: true, id };
-      },
-    }),
-
-    // ========== 角色 ==========
 
     list_characters: tool({
       description: "查看所有角色。用户问'有哪些角色''XXX是什么人'之类时调用。",
@@ -198,60 +105,6 @@ export function makeBookTools(deps: BookToolsDeps): Record<string, Tool> {
         };
       },
     }),
-
-    create_character: tool({
-      description:
-        "创建角色。用户说'加一个角色叫XXX''主角设定是XXX'之类时调用。",
-      parameters: z.object({
-        name: z.string().describe("角色名"),
-        role: z.enum(["protagonist", "antagonist", "supporting"]).optional().describe("角色定位"),
-        baseData: RecordSchema.optional().describe("角色基础设定（外貌、性格、背景等）"),
-        currentState: RecordSchema.optional().describe("角色当前状态（位置、持有物等）"),
-      }),
-      execute: async (args) => {
-        const c = handle.charactersRepo.create({
-          name: args.name,
-          role: args.role ?? null,
-          baseData: args.baseData ?? {},
-          currentState: args.currentState ?? {},
-        });
-        return { created: true, id: c.id, name: c.name };
-      },
-    }),
-
-    update_character: tool({
-      description:
-        "修改角色。用户说'把XXX的设定改一下''XXX的位置改成王城'之类时调用。只传需要改的字段。",
-      parameters: z.object({
-        id: z.string().describe("角色 ID"),
-        name: z.string().optional(),
-        role: z.enum(["protagonist", "antagonist", "supporting"]).nullable().optional(),
-        baseData: RecordSchema.optional().describe("合并到现有 baseData"),
-        currentState: RecordSchema.optional().describe("合并到现有 currentState"),
-      }),
-      execute: async (args) => {
-        const current = handle.charactersRepo.get(args.id);
-        if (!current) return { success: false, error: `角色不存在: ${args.id}` };
-        const next: Record<string, unknown> = { updatedAt: Date.now() };
-        if (args.name !== undefined) next.name = args.name;
-        if (args.role !== undefined) next.role = args.role;
-        if (args.baseData !== undefined) next.baseData = { ...current.baseData, ...args.baseData };
-        if (args.currentState !== undefined) next.currentState = { ...current.currentState, ...args.currentState };
-        const c = handle.charactersRepo.update(args.id, next);
-        return { updated: true, id: c.id, name: c.name };
-      },
-    }),
-
-    delete_character: tool({
-      description: "删除角色。用户说'删掉角色XXX'之类时调用。",
-      parameters: z.object({ id: z.string().describe("角色 ID") }),
-      execute: async ({ id }) => {
-        handle.charactersRepo.delete(id);
-        return { deleted: true, id };
-      },
-    }),
-
-    // ========== 伏笔 ==========
 
     list_foreshadowing: tool({
       description: "查看伏笔列表。用户问'有哪些伏笔''XXX伏笔兑现了吗'之类时调用。",
@@ -270,52 +123,6 @@ export function makeBookTools(deps: BookToolsDeps): Record<string, Tool> {
       },
     }),
 
-    create_foreshadowing: tool({
-      description:
-        "登记新伏笔。用户说'加一个伏笔XXX''这里埋一条线索'之类时调用。",
-      parameters: z.object({
-        label: z.string().describe("伏笔标签/名称"),
-        description: z.string().nullable().optional().describe("伏笔描述"),
-        plantedChapter: z.number().int().nullable().optional().describe("埋下章节号"),
-        relatedCharacters: z.array(z.string()).optional().describe("关联角色名列表"),
-      }),
-      execute: async (args) => {
-        const f = handle.foreshadowingRepo.create({
-          label: args.label,
-          description: args.description ?? null,
-          plantedChapter: args.plantedChapter ?? null,
-          paidChapter: null,
-          status: "active",
-          relatedCharacters: args.relatedCharacters ?? [],
-        });
-        return { created: true, id: f.id, label: f.label };
-      },
-    }),
-
-    pay_foreshadowing: tool({
-      description:
-        "标记伏笔已兑现。用户说'XXX伏笔在第X章兑现了'之类时调用。",
-      parameters: z.object({
-        id: z.string().describe("伏笔 ID"),
-        paidChapter: z.number().int().describe("兑现章节号"),
-      }),
-      execute: async ({ id, paidChapter }) => {
-        const f = handle.foreshadowingRepo.pay(id, paidChapter);
-        return { paid: true, id: f.id, label: f.label, paidChapter };
-      },
-    }),
-
-    delete_foreshadowing: tool({
-      description: "删除伏笔。用户说'删掉那条伏笔'之类时调用。",
-      parameters: z.object({ id: z.string().describe("伏笔 ID") }),
-      execute: async ({ id }) => {
-        handle.foreshadowingRepo.delete(id);
-        return { deleted: true, id };
-      },
-    }),
-
-    // ========== 时间线 ==========
-
     list_timeline: tool({
       description: "查看时间线事件。用户问'时间线是什么''之前发生了什么'之类时调用。",
       parameters: z.object({
@@ -332,6 +139,81 @@ export function makeBookTools(deps: BookToolsDeps): Record<string, Tool> {
           })),
         };
       },
+    }),
+
+    list_worldbook: tool({
+      description: "查看世界书条目。用户问'世界观是什么''有哪些世界设定'之类时调用。",
+      parameters: z.object({
+        enabledOnly: z.boolean().optional().describe("只看启用的条目"),
+      }),
+      execute: async (args) => {
+        const entries = handle.worldbookRepo.list(args);
+        return {
+          entries: entries.map(e => ({
+            id: e.id, title: e.title, content: e.content,
+            enabled: e.enabled, constant: e.constant,
+            keys: e.keys, category: e.category,
+          })),
+        };
+      },
+    }),
+  };
+}
+
+/**
+ * 重流程 trigger 工具。只在 onboard 完成后才暴露给 AI。
+ * 返回 action 标记，agenticChatWithTriggers 检测后立即执行对应重流程。
+ */
+export function makeTriggerTools(deps: BookToolsDeps): Record<string, Tool> {
+  return {
+    write_next_chapter: tool({
+      description:
+        "开始写下一章的完整流程（写正文→审查→记录状态）。当用户明确要求写下一章、继续写、接着写、推进剧情时调用此工具。不要在用户只是讨论设定、大纲、角色时调用。",
+      parameters: z.object({
+        userIntent: z.string().describe("本章写作意图/要写什么，从用户消息中提取。如果用户只说'写下一章'没有具体意图，传空字符串"),
+      }),
+      execute: async ({ userIntent }) => ({
+        __action: "write_next_chapter" as const,
+        userIntent,
+      }),
+    }),
+
+    rewrite_chapter: tool({
+      description:
+        "重写指定章节。当用户明确要求重写/改写某一章时调用。",
+      parameters: z.object({
+        chapterNo: z.number().int().min(1).describe("要重写的章节号"),
+        userIntent: z.string().describe("重写意图/改进方向"),
+      }),
+      execute: async ({ chapterNo, userIntent }) => ({
+        __action: "rewrite_chapter" as const,
+        chapterNo,
+        userIntent,
+      }),
+    }),
+
+    delete_chapters: tool({
+      description:
+        "删除章节（回档语义：删第 N 章及之后所有章）。当用户明确要求删除章节、回档时调用。",
+      parameters: z.object({
+        fromChapterNo: z.number().int().min(1).describe("从第几章开始删（含该章）"),
+      }),
+      execute: async ({ fromChapterNo }) => ({
+        __action: "delete_chapters" as const,
+        fromChapterNo,
+      }),
+    }),
+
+    audit_chapter: tool({
+      description:
+        "审查指定章节质量。当用户明确要求审查、检查某一章时调用。",
+      parameters: z.object({
+        chapterNo: z.number().int().min(1).describe("要审查的章节号"),
+      }),
+      execute: async ({ chapterNo }) => ({
+        __action: "audit_chapter" as const,
+        chapterNo,
+      }),
     }),
   };
 }

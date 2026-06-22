@@ -19,6 +19,12 @@ export interface BookMeta {
   genre?: string;
 }
 
+export interface ChapterFullContent {
+  chapterNo: number;
+  title: string;
+  content: string;
+}
+
 export interface BookSnapshot {
   bookId: string;
   meta: BookMeta;
@@ -27,7 +33,12 @@ export interface BookSnapshot {
   outline: OutlineNode[];
   activeForeshadowing: Foreshadowing[];
   paidForeshadowing: Foreshadowing[];
-  recentSummaries: ChapterSummary[]; // 最近 3 章, 按 chapterNo desc
+  /** 最近 10 章摘要，按 chapterNo desc */
+  recentSummaries: ChapterSummary[];
+  /** 最近 10 章正文全文，按 chapterNo asc */
+  recentFullChapters: ChapterFullContent[];
+  /** 11-20 章前的摘要（中距离记忆），按 chapterNo desc */
+  midRangeSummaries: ChapterSummary[];
   allSummaries: ChapterSummary[]; // 全部, 按 chapterNo asc
   genreSections: { section: GenreSection; items: GenreSectionItem[] }[];
   worldbookEntries: WorldbookEntry[];
@@ -44,6 +55,11 @@ export interface SnapshotRepos {
     list(filterStatus?: "active" | "paid" | "dropped"): Foreshadowing[];
   };
   chaptersRepo: { listSummaries(): ChapterSummary[] };
+  /** 章节文件读取（正文全文）。可选，不传则不注入正文全文。 */
+  chapterFiles?: {
+    list(): Array<{ chapterNo: number; title: string; content: string }>;
+    read(no: number): { chapterNo: number; title: string; content: string } | undefined;
+  };
   genreSectionsRepo: {
     listSections(): GenreSection[];
     listItems(sectionId: string): GenreSectionItem[];
@@ -74,9 +90,26 @@ export function loadBookSnapshot(
   paths: SnapshotPaths
 ): BookSnapshot {
   const allSummaries = repos.chaptersRepo.listSummaries();
-  const recentSummaries = [...allSummaries]
-    .sort((a, b) => b.chapterNo - a.chapterNo)
-    .slice(0, 3);
+  const sortedDesc = [...allSummaries].sort((a, b) => b.chapterNo - a.chapterNo);
+
+  // 最近 10 章摘要（按 chapterNo desc）
+  const recentSummaries = sortedDesc.slice(0, 10);
+
+  // 最近 10 章正文全文（按 chapterNo asc）
+  let recentFullChapters: ChapterFullContent[] = [];
+  if (repos.chapterFiles) {
+    const recentNos = recentSummaries.map(s => s.chapterNo).sort((a, b) => a - b);
+    recentFullChapters = recentNos
+      .map(no => {
+        const ch = repos.chapterFiles!.read(no);
+        return ch ? { chapterNo: no, title: ch.title, content: ch.content } : undefined;
+      })
+      .filter((c): c is ChapterFullContent => c !== undefined);
+  }
+
+  // 11-20 章前的摘要（中距离记忆，按 chapterNo desc）
+  const midRangeSummaries = sortedDesc.slice(10, 20);
+
   const sections = repos.genreSectionsRepo.listSections();
   const genreSections = sections.map((section) => ({
     section,
@@ -102,6 +135,8 @@ export function loadBookSnapshot(
     activeForeshadowing: repos.foreshadowingRepo.list("active"),
     paidForeshadowing: repos.foreshadowingRepo.list("paid"),
     recentSummaries,
+    recentFullChapters,
+    midRangeSummaries,
     allSummaries,
     genreSections,
     worldbookEntries: repos.worldbookRepo?.list({ enabledOnly: true }) ?? [],

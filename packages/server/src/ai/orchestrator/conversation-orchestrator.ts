@@ -17,8 +17,13 @@ import {
   resolveChapterTitle,
 } from "../context-builder/book-context.js";
 import { makeGenreSectionTools } from "../tools/genre-section-tools.js";
-import { makeBookTools } from "../tools/book-tools.js";
+import { makeBookTools, makeTriggerTools, type TriggerAction } from "../tools/book-tools.js";
+import { makeBookMetaTools } from "../tools/book-meta-tools.js";
+import { makeWorldbookTools } from "../tools/worldbook-tools.js";
 import { analyzeIntent, type IntentCategory } from "./intent.js";
+import { isOnboardComplete, formatCompletenessHint } from "./onboard-completeness.js";
+import { loadBookSnapshot } from "../context-builder/snapshot.js";
+import { NEW_BOOK_ONBOARD_PROMPT } from "../prompts/new-book-onboard.js";
 import {
   buildWriteIntentContract,
   createTaskId,
@@ -55,26 +60,29 @@ export interface ConversationInput {
   executionMode?: ExecutionMode;
 }
 
-const CHAT_SYSTEM = `你是 Scribe，一个对话式中文长篇小说创作助手。你能看到这本书的设定、角色、大纲、伏笔、时间线和已有章节。
+const CHAT_SYSTEM = `你是 Scribe，一个对话式中文长篇小说创作助手。你能看到这本书的设定、角色、大纲、伏笔、时间线、世界书和已有章节。
 
 你的职责是理解用户的创作需求，然后直接调用工具执行操作，不要只口头描述。
 
 你有完整的工具库，可以：
-- 查看和修改书的设定（前提/调性/题材/书名）：update_book_meta
-- 查看和修改大纲：list_outline / add_outline_node / update_outline_node / delete_outline_node
-- 查看和管理角色：list_characters / create_character / update_character / delete_character
+- 查看和修改书的设定（前提/调性/题材/书名/创作目标）：set_book_meta
+- 查看和修改大纲：list_outline / create_outline_node / update_outline_node
+- 查看和管理角色：list_characters / create_character / update_character
 - 查看和管理伏笔：list_foreshadowing / create_foreshadowing / pay_foreshadowing / delete_foreshadowing
+- 查看和管理世界书（世界观、规则、地点等长期设定）：list_worldbook / create_worldbook_entry / update_worldbook_entry / delete_worldbook_entry
 - 查看时间线：list_timeline
 - 检索历史章节：recall_chapters
 - 查看书状态：get_book_status
 - 管理通用记录（世界规则、关系、线索等）：create_record_collection / upsert_record_item 等通用记录工具
+- 设置写作规则文件：set_rules_md
 
 注意：写下一章、重写章节、删除章节、审查章节这些操作不需要你调用工具，系统会自动识别这些意图并执行完整流程。你只需要简短回应用户即可。
 
 操作原则：
 1. 用户说改什么就调对应工具改，改完简短确认即可，不要重复用户的话
 2. 用户问问题时，先调工具查到事实再回答，不要编造
-3. 用简洁贴近中文的表达，不要写长篇大论的解释`;
+3. 用户提到世界观、规则、地点等长期设定时，用 create_worldbook_entry 落地
+4. 用简洁贴近中文的表达，不要写长篇大论的解释`;
 
 /** 组装某章的状态记录 pass(写完一章后落地题材条目/角色/伏笔/时间线)。 */
 async function* recordStateForChapter(
@@ -258,15 +266,51 @@ async function* chatWithContext(
  * 让 AI 自己理解需求、自己决定调什么工具。maxSteps 多步执行让 AI 可以
  * 连续调用多个工具（先查再改、先看大纲再展开等）。
  *
- * 重流程（写章/删章/审查）不走这里——它们在 runConversation 里走确定性
- * 快路径，因为需要流式 yield SSE 事件给前端展示进度，不能在 tool execute
- * 里跑。agenticChat 只管轻量操作：改设定/大纲/角色/伏笔/通用记录/查询。
+ * AI 调用 trigger 工具（write_next_chapter / rewrite_chapter / delete_chapters /
+ * audit_chapter）时，立即 break streamLlm 并执行对应重流程，yield 其 SSE 事件。
+ *
+ * 如果书还没完成 onboard（缺题材/主角/大纲/调性），自动切到 onboard prompt
+ * 引导作者补全设定。工具集不变，只是 system prompt 不同。
  */
-async function* agenticChat(
+async function* agenticChatWithTriggers(
   deps: ConversationOrchestratorDeps,
   input: ConversationInput,
 ): AsyncIterable<SseEvent> {
   const { handle } = deps;
+
+  // 检查 onboard 完成状态（先查，因为决定工具集）
+  const snapshot = loadBookSnapshot(handle.bookId, {
+    charactersRepo: handle.charactersRepo,
+    outlineRepo: handle.outlineRepo,
+    foreshadowingRepo: handle.foreshadowingRepo,
+    chaptersRepo: handle.chaptersRepo,
+    genreSectionsRepo: handle.genreSectionsRepo,
+    worldbookRepo: handle.worldbookRepo,
+    promptPresetsRepo: handle.promptPresetsRepo,
+    readerIssuesRepo: handle.readerIssuesRepo,
+    bookMetaRepo: handle.bookMetaRepo,
+  }, { rulesMd: handle.rulesMdPath });
+  const onboardResult = isOnboardComplete(snapshot);
+  const onboarding = !onboardResult.ok;
+
+  // 工具集：查询 + 设定写入 + 世界书 + 通用记录。
+  // trigger 工具（写章/删章/审查）只在 onboard 完成后才暴露，
+  // 避免 AI 在设定还没齐时就跳过 onboard 开始写章。
+  const tools: Record<string, any> = {
+    ...makeBookTools({ handle }),
+    ...makeBookMetaTools({
+      bookMetaRepo: handle.bookMetaRepo,
+      charactersRepo: handle.charactersRepo,
+      outlineRepo: handle.outlineRepo,
+      rulesMdPath: handle.rulesMdPath,
+    }),
+    ...makeWorldbookTools({ repo: handle.worldbookRepo }),
+    ...makeGenreSectionTools({ repo: handle.genreSectionsRepo, charactersRepo: handle.charactersRepo }),
+  };
+  if (!onboarding) {
+    Object.assign(tools, makeTriggerTools({ handle }));
+  }
+
   const promptCtx = buildBookPromptContext(handle, deps.styleReferences ?? []);
   const recent = handle.chaptersRepo
     .listSummaries()
@@ -295,22 +339,76 @@ async function* agenticChat(
     `大纲:\n${outlineBrief}`,
     `活跃伏笔: ${fsBrief}`,
     recent ? `最近章节:\n${recent}` : "最近章节: (无)",
+    onboarding ? `\n⚠️ 设定尚未完整: ${onboardResult.missing.join("、")}` : "",
   ].join("\n");
 
-  // 合并所有工具：书操作 + 通用记录操作（不含重流程 trigger）
-  const tools = {
-    ...makeBookTools({ handle }),
-    ...makeGenreSectionTools({ repo: handle.genreSectionsRepo, charactersRepo: handle.charactersRepo }),
-  };
+  const systemPrompt = onboarding
+    ? `${NEW_BOOK_ONBOARD_PROMPT}\n\n## 当前进度\n${formatCompletenessHint(onboardResult)}`
+    : CHAT_SYSTEM;
 
   const messages: CoreMessage[] = prependDeepestPrompt([
-    { role: "system", content: CHAT_SYSTEM },
+    { role: "system", content: systemPrompt },
     { role: "system", content: contextBlock },
     ...(input.history ?? []),
     { role: "user", content: input.message },
   ], deps.deepestPrompt);
 
-  yield* streamLlm({ model: deps.model, messages, tools, maxSteps: 12, abortSignal: deps.abortSignal });
+  // 跑 streamLlm，检测到 trigger action 时 break 并执行重流程
+  let triggerAction: TriggerAction | undefined;
+  for await (const ev of streamLlm({ model: deps.model, messages, tools, maxSteps: 12, abortSignal: deps.abortSignal })) {
+    if (ev.type === "tool_call_end" && ev.result && typeof ev.result === "object" && "__action" in ev.result) {
+      triggerAction = ev.result as TriggerAction;
+      yield ev; // 先把 tool_call_end 透传
+      break;    // 立即跳出，执行重流程
+    }
+    yield ev;
+  }
+
+  if (triggerAction) {
+    switch (triggerAction.__action) {
+      case "write_next_chapter": {
+        const next = handle.chaptersRepo.maxChapterNo() + 1;
+        yield* writeChapterFlow(deps, next, String(triggerAction.userIntent ?? ""));
+        yield { type: "done" as const };
+        break;
+      }
+      case "rewrite_chapter": {
+        const no = Number(triggerAction.chapterNo);
+        if (no >= 1) {
+          yield* writeChapterFlow(deps, no, String(triggerAction.userIntent ?? ""), "rewrite");
+          yield { type: "done" as const };
+        }
+        break;
+      }
+      case "delete_chapters": {
+        const { deleteChaptersFrom } = await import("./delete-chapter.js");
+        const fromNo = Number(triggerAction.fromChapterNo);
+        if (fromNo >= 1) {
+          const result = deleteChaptersFrom(handle, fromNo);
+          if (result.deletedChapters.length > 0) {
+            const range = result.deletedChapters[0] === result.deletedChapters[result.deletedChapters.length - 1]
+              ? `第 ${result.deletedChapters[0]} 章`
+              : `第 ${result.deletedChapters[0]} 章到第 ${result.deletedChapters[result.deletedChapters.length - 1]} 章`;
+            yield { type: "text_delta" as const, delta: `已删除${range}及所有关联记录。` };
+            if (result.affectedCharacterNames.length > 0) {
+              yield { type: "text_delta" as const, delta: `\n注意：${result.affectedCharacterNames.join("、")} 的状态是累积写入的，无法自动回滚，请到侧栏手动核对。` };
+            }
+          } else {
+            yield { type: "text_delta" as const, delta: `没有第 ${fromNo} 章或更后的章节，无需删除。` };
+          }
+        }
+        yield { type: "done" as const };
+        break;
+      }
+      case "audit_chapter": {
+        const no = Number(triggerAction.chapterNo);
+        if (no >= 1) {
+          yield* auditFlow(deps, no);
+        }
+        break;
+      }
+    }
+  }
 }
 
 function helpText(): string {
@@ -712,53 +810,9 @@ export async function* runConversation(
     }
   }
 
-  // 自然语言:确定性快路径兜住重流程（写章/重写/删章/审查），
-  // 这些需要流式 SSE 进度，不能在 tool execute 里跑。
-  // 其余全部走 agenticChat 让 AI 自己理解需求 + 调轻量工具。
-
-  const analysis = await analyzeIntent(deps.auditModel, input.message, deps.abortSignal);
-  // 全量计费:意图分类也是一次 LLM 调用
-  if (analysis.usage) {
-    yield {
-      type: "usage",
-      promptTokens: analysis.usage.promptTokens,
-      completionTokens: analysis.usage.completionTokens,
-      cachedTokens: analysis.usage.cachedTokens,
-      reasoningTokens: analysis.usage.reasoningTokens,
-      modelRole: "audit",
-      taskType: "intent",
-    };
-  }
-  if (analysis.category === "writing_intent") {
-    yield { type: "intent", category: "writing_intent" };
-    const count = analysis.chapterCount ?? 1;
-    const start = deps.handle.chaptersRepo.maxChapterNo() + 1;
-    const chapterNos = Array.from({ length: count }, (_, offset) => start + offset);
-    yield* plannedChapterWriteFlow(deps, input, chapterNos);
-    return;
-  }
-
-  if (analysis.category === "revise_intent") {
-    yield { type: "intent", category: "revise_intent" };
-    const maxNo = deps.handle.chaptersRepo.maxChapterNo();
-    yield* plannedChapterWriteFlow(deps, input, [analysis.targetChapter ?? (maxNo >= 1 ? maxNo : 1)], "rewrite");
-    return;
-  }
-
-  if (analysis.category === "delete_intent") {
-    yield { type: "intent", category: "delete_intent" };
-    const maxNo = deps.handle.chaptersRepo.maxChapterNo();
-    yield* plannedDeleteFlow(deps, input, analysis.targetChapter ?? (maxNo >= 1 ? maxNo : 1));
-    return;
-  }
-
-  if (analysis.category === "query" && analysis.targetChapter !== undefined) {
-    yield { type: "intent", category: "query" as IntentCategory };
-    yield* plannedAuditFlow(deps, input, analysis.targetChapter);
-    return;
-  }
-
-  yield { type: "intent", category: analysis.category === "genre_section_op" ? "genre_section_op" : "agentic" as IntentCategory };
-  yield* agenticChat(deps, input);
-  return;
+  // 自然语言：全部走 agentic 对话。
+  // AI 自己理解需求，自己决定调什么工具（包括 trigger 工具触发写章/删章/审查）。
+  // 不再有关键词匹配或意图分类硬路由。
+  yield { type: "intent", category: "agentic" as IntentCategory };
+  yield* agenticChatWithTriggers(deps, input);
 }

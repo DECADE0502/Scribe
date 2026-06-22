@@ -54,7 +54,7 @@ export function conversationRoutes(deps: ConversationDeps = {}) {
       // 多轮记忆:回放最近的 chat 历史(只取 chat,排除 note;不含当前这条)
       const history = handle.conversationsRepo
         .listLatest(12)
-        .filter((m) => m.metadata?.kind === "chat" && (m.role === "user" || m.role === "assistant"))
+        .filter((m) => (m.role === "user" || m.role === "assistant"))
         .reverse()
         .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
       const deepestPrompt = resolveDeepestPrompt({

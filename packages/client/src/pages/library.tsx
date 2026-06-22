@@ -27,7 +27,7 @@ export function LibraryPage() {
   const handleNew = useCallback(async () => {
     try {
       const b = await api.createBook({ title: t.library.untitled });
-      navigate(`/books/${b.id}/onboard`);
+      navigate(`/books/${b.id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }

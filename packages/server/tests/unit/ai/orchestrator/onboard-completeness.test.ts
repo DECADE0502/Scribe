@@ -32,7 +32,7 @@ describe("isOnboardComplete", () => {
     expect(r.missing).toContain("题材");
     expect(r.missing).toContain("主角");
     expect(r.missing).toContain("章级大纲");
-    expect(r.missing).toContain("调性/篇幅/premise(至少两项)");
+    expect(r.missing).toContain("调性或前提(至少一项)");
   });
 
   it("齐全(genre + protagonist + chapter outline + 2 项 extras):ok=true", () => {
@@ -100,7 +100,7 @@ describe("isOnboardComplete", () => {
     expect(r.missing).toEqual(["主角"]);
   });
 
-  it("只有 premise(1 项 extras):missing 含'调性/篇幅/premise'", () => {
+  it("只有 premise(1 项 extras):ok=true（至少一项即可）", () => {
     const r = isOnboardComplete(
       makeSnap({
         meta: { title: "x", premise: "前提", genre: "仙侠" },
@@ -129,8 +129,7 @@ describe("isOnboardComplete", () => {
         ],
       }),
     );
-    expect(r.ok).toBe(false);
-    expect(r.missing).toEqual(["调性/篇幅/premise(至少两项)"]);
+    expect(r.ok).toBe(true);
   });
 
   it("arc alone is not enough because onboarding requires a precise chapter outline", () => {

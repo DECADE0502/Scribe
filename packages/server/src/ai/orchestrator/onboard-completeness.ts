@@ -21,13 +21,11 @@ export function isOnboardComplete(snapshot: BookSnapshot): CompletenessResult {
     missing.push("章级大纲");
   }
 
-  // 4. 调性 / 篇幅 / premise 至少给到两项
-  // 注:lengthTarget 不在 BookMeta 类型里(snapshot.meta 只有 title/premise/tone/genre),
-  // 这里只能从 tone / premise 中数 extras。需要 lengthTarget 时由调用方决定是否扩展 BookSnapshot。
+  // 4. 调性 / premise 至少给到一项（与 onboard prompt 一致）
   let extras = 0;
   if (snapshot.meta.tone) extras += 1;
   if (snapshot.meta.premise) extras += 1;
-  if (extras < 2) missing.push("调性/篇幅/premise(至少两项)");
+  if (extras < 1) missing.push("调性或前提(至少一项)");
 
   return { ok: missing.length === 0, missing };
 }

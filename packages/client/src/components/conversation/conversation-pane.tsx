@@ -213,26 +213,31 @@ export function ConversationPane(props: ConversationPaneProps) {
   /** 追踪本次流是否是写作流程 */
   const writingFlowRef = useRef(false);
   const planDrivenWorkflowRef = useRef(false);
+  /** onboard 状态：null=加载中，true=完整，false=未完成 */
+  const [onboardComplete, setOnboardComplete] = useState<boolean | null>(null);
 
-  // 加载持久化对话历史（首次挂载或 bookId 变化时）
+  // 加载持久化对话历史（首次挂载或 bookId 变化时）+ 查 onboard 状态
   useEffect(() => {
     let cancelled = false;
     reset();
     void (async () => {
       try {
-        const res = await fetch(`/api/books/${encodeURIComponent(props.bookId)}/conversation?limit=100`);
-        if (!res.ok) return;
-        const j = await res.json() as { messages: Array<{ id: number; role: "user" | "assistant" | "system"; content: string; metadata: { kind?: string } | null; createdAt: number }> };
+        const [histRes, statusRes] = await Promise.all([
+          fetch(`/api/books/${encodeURIComponent(props.bookId)}/conversation?limit=100`),
+          fetch(`/api/books/${encodeURIComponent(props.bookId)}/onboard-status`),
+        ]);
         if (cancelled) return;
-        // 只回放 chat 类消息（排除 note / onboard / worldbook 等操作记录）
-        const msgs: ChatMessage[] = j.messages
-          .filter(m => m.metadata?.kind === "chat" && (m.role === "user" || m.role === "assistant"))
-          .map(m => ({
-            id: `hist-${m.id}`,
-            role: m.role,
-            content: m.content,
-          }));
-        hydrate(msgs);
+        if (histRes.ok) {
+          const j = await histRes.json() as { messages: Array<{ id: number; role: "user" | "assistant" | "system"; content: string; metadata: { kind?: string } | null; createdAt: number }> };
+          const msgs: ChatMessage[] = j.messages
+            .filter(m => m.role === "user" || m.role === "assistant")
+            .map(m => ({ id: `hist-${m.id}`, role: m.role, content: m.content }));
+          hydrate(msgs);
+        }
+        if (statusRes.ok) {
+          const s = await statusRes.json() as { ok: boolean };
+          setOnboardComplete(s.ok);
+        }
       } catch { /* ignore */ }
     })();
     return () => { cancelled = true; };
@@ -436,6 +441,32 @@ export function ConversationPane(props: ConversationPaneProps) {
         </div>
       )}
       <div ref={scrollRef} style={{ flex: 1, overflow: "auto", padding: 12 }}>
+        {messages.length === 0 && !streaming && onboardComplete === false && (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 16 }}>
+            <div style={{ fontSize: 48 }}>📚</div>
+            <p className="muted" style={{ textAlign: "center", maxWidth: 280, lineHeight: 1.8 }}>
+              这是一本新书，还没有任何设定。<br />
+              点击下方按钮，AI 会引导你完成题材、角色、大纲等基础设定。
+            </p>
+            <button
+              className="ios-btn-primary"
+              data-testid="btn-start-onboard"
+              style={{ fontSize: 16, padding: "10px 32px" }}
+              onClick={() => send("你好，我想开始写一本新书，请帮我搭建设定", { appendUser: false })}
+            >
+              开始创建
+            </button>
+          </div>
+        )}
+        {messages.length === 0 && !streaming && onboardComplete === true && (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 12 }}>
+            <div style={{ fontSize: 40 }}>✍️</div>
+            <p className="muted" style={{ textAlign: "center", maxWidth: 280, lineHeight: 1.8 }}>
+              设定已就绪。<br />
+              在下方输入框跟 AI 对话，或输入 <code>/write</code> 开始写第一章。
+            </p>
+          </div>
+        )}
         {messages.map(m => <Message key={m.id} m={m} />)}
         {streaming && <StreamingMessage state={streaming} />}
       </div>
