@@ -3,6 +3,7 @@ import type { BookRegistry } from "../book-registry.js";
 import {
   importSillyTavernJson,
   previewSillyTavernImport,
+  ImportTooLargeError,
 } from "../../ai/import/import-service.js";
 import {
   BUILTIN_SAMPLES,
@@ -41,6 +42,9 @@ export function importRoutes(deps: { registry: BookRegistry }) {
     const body = await c.req.json().catch(() => undefined) as { sampleId?: unknown } | undefined;
     const sample = typeof body?.sampleId === "string" ? getBuiltinSample(body.sampleId) : undefined;
     if (!sample) return c.json({ error: "sample_not_found" }, 404);
+    if (!deps.registry.tryBeginExclusive(c.req.param("bookId"))) {
+      return c.json({ error: "book_busy", message: "这本书正在写作/生成或另一项操作进行中,请稍后再导入" }, 409);
+    }
     try {
       const { filename, json } = readBuiltinSampleJson(sample);
       const result = importSillyTavernJson(handle, { filename, json });
@@ -49,10 +53,15 @@ export function importRoutes(deps: { registry: BookRegistry }) {
       }
       return c.json(result, 201);
     } catch (error) {
+      if (error instanceof ImportTooLargeError) {
+        return c.json({ error: "import_too_large", message: error.message }, 413);
+      }
       return c.json({
         error: "invalid_import_json",
         message: error instanceof Error ? error.message : String(error),
       }, 400);
+    } finally {
+      deps.registry.endExclusive(c.req.param("bookId"));
     }
   });
 
@@ -71,6 +80,9 @@ export function importRoutes(deps: { registry: BookRegistry }) {
         json: body.json,
       }));
     } catch (error) {
+      if (error instanceof ImportTooLargeError) {
+        return c.json({ error: "import_too_large", message: error.message }, 413);
+      }
       return c.json({
         error: "invalid_import_json",
         message: error instanceof Error ? error.message : String(error),
@@ -87,6 +99,9 @@ export function importRoutes(deps: { registry: BookRegistry }) {
     if (!body || typeof body.filename !== "string") {
       return c.json({ error: "invalid_import_payload" }, 400);
     }
+    if (!deps.registry.tryBeginExclusive(c.req.param("bookId"))) {
+      return c.json({ error: "book_busy", message: "这本书正在写作/生成或另一项操作进行中,请稍后再导入" }, 409);
+    }
     try {
       const result = importSillyTavernJson(handle, {
         filename: body.filename,
@@ -97,10 +112,15 @@ export function importRoutes(deps: { registry: BookRegistry }) {
       }
       return c.json(result, 201);
     } catch (error) {
+      if (error instanceof ImportTooLargeError) {
+        return c.json({ error: "import_too_large", message: error.message }, 413);
+      }
       return c.json({
         error: "invalid_import_json",
         message: error instanceof Error ? error.message : String(error),
       }, 400);
+    } finally {
+      deps.registry.endExclusive(c.req.param("bookId"));
     }
   });
 

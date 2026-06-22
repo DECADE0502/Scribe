@@ -131,6 +131,17 @@ export async function* streamLlm(input: LlmCallInput): AsyncIterable<SseEvent> {
   }
 }
 
+/**
+ * 裸 generateText + 退避重试(429/5xx/网络抖动重试;auth/abort 不重试)。
+ * 给那些直接用 generateText、需要结构化解析的调用(如 auditChapter)复用,
+ * 让它们也享受统一的瞬时错误退避,而不是各写各的。
+ */
+export function generateTextWithRetry(
+  params: Parameters<typeof generateText>[0],
+): ReturnType<typeof generateText> {
+  return withRetry(() => generateText(params), { classify: classifyLlmError });
+}
+
 export async function generateLlmText(input: Omit<LlmCallInput, "tools" | "maxSteps">): Promise<GeneratedLlmText> {
   // 全程瞬时错误(429 / 5xx / 网络抖动)走退避重试;auth/取消等不重试。
   const result = await withRetry(

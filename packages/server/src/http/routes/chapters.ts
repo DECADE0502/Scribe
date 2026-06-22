@@ -460,13 +460,19 @@ export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
     const book = deps.registry.booksRepo.get(bookId);
     if (!book) return c.json({ error: "书不存在" }, 404);
     const handle = deps.registry.open(bookId);
-
-    log.info("chapters", `DELETE 收到：book=${bookId} from=${no}`);
-    const result = deleteChaptersFrom(handle, no);
-    if (result.deletedChapters.length === 0) {
-      return c.json({ error: `没有第 ${no} 章或更后的章节`, result }, 404);
+    if (!deps.registry.tryBeginExclusive(bookId)) {
+      return c.json({ error: "这本书正在写作/生成或另一项操作进行中,请稍后再删除章节" }, 409);
     }
-    return c.json({ result });
+    try {
+      log.info("chapters", `DELETE 收到：book=${bookId} from=${no}`);
+      const result = deleteChaptersFrom(handle, no);
+      if (result.deletedChapters.length === 0) {
+        return c.json({ error: `没有第 ${no} 章或更后的章节`, result }, 404);
+      }
+      return c.json({ result });
+    } finally {
+      deps.registry.endExclusive(bookId);
+    }
   });
 
   // 删除所有章节（回档到书初状态）
@@ -476,10 +482,16 @@ export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
     const book = deps.registry.booksRepo.get(bookId);
     if (!book) return c.json({ error: "书不存在" }, 404);
     const handle = deps.registry.open(bookId);
-
-    log.info("chapters", `DELETE ALL：book=${bookId}`);
-    const result = deleteChaptersFrom(handle, 1);
-    return c.json({ result });
+    if (!deps.registry.tryBeginExclusive(bookId)) {
+      return c.json({ error: "这本书正在写作/生成或另一项操作进行中,请稍后再清空章节" }, 409);
+    }
+    try {
+      log.info("chapters", `DELETE ALL：book=${bookId}`);
+      const result = deleteChaptersFrom(handle, 1);
+      return c.json({ result });
+    } finally {
+      deps.registry.endExclusive(bookId);
+    }
   });
 
   return app;

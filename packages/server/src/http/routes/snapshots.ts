@@ -30,13 +30,13 @@ export function snapshotRoutes(deps: SnapshotRoutesDeps) {
     const bookId = c.req.param("bookId");
     const book = deps.registry.booksRepo.get(bookId);
     if (!book) return c.json({ error: "书不存在" }, 404);
-    if (deps.registry.isBusy(bookId)) {
-      return c.json({ error: "这本书正在写作/生成中,请稍后再创建快照" }, 409);
+    if (!deps.registry.tryBeginExclusive(bookId)) {
+      return c.json({ error: "这本书正在写作/生成或另一项操作进行中,请稍后再创建快照" }, 409);
     }
-    deps.registry.open(bookId); // 确保目录在
-    // Windows 下打包打开中的 SQLite(WAL)会锁,先关连接
-    deps.registry.closeBook(bookId);
     try {
+      deps.registry.open(bookId); // 确保目录在
+      // Windows 下打包打开中的 SQLite(WAL)会锁,先关连接
+      deps.registry.closeBook(bookId);
       const snap = await createSnapshot({
         srcDir: deps.paths.bookDir(bookId),
         outDir: deps.paths.bookBackupsDir(bookId),
@@ -44,6 +44,8 @@ export function snapshotRoutes(deps: SnapshotRoutesDeps) {
       return c.json({ path: snap.path, filename: snap.name }, 201);
     } catch (e) {
       return c.json({ error: `创建快照失败:${(e as Error).message}` }, 500);
+    } finally {
+      deps.registry.endExclusive(bookId);
     }
   });
 
@@ -62,17 +64,19 @@ export function snapshotRoutes(deps: SnapshotRoutesDeps) {
     const snapshotPath = path.posix.join(deps.paths.bookBackupsDir(bookId), filename);
     if (!fs.existsSync(snapshotPath)) return c.json({ error: "快照不存在" }, 404);
 
-    if (deps.registry.isBusy(bookId)) {
-      return c.json({ error: "这本书正在写作/生成中,请稍后再恢复快照" }, 409);
+    if (!deps.registry.tryBeginExclusive(bookId)) {
+      return c.json({ error: "这本书正在写作/生成或另一项操作进行中,请稍后再恢复快照" }, 409);
     }
-    // 关闭当前 workspace 连接(restore 要覆盖 db 文件)
-    deps.registry.closeBook(bookId);
     try {
+      // 关闭当前 workspace 连接(restore 要覆盖 db 文件)
+      deps.registry.closeBook(bookId);
       await restoreSnapshot({ snapshotPath, destDir: deps.paths.bookDir(bookId) });
+      return c.json({ restored: filename });
     } catch (e) {
       return c.json({ error: `恢复快照失败:${(e as Error).message}` }, 500);
+    } finally {
+      deps.registry.endExclusive(bookId);
     }
-    return c.json({ restored: filename });
   });
 
   return app;

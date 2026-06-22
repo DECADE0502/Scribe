@@ -1,4 +1,5 @@
-import { generateText, type LanguageModel } from "ai";
+import { type LanguageModel } from "ai";
+import { generateTextWithRetry } from "../llm-call.js";
 import { readDeepSeekUsage } from "../providers/deepseek-metadata.js";
 import {
   AUDIT_SUMMARIZE_PROMPT,
@@ -68,7 +69,8 @@ export async function auditChapter(
   for (let attempt = 0; attempt < 3; attempt++) {
     if (deps.abortSignal?.aborted) break;
     try {
-      const result = await generateText({
+      // 429/5xx/网络抖动在此退避重试;parse 失败由外层 3 次循环兜
+      const result = await generateTextWithRetry({
         model: deps.model,
         messages: prependDeepestPrompt([
           { role: "system", content: AUDIT_SUMMARIZE_PROMPT },

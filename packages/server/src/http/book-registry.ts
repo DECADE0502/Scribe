@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import type { Database } from "better-sqlite3";
+import type { SseEvent } from "@scribe/shared";
 import { openLibraryDb } from "../db/library.js";
 import { openWorkspaceDb } from "../db/workspace.js";
 import { createBooksRepo } from "../db/repositories/books.js";
@@ -55,6 +56,15 @@ export interface BookRegistry {
   release(bookId: string): void;
   /** 该书是否有进行中的长任务(快照/删书前应检查,避免 use-after-close 崩溃) */
   isBusy(bookId: string): boolean;
+  /**
+   * 尝试取得"破坏性互斥操作"锁(删章/导入/恢复快照/删书)。
+   * 若该书有进行中的长任务或已有互斥操作,返回 false(调用方应回 409)。
+   */
+  tryBeginExclusive(bookId: string): boolean;
+  /** 释放破坏性互斥锁 */
+  endExclusive(bookId: string): void;
+  /** 该书是否正在执行破坏性互斥操作(写作流开始前应检查) */
+  isMutating(bookId: string): boolean;
 }
 
 export interface BookRegistryOpts {
@@ -116,6 +126,22 @@ export function createBookRegistry(opts: BookRegistryOpts): BookRegistry {
     return (inFlight.get(bookId) ?? 0) > 0;
   }
 
+  const exclusiveLocks = new Set<string>();
+
+  function tryBeginExclusive(bookId: string): boolean {
+    if (isBusy(bookId) || exclusiveLocks.has(bookId)) return false;
+    exclusiveLocks.add(bookId);
+    return true;
+  }
+
+  function endExclusive(bookId: string): void {
+    exclusiveLocks.delete(bookId);
+  }
+
+  function isMutating(bookId: string): boolean {
+    return exclusiveLocks.has(bookId);
+  }
+
   function closeBook(bookId: string): void {
     const h = handles.get(bookId);
     if (h) {
@@ -136,18 +162,28 @@ export function createBookRegistry(opts: BookRegistryOpts): BookRegistry {
     return [...handles.keys()];
   }
 
-  return { libraryDb, booksRepo, paths: opts.paths, open, openBookIds, closeBook, closeAll, acquire, release, isBusy };
+  return { libraryDb, booksRepo, paths: opts.paths, open, openBookIds, closeBook, closeAll, acquire, release, isBusy, tryBeginExclusive, endExclusive, isMutating };
 }
 
 /**
  * 包裹一个 SSE 事件生成器,使其执行期间占用该书(acquire/release),
  * 这样快照/删书会因 isBusy 而被拒绝,不会在写作中途关掉数据库连接导致崩溃。
+ * 同时:若该书正在执行破坏性互斥操作(删章/导入/恢复快照),直接发 error 事件拒绝,
+ * 不开始写作流(避免与之冲突)。
  */
-export async function* holdBook<T>(
-  registry: Pick<BookRegistry, "acquire" | "release">,
+export async function* holdBook(
+  registry: Pick<BookRegistry, "acquire" | "release" | "isMutating">,
   bookId: string,
-  gen: AsyncIterable<T>,
-): AsyncIterable<T> {
+  gen: AsyncIterable<SseEvent>,
+): AsyncIterable<SseEvent> {
+  if (registry.isMutating(bookId)) {
+    yield {
+      type: "error",
+      errorClass: "mutation_in_progress",
+      message: "这本书正在执行删除/导入/恢复快照等操作,请稍后再试。",
+    };
+    return;
+  }
   registry.acquire(bookId);
   try {
     yield* gen;

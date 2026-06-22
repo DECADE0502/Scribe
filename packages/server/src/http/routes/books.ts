@@ -73,9 +73,10 @@ export function bookRoutes(deps: BookRoutesDeps) {
     const bookId = c.req.param("bookId");
     const book = deps.registry.booksRepo.get(bookId);
     if (!book) return c.json({ error: "书不存在" }, 404);
-    if (deps.registry.isBusy(bookId)) {
-      return c.json({ error: "这本书正在写作/生成中,请停止后再删除" }, 409);
+    if (!deps.registry.tryBeginExclusive(bookId)) {
+      return c.json({ error: "这本书正在写作/生成或另一项操作进行中,请停止后再删除" }, 409);
     }
+    try {
     // 先关闭 workspace.db 连接,避免文件锁
     deps.registry.closeBook(bookId);
     // 删除 library.db 里的书记录
@@ -91,6 +92,9 @@ export function bookRoutes(deps: BookRoutesDeps) {
       console.error(`删除书目录失败(${bookId}):`, (e as Error).message);
     }
     return c.json({ ok: true });
+    } finally {
+      deps.registry.endExclusive(bookId);
+    }
   });
 
   // ---- Meta 设置 API ----
