@@ -47,7 +47,14 @@ export interface BuildResult {
   };
 }
 
-export function renderStaticBlock(snapshot: BookSnapshot): string {
+// —— 分层渲染:把原本一整块 static / dynamic 拆成可独立排优先级的小块。
+// 之前 static(全部角色/记录/伏笔)优先级 100、dynamic(最近章+用户指令)优先级 90,
+// 预算紧张时按优先级丢最低,导致"最近章摘要/用户指令"先被批量档案挤掉——这恰恰
+// 是写作最需要的连续性上下文。拆分后:核心设定与用户指令最高,最近章次之,批量
+// 的角色档案/记录集合最低,确保紧预算下优先保住叙事主线。
+
+/** 核心设定:标题/前提/调性/题材 + 写作规则。定义整本书,优先级最高。 */
+export function renderSettingBlock(snapshot: BookSnapshot): string {
   const parts: string[] = [];
   parts.push(`## 故事设定`);
   parts.push(`标题:${snapshot.meta.title}`);
@@ -58,46 +65,104 @@ export function renderStaticBlock(snapshot: BookSnapshot): string {
     parts.push(`\n## 写作规则(rules.md)`);
     parts.push(snapshot.rulesMd);
   }
-  if (snapshot.activeForeshadowing.length) {
-    parts.push(`\n## 活跃伏笔`);
-    for (const f of snapshot.activeForeshadowing) {
-      parts.push(
-        `- [${f.label}]${f.description ? " " + f.description : ""}(埋于第 ${
-          f.plantedChapter ?? "?"
-        } 章)`
-      );
+  return parts.join("\n");
+}
+
+/** 活跃伏笔:一致性关键,优先级高于批量档案。 */
+export function renderForeshadowingBlock(snapshot: BookSnapshot): string {
+  if (!snapshot.activeForeshadowing.length) return "";
+  const parts: string[] = [`## 活跃伏笔`];
+  for (const f of snapshot.activeForeshadowing) {
+    parts.push(
+      `- [${f.label}]${f.description ? " " + f.description : ""}(埋于第 ${
+        f.plantedChapter ?? "?"
+      } 章)`
+    );
+  }
+  return parts.join("\n");
+}
+
+/** 通用记录集合:批量档案,预算紧张时可先裁。 */
+export function renderRecordsBlock(snapshot: BookSnapshot): string {
+  if (!snapshot.genreSections.length) return "";
+  const parts: string[] = [`## 通用记录集合`];
+  for (const { section, items } of snapshot.genreSections) {
+    const identity = resolveIdentityFieldNames(section).join(",") || "(未声明)";
+    const display = resolveDisplayFieldNames(section).join(",") || "(未声明)";
+    const search = section.searchFields?.join(",") || "(未声明)";
+    parts.push(`### ${section.name} (identity:${identity}; display:${display}; search:${search})`);
+    for (const item of items) {
+      const label = resolveItemLabel(section, item.data, "?");
+      const identityKey = resolveItemIdentityKey(section, item.data) ?? "?";
+      const searchText = resolveItemSearchText(section, item.data);
+      parts.push(`- ${label} | ${identityKey}${searchText ? ` | ${searchText}` : ""}`);
     }
   }
-  if (snapshot.genreSections.length) {
-    parts.push(`\n## 通用记录集合`);
-    for (const { section, items } of snapshot.genreSections) {
-      const identity = resolveIdentityFieldNames(section).join(",") || "(未声明)";
-      const display = resolveDisplayFieldNames(section).join(",") || "(未声明)";
-      const search = section.searchFields?.join(",") || "(未声明)";
-      parts.push(`### ${section.name} (identity:${identity}; display:${display}; search:${search})`);
-      for (const item of items) {
-        const label = resolveItemLabel(section, item.data, "?");
-        const identityKey = resolveItemIdentityKey(section, item.data) ?? "?";
-        const searchText = resolveItemSearchText(section, item.data);
-        parts.push(`- ${label} | ${identityKey}${searchText ? ` | ${searchText}` : ""}`);
-      }
-    }
+  return parts.join("\n");
+}
+
+/** 角色档案:批量,预算紧张时最先裁(最近章摘要已含当下角色动态)。 */
+export function renderCharactersBlock(snapshot: BookSnapshot): string {
+  if (!snapshot.characters.length) return "";
+  const parts: string[] = [`## 主要角色`];
+  for (const c of snapshot.characters) {
+    const b = c.baseData as Record<string, unknown> | undefined;
+    const items: string[] = [];
+    if (b && typeof b.background === "string")
+      items.push(`背景:${b.background}`);
+    if (b && typeof b.motivation === "string")
+      items.push(`动机:${b.motivation}`);
+    if (b && typeof b.languageHabits === "string")
+      items.push(`语言:${b.languageHabits}`);
+    parts.push(`### ${c.name}${c.role ? ` (${c.role})` : ""}`);
+    if (items.length) parts.push(items.join("\n"));
   }
-  if (snapshot.characters.length) {
-    parts.push(`\n## 主要角色`);
-    for (const c of snapshot.characters) {
-      const b = c.baseData as Record<string, unknown> | undefined;
-      const items: string[] = [];
-      if (b && typeof b.background === "string")
-        items.push(`背景:${b.background}`);
-      if (b && typeof b.motivation === "string")
-        items.push(`动机:${b.motivation}`);
-      if (b && typeof b.languageHabits === "string")
-        items.push(`语言:${b.languageHabits}`);
-      parts.push(`### ${c.name}${c.role ? ` (${c.role})` : ""}`);
-      if (items.length) parts.push(items.join("\n"));
-    }
+  return parts.join("\n");
+}
+
+/** 向后兼容:整块静态档案(设定+伏笔+记录+角色)。内部已改用分层小块。 */
+export function renderStaticBlock(snapshot: BookSnapshot): string {
+  return [
+    renderSettingBlock(snapshot),
+    renderForeshadowingBlock(snapshot),
+    renderRecordsBlock(snapshot),
+    renderCharactersBlock(snapshot),
+  ]
+    .filter((s) => s.trim())
+    .join("\n\n");
+}
+
+/** 最近 N 章摘要:叙事连续性,优先级仅次于核心设定与用户指令。 */
+export function renderRecentBlock(recent: BookSnapshot["recentSummaries"]): string {
+  if (!recent.length) return "";
+  const parts: string[] = [`## 最近 ${recent.length} 章摘要(最近优先)`];
+  for (const s of recent) {
+    parts.push(`### 第 ${s.chapterNo} 章 — ${s.oneLiner}`);
+    parts.push(s.paragraph);
   }
+  return parts.join("\n");
+}
+
+/** 召回的相关历史章节:有用但非必需,可较早裁。 */
+export function renderRecalledBlock(recalled: BookSnapshot["recentSummaries"]): string {
+  if (!recalled.length) return "";
+  const parts: string[] = [`## 相关历史章节(召回 ${recalled.length} 章)`];
+  for (const s of recalled) {
+    parts.push(`### 第 ${s.chapterNo} 章 — ${s.oneLiner}`);
+    parts.push(s.paragraph);
+  }
+  return parts.join("\n");
+}
+
+/** 本章计划 + 用户最新指令:当前要写什么,绝不能被批量档案挤掉。 */
+export function renderInstructionBlock(intent: BuildIntent): string {
+  const parts: string[] = [];
+  if (intent.chapterPlan) {
+    parts.push(`## 本章计划`);
+    parts.push(intent.chapterPlan);
+  }
+  parts.push(`## 用户最新指令`);
+  parts.push(intent.userMessage || "(用户未明确说,请承接前文。)");
   return parts.join("\n");
 }
 
@@ -107,29 +172,15 @@ export interface DynamicRenderInput {
   intent: BuildIntent;
 }
 
+/** 向后兼容:整块动态上下文。内部已改用分层小块。 */
 export function renderDynamicBlock(input: DynamicRenderInput): string {
-  const parts: string[] = [];
-  if (input.recent.length) {
-    parts.push(`## 最近 ${input.recent.length} 章摘要(最近优先)`);
-    for (const s of input.recent) {
-      parts.push(`### 第 ${s.chapterNo} 章 — ${s.oneLiner}`);
-      parts.push(s.paragraph);
-    }
-  }
-  if (input.recalled.length) {
-    parts.push(`\n## 相关历史章节(召回 ${input.recalled.length} 章)`);
-    for (const s of input.recalled) {
-      parts.push(`### 第 ${s.chapterNo} 章 — ${s.oneLiner}`);
-      parts.push(s.paragraph);
-    }
-  }
-  if (input.intent.chapterPlan) {
-    parts.push(`\n## 本章计划`);
-    parts.push(input.intent.chapterPlan);
-  }
-  parts.push(`\n## 用户最新指令`);
-  parts.push(input.intent.userMessage || "(用户未明确说,请承接前文。)");
-  return parts.join("\n");
+  return [
+    renderRecentBlock(input.recent),
+    renderRecalledBlock(input.recalled),
+    renderInstructionBlock(input.intent),
+  ]
+    .filter((s) => s.trim())
+    .join("\n\n");
 }
 
 export function renderReaderIssuesBlock(
@@ -192,7 +243,6 @@ export function buildWriteContext(opts: BuildOptions): BuildResult {
     intentRecords: opts.intent.records,
     topK: 5,
   });
-  const staticBlock = renderStaticBlock(opts.snapshot);
   const now = new Date();
   const activePromptBlocks = (opts.snapshot.promptBlocks ?? [])
     .filter((block) => block.enabled && block.stackIndex !== null)
@@ -237,21 +287,33 @@ export function buildWriteContext(opts: BuildOptions): BuildResult {
   });
   const worldbookBlock = renderWorldbookEntries(worldbook.selected);
   const readerIssuesBlock = renderReaderIssuesBlock(opts.snapshot.readerIssues ?? []);
-  const dynamicBlock = renderDynamicBlock({
-    recent,
-    recalled,
-    intent: opts.intent,
-  });
 
+  // 分层小块,各自排优先级。final 消息顺序由下面 sections 数组的声明顺序决定
+  // (prompt-cache 友好:静态在前、动态在后);priority 只决定预算紧张时丢/裁的次序。
+  const settingBlock = renderSettingBlock(opts.snapshot);
+  const foreshadowingBlock = renderForeshadowingBlock(opts.snapshot);
+  const recordsBlock = renderRecordsBlock(opts.snapshot);
+  const charactersBlock = renderCharactersBlock(opts.snapshot);
+  const recalledBlock = renderRecalledBlock(recalled);
+  const recentBlock = renderRecentBlock(recent);
+  const instructionBlock = renderInstructionBlock(opts.intent);
+
+  // 优先级阶梯(数值越大越先保留):
+  //   设定 100 > 用户指令 99 > 最近章 96 > worldbook 95 > reader-issues 94
+  //   > 活跃伏笔 93 > 召回历史 80 > 记录集合 70 > 角色档案 65
+  // 数组顺序=最终拼接顺序(缓存友好),与上面的丢弃优先级解耦。
+  const maybe = (id: string, priority: number, text: string): Section[] =>
+    text.trim() ? [{ id, priority, text }] : [];
   const sections: Section[] = [
-    { id: "static", priority: 100, text: staticBlock },
-    ...(worldbookBlock
-      ? [{ id: "worldbook", priority: 95, text: worldbookBlock }]
-      : []),
-    ...(readerIssuesBlock
-      ? [{ id: "reader-issues", priority: 94, text: readerIssuesBlock }]
-      : []),
-    { id: "dynamic", priority: 90, text: dynamicBlock },
+    ...maybe("setting", 100, settingBlock),
+    ...maybe("foreshadowing", 93, foreshadowingBlock),
+    ...maybe("records", 70, recordsBlock),
+    ...maybe("characters", 65, charactersBlock),
+    ...maybe("worldbook", 95, worldbookBlock),
+    ...maybe("reader-issues", 94, readerIssuesBlock),
+    ...maybe("recalled", 80, recalledBlock),
+    ...maybe("recent", 96, recentBlock),
+    ...maybe("instruction", 99, instructionBlock),
   ];
   const fitted = fitWithinBudget(sections, {
     budgetTokens: opts.budgetTokens ?? 32_000,

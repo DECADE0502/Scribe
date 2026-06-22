@@ -145,6 +145,7 @@ export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
             genreDeps: { repo: handle.genreSectionsRepo, charactersRepo: handle.charactersRepo },
             abortSignal: c.req.raw.signal,
             deepestPrompt,
+            readerIssuesRepo: handle.readerIssuesRepo,
           },
           {
             chapterNo: no,
@@ -366,6 +367,7 @@ export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
           genreDeps: { repo: handle.genreSectionsRepo, charactersRepo: handle.charactersRepo },
           abortSignal: c.req.raw.signal,
           deepestPrompt,
+          readerIssuesRepo: handle.readerIssuesRepo,
         },
         {
           chapterNo: no,

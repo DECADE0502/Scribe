@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
 import { serve } from "@hono/node-server";
 import { resolveAppPaths } from "./config/paths.js";
 import { writeFileAtomic } from "./fs/atomic-write.js";
@@ -52,7 +52,37 @@ const modelManager = createModelManager({
 // better-sqlite3 的在线备份 db.backup() 产出一致的 DB 拷贝到暂存目录,连同
 // 章节 .md 一起打包暂存目录,从根本上避免边写边读。
 const dirtyBooks = new Set<string>(); // 自上次快照后有章节提交的书
+/** 给暂存目录写一份 manifest(来源元数据),随快照一起打包,便于恢复时识别。 */
+function writeSnapshotManifest(staging: string): void {
+  const chaptersDir = path.join(staging, "chapters");
+  let chapterCount = 0;
+  let maxChapterNo = 0;
+  const h = createHash("sha256");
+  try {
+    const files = fs.existsSync(chaptersDir)
+      ? fs.readdirSync(chaptersDir).filter((f) => f.endsWith(".md")).sort()
+      : [];
+    chapterCount = files.length;
+    for (const f of files) {
+      const m = f.match(/^(\d+)\.md$/);
+      if (m?.[1]) maxChapterNo = Math.max(maxChapterNo, parseInt(m[1], 10));
+      h.update(f);
+      h.update(fs.readFileSync(path.join(chaptersDir, f)));
+    }
+  } catch { /* 章节读不全不致命,hash 尽力而为 */ }
+  const manifest = {
+    schemaVersion: 1,
+    createdAt: Date.now(),
+    chapterCount,
+    maxChapterNo,
+    chapterFilesHash: h.digest("hex").slice(0, 16),
+  };
+  writeFileAtomic(path.join(staging, "manifest.json"), JSON.stringify(manifest, null, 2));
+}
+
 async function doSnapshot(bookId: string): Promise<void> {
+  // 正在写作/破坏性操作时本轮跳过,不抢占用户操作;保留 dirty 标记下轮重试
+  if (registry.isBusy(bookId) || registry.isMutating(bookId)) return;
   const staging = path.join(paths.appRoot, ".snapshot-tmp", bookId);
   try {
     dirtyBooks.delete(bookId);
@@ -66,10 +96,12 @@ async function doSnapshot(bookId: string): Promise<void> {
     for (const sfx of ["-wal", "-shm"]) {
       fs.rmSync(path.join(staging, `workspace.db${sfx}`), { force: true });
     }
+    writeSnapshotManifest(staging);
     await createSnapshot({ srcDir: staging, outDir: paths.bookBackupsDir(bookId) });
     await pruneSnapshots(paths.bookBackupsDir(bookId));
   } catch (e) {
     console.error(`自动快照失败(${bookId}):`, (e as Error).message);
+    dirtyBooks.add(bookId); // 失败保留 dirty,下轮重试
   } finally {
     fs.rmSync(staging, { recursive: true, force: true });
   }

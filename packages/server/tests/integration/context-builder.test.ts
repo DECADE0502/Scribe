@@ -118,13 +118,13 @@ describe("buildWriteContext 集成", () => {
       content: string;
     }>;
     expect(userMsgs.length).toBeGreaterThanOrEqual(1);
-    if (userMsgs.length >= 2) {
-      expect(userMsgs[0]!.content).toContain("故事设定");
-      expect(userMsgs[1]!.content).toContain("用户最新指令");
-    } else {
-      // 仅 1 条: 必含两块的关键标记
-      expect(userMsgs[0]!.content).toContain("故事设定");
-    }
+    // 分层后 user 消息按声明顺序拼接:核心设定在最前,用户指令在最后。
+    expect(userMsgs[0]!.content).toContain("故事设定");
+    const settingIdx = userMsgs.findIndex((m) => m.content.includes("故事设定"));
+    const instructionIdx = userMsgs.findIndex((m) => m.content.includes("用户最新指令"));
+    expect(instructionIdx).toBeGreaterThanOrEqual(0);
+    // static(设定)必在 dynamic(用户指令)之前
+    expect(settingIdx).toBeLessThan(instructionIdx);
   });
 
   it("static 块包含 premise / rules / 角色 / 活跃伏笔", () => {

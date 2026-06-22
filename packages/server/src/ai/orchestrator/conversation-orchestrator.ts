@@ -107,6 +107,7 @@ async function* recordStateForChapter(
       genreDeps: { repo: handle.genreSectionsRepo, charactersRepo: handle.charactersRepo },
       abortSignal: deps.abortSignal,
       deepestPrompt: deps.deepestPrompt,
+      readerIssuesRepo: handle.readerIssuesRepo,
     },
     {
       chapterNo,

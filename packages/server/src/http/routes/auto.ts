@@ -135,6 +135,7 @@ export function autoRoutes(deps: AutoRoutesDeps) {
           },
           abortSignal: controller.signal,
           deepestPrompt,
+          readerIssuesRepo: handle.readerIssuesRepo,
         },
         {
           chapterNo,

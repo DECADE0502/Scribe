@@ -45,6 +45,10 @@ export interface RecordStateDeps {
   abortSignal?: AbortSignal;
   /** 用户最深处提示词,原文拼到最前端 */
   deepestPrompt?: string;
+  /** 可选:记录状态时若有工具调用失败,写一条 reader issue 警告(可信报告,不阻断章节) */
+  readerIssuesRepo?: {
+    create(input: { chapterNo: number; type: "continuity"; severity: "warning"; note: string }): unknown;
+  };
 }
 
 export interface RecordStateInput {
@@ -66,9 +70,11 @@ async function* runRecordPass(
   deps: RecordStateDeps,
   tools: ReturnType<typeof makeStateTools> & ReturnType<typeof makeGenreSectionTools>,
   messages: Parameters<typeof streamLlm>[0]["messages"],
-): AsyncGenerator<SseEvent, { hadError: boolean; hadSuccessfulUpsert: boolean; terminal: SseEvent[] }, unknown> {
+): AsyncGenerator<SseEvent, { hadError: boolean; hadSuccessfulUpsert: boolean; failedTools: number; toolCalls: number; terminal: SseEvent[] }, unknown> {
   let hadError = false;
   let hadSuccessfulUpsert = false;
+  let failedTools = 0;
+  let toolCalls = 0;
   const terminal: SseEvent[] = [];
   for await (const ev of streamLlm({
     model: deps.model,
@@ -79,6 +85,12 @@ async function* runRecordPass(
     providerOptions: { deepseek: { thinking: { type: "disabled" } } },
   })) {
     if (shouldCountSuccessfulUpsert(ev)) hadSuccessfulUpsert = true;
+    if (ev.type === "tool_call_end") {
+      toolCalls += 1;
+      // withToolErrorRecovery 把工具异常包成 { success:false, error };这里据此统计失败
+      const result = ev.result as { success?: unknown } | undefined;
+      if (result?.success === false) failedTools += 1;
+    }
     if (ev.type === "error") hadError = true;
     if (ev.type === "usage" || ev.type === "done") {
       terminal.push(ev);
@@ -86,7 +98,7 @@ async function* runRecordPass(
       yield ev;
     }
   }
-  return { hadError, hadSuccessfulUpsert, terminal };
+  return { hadError, hadSuccessfulUpsert, failedTools, toolCalls, terminal };
 }
 
 export async function* recordChapterState(
@@ -124,6 +136,17 @@ export async function* recordChapterState(
   // 单趟记录:此前"没写 upsert 就把 16 步整轮重跑"会让 record-state 成本/延迟翻倍,
   // 收益却很有限(模型本就被提示要落库)。改为只跑一趟,显著降本提速。
   const first = yield* runRecordPass(deps, tools, baseMessages);
+  // 可信报告:有工具失败则写一条 reader issue(不阻断章节,但让失败可见、可在记忆体检中复核)
+  if (first.failedTools > 0) {
+    try {
+      deps.readerIssuesRepo?.create({
+        chapterNo: input.chapterNo,
+        type: "continuity",
+        severity: "warning",
+        note: `本章状态记录有 ${first.failedTools}/${first.toolCalls} 个工具调用失败,部分角色/伏笔/记录可能未落库,建议复核。`,
+      });
+    } catch { /* 写警告失败不致命 */ }
+  }
   // 计费标注:记录用审查模型,标为 audit + 本章号
   for (const ev of first.terminal) {
     if (ev.type === "usage") {
