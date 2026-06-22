@@ -5,7 +5,7 @@ import { streamSseResponse } from "../sse.js";
 import { runEcho } from "../../ai/orchestrator/chat.js";
 import { runConversation } from "../../ai/orchestrator/conversation-orchestrator.js";
 import { resolveDeepestPrompt } from "../../ai/prompts/deepest-prompt.js";
-import { computeUsageCost } from "../../ai/usage-tracker.js";
+import { withUsageRecording } from "../../ai/usage-tracker.js";
 import { holdBook, type BookRegistry } from "../book-registry.js";
 import type { StyleReference } from "../../config/load.js";
 
@@ -74,30 +74,22 @@ export function conversationRoutes(deps: ConversationDeps = {}) {
         },
         { message, history, executionMode },
       );
+      // 全量计费:统一交给 withUsageRecording(按事件 modelRole/taskType 分类定价,
+      // 缺 modelInfo 也记 token、费用为 0);不再在此手写,也不再因缺 writeModelInfo 而漏记。
+      const tracked = withUsageRecording(inner, {
+        tokenUsageRepo: handle.tokenUsageRepo,
+        booksRepo,
+        bookId,
+        modelInfo: deps.writeModelInfo,
+        auditModelInfo: deps.auditModelInfo,
+        taskType: "chat",
+      });
       // 对话持久化 + 章节提交回调(写章成功后触发自动快照计数)
       async function* persisting() {
         handle.conversationsRepo.append({ role: "user", content: message, metadata: { kind: "chat" } });
         let buf = "";
         let wroteChapter = false;
-        for await (const ev of inner) {
-          // 计费:对话流里的每次 LLM 用量都落库(写章/审查/聊天都经此路径)。
-          // 此前只有 /auto 端点记账,导致用对话框 /write 写的章成本恒为 0。
-          if (ev.type === "usage" && deps.writeModelInfo) {
-            const cost = computeUsageCost(
-              deps.writeModelInfo, ev.promptTokens, ev.completionTokens, ev.cachedTokens ?? 0,
-            );
-            handle.tokenUsageRepo.record({
-              taskType: "chat",
-              model: deps.writeModelInfo.id,
-              promptTokens: ev.promptTokens,
-              completionTokens: ev.completionTokens,
-              cachedTokens: ev.cachedTokens ?? 0,
-              reasoningTokens: ev.reasoningTokens ?? 0,
-              costUsd: cost,
-              chapterNo: null,
-            });
-            booksRepo.addCost(bookId, cost);
-          }
+        for await (const ev of tracked) {
           if (ev.type === "text_delta") buf += ev.delta;
           if (ev.type === "tool_call_end" && ev.toolName === "chapter_write") {
             const result = ev.result as { success?: boolean } | undefined;

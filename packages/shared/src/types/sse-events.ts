@@ -24,6 +24,10 @@ export const SseEventSchema = z.discriminatedUnion("type", [
     completionTokens: z.number(),
     cachedTokens: z.number().optional(),
     reasoningTokens: z.number().optional(),
+    /** 计费上下文:本次调用属于哪种任务、用的哪类模型、对应章号(由编排层标注,路由据此分类+定价) */
+    taskType: z.enum(["write", "audit", "chat", "intent", "segment_revise", "plan_chapter", "new_book", "other"]).optional(),
+    modelRole: z.enum(["write", "audit"]).optional(),
+    chapterNo: z.number().nullable().optional(),
   }),
   z.object({
     type: z.literal("auto_status"),

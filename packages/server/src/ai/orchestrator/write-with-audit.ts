@@ -146,13 +146,16 @@ export async function* writeWithAudit(
     return;
   }
 
-  // 全量计费:审查也是一次 LLM 调用
+  // 全量计费:审查也是一次 LLM 调用(审查模型定价)
   yield {
     type: "usage",
     promptTokens: auditResult.usage.promptTokens,
     completionTokens: auditResult.usage.completionTokens,
     cachedTokens: auditResult.usage.cachedTokens,
     reasoningTokens: auditResult.usage.reasoningTokens,
+    modelRole: "audit",
+    taskType: "audit",
+    chapterNo: input.chapterNo,
   };
 
   // ---- 阶段 3: 落盘 audit + summary ----
@@ -282,6 +285,9 @@ export async function* writeWithAudit(
           completionTokens: reAudit.usage.completionTokens,
           cachedTokens: reAudit.usage.cachedTokens,
           reasoningTokens: reAudit.usage.reasoningTokens,
+          modelRole: "audit",
+          taskType: "audit",
+          chapterNo: input.chapterNo,
         };
         const repairQualityIssues = await runQualityGate(input, {
           chapterNo: input.chapterNo,

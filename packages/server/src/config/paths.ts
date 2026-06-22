@@ -9,6 +9,8 @@ export interface AppPaths {
   backupsDir: string;
   secretsEnv: string;
   configJson: string;
+  /** 本地会话令牌文件路径(resolveAppPaths always sets;接口设为可选以兼容测试里手搓的 paths) */
+  sessionJson?: string;
   bookDir(id: string): string;
   workspaceDb(id: string): string;
   chaptersDir(id: string): string;
@@ -56,6 +58,7 @@ export function resolveAppPaths(opts: { env: Record<string, string | undefined>;
     backupsDir: j("backups"),
     secretsEnv: j("secrets.env"),
     configJson: j("config.json"),
+    sessionJson: j("session.json"),
     bookDir: (id) => j("books", id),
     workspaceDb: (id) => j("books", id, "workspace.db"),
     chaptersDir: (id) => j("books", id, "chapters"),

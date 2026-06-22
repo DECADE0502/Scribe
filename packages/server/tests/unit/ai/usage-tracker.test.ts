@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
-import { createUsageTracker } from "../../../src/ai/usage-tracker.js";
-import type { ModelInfo } from "@scribe/shared";
+import { createUsageTracker, withUsageRecording } from "../../../src/ai/usage-tracker.js";
+import type { ModelInfo, SseEvent } from "@scribe/shared";
+
+async function* gen(...evs: SseEvent[]): AsyncIterable<SseEvent> { for (const e of evs) yield e; }
+async function drain(it: AsyncIterable<unknown>) { for await (const _ of it) { /* consume */ } }
 
 describe("createUsageTracker", () => {
   const dsPro: ModelInfo = {
@@ -77,5 +80,33 @@ describe("createUsageTracker", () => {
     });
     expect(tokenUsageRepo.record.mock.calls[0]![0].costUsd).toBe(0);
     expect(booksRepo.addCost.mock.calls[0]![1]).toBe(0);
+  });
+});
+
+describe("withUsageRecording(全量、按事件分类与定价)", () => {
+  const write: ModelInfo = { id: "claude-write", pricing: { input: 3, output: 15 } };
+  const audit: ModelInfo = { id: "claude-audit", pricing: { input: 1, output: 5 } };
+
+  it("按 modelRole 选模型定价、按事件 taskType 分类、带上 chapterNo", async () => {
+    const rec = vi.fn();
+    const addCost = vi.fn();
+    await drain(withUsageRecording(
+      gen(
+        { type: "usage", promptTokens: 1_000_000, completionTokens: 0, modelRole: "write", taskType: "write", chapterNo: 3 } as any,
+        { type: "usage", promptTokens: 1_000_000, completionTokens: 0, modelRole: "audit", taskType: "audit", chapterNo: 3 } as any,
+      ),
+      { tokenUsageRepo: { record: rec } as any, booksRepo: { addCost } as any, bookId: "b1", modelInfo: write, auditModelInfo: audit, taskType: "chat" },
+    ));
+    expect(rec.mock.calls[0]![0]).toMatchObject({ taskType: "write", model: "claude-write", costUsd: 3, chapterNo: 3 });
+    expect(rec.mock.calls[1]![0]).toMatchObject({ taskType: "audit", model: "claude-audit", costUsd: 1, chapterNo: 3 });
+  });
+
+  it("缺 modelInfo 仍记 token,model=unknown,费用 0(此前会漏记)", async () => {
+    const rec = vi.fn();
+    await drain(withUsageRecording(
+      gen({ type: "usage", promptTokens: 500, completionTokens: 200 } as any),
+      { tokenUsageRepo: { record: rec } as any, booksRepo: { addCost: vi.fn() } as any, bookId: "b1", modelInfo: undefined, taskType: "chat" },
+    ));
+    expect(rec.mock.calls[0]![0]).toMatchObject({ taskType: "chat", model: "unknown", promptTokens: 500, completionTokens: 200, costUsd: 0 });
   });
 });

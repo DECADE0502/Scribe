@@ -38,6 +38,12 @@ export interface AppDeps {
   getMasterPrompt?: () => string;
   /** 全局文风参考列表,每本书可选择一组注入写作 Agent */
   getStyleReferences?: () => StyleReference[];
+  /**
+   * 本地会话令牌。设置后:对 /api、/sse 的非 GET 请求强制校验 Origin 为 localhost
+   * 且带正确的 X-Scribe-Session 头,挡住恶意网页的 CSRF / DNS-rebinding。
+   * 测试不传则不启用。
+   */
+  sessionToken?: string;
 }
 
 export function createApp(deps: AppDeps = {}) {
@@ -75,6 +81,32 @@ export function createApp(deps: AppDeps = {}) {
       log.info("http", `${c.req.method} ${c.req.path} → ${c.res.status} (${ms}ms)`);
     }
   });
+
+  // 本地安全:对状态改写请求校验 Origin(localhost)+ 会话令牌,防恶意网页 CSRF / DNS-rebinding。
+  // 只在注入了 sessionToken 时启用(测试环境不传,行为不变)。
+  if (deps.sessionToken) {
+    const token = deps.sessionToken;
+    app.use("*", async (c, next) => {
+      const method = c.req.method;
+      const path = c.req.path;
+      const mutating = method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
+      const guarded = path.startsWith("/api") || path.startsWith("/sse");
+      if (!mutating || !guarded) return next();
+      const origin = c.req.header("origin");
+      if (origin) {
+        let host = "";
+        try { host = new URL(origin).hostname; } catch { /* malformed */ }
+        if (host !== "127.0.0.1" && host !== "localhost") {
+          return c.json({ error: "forbidden_origin" }, 403);
+        }
+      }
+      if (c.req.header("x-scribe-session") !== token) {
+        return c.json({ error: "forbidden" }, 403);
+      }
+      return next();
+    });
+  }
+
   app.route("/", conversationRoutes({
     getModel,
     getAuditModel,

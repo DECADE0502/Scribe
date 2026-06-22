@@ -87,6 +87,9 @@ export async function* writeChapterSimple(
     completionTokens: generated.usage.completionTokens,
     cachedTokens: generated.usage.cachedTokens,
     reasoningTokens: generated.usage.reasoningTokens,
+    modelRole: "write",
+    taskType: "write",
+    chapterNo: input.chapterNo,
   };
 
   const content = sanitizeChapterOutput(generated.text);

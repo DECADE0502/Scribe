@@ -724,6 +724,8 @@ export async function* runConversation(
       completionTokens: analysis.usage.completionTokens,
       cachedTokens: analysis.usage.cachedTokens,
       reasoningTokens: analysis.usage.reasoningTokens,
+      modelRole: "audit",
+      taskType: "intent",
     };
   }
   if (analysis.category === "writing_intent") {

@@ -4,7 +4,7 @@ import type { ModelInfo, SseEvent } from "@scribe/shared";
 import { streamSseResponse } from "../sse.js";
 import { holdBook, type BookRegistry } from "../book-registry.js";
 import { runAutoMode } from "../../ai/orchestrator/auto-mode.js";
-import { computeUsageCost } from "../../ai/usage-tracker.js";
+import { withUsageRecording } from "../../ai/usage-tracker.js";
 import { resolveDeepestPrompt } from "../../ai/prompts/deepest-prompt.js";
 import {
   buildBookPromptContext,
@@ -145,31 +145,11 @@ export function autoRoutes(deps: AutoRoutesDeps) {
             : undefined,
         },
       );
-      return (async function* () {
-        for await (const ev of inner) {
-          if (ev.type === "usage") {
-            const cost = computeUsageCost(
-              auditModelInfo, ev.promptTokens, ev.completionTokens, ev.cachedTokens ?? 0,
-            );
-            handle.tokenUsageRepo.record({
-              taskType: "audit",
-              model: auditModelInfo.id,
-              promptTokens: ev.promptTokens,
-              completionTokens: ev.completionTokens,
-              cachedTokens: ev.cachedTokens ?? 0,
-              reasoningTokens: ev.reasoningTokens ?? 0,
-              costUsd: cost,
-              chapterNo,
-            });
-            deps.registry.booksRepo.addCost(bookId, cost);
-          }
-          yield ev;
-        }
-      })();
+      // 计费统一由外层 withUsageRecording 处理(record-state 事件已标 modelRole=audit);此处只透传
+      return inner;
     };
 
     async function* withCleanup() {
-      let currentChapter: number | undefined;
       let committedCount = 0;
       try {
         for await (const ev of runAutoMode(
@@ -203,30 +183,10 @@ export function autoRoutes(deps: AutoRoutesDeps) {
           },
           { n, writeCtx: promptCtx.writeCtx, auditCtx: promptCtx.auditCtx },
         )) {
-          if (ev.type === "auto_status" && ev.currentChapter != null) {
-            currentChapter = ev.currentChapter;
-          }
           // 每完成一章触发自动快照计数(spec §3.4)
           if (ev.type === "auto_status" && ev.doneChapters.length > committedCount) {
             committedCount = ev.doneChapters.length;
             deps.onChapterCommitted?.(bookId);
-          }
-          // usage 事件落库(写作模型用量;缓存命中按 cachedInput 价折扣)
-          if (ev.type === "usage") {
-            const cost = computeUsageCost(
-              writeModelInfo, ev.promptTokens, ev.completionTokens, ev.cachedTokens ?? 0,
-            );
-            handle.tokenUsageRepo.record({
-              taskType: "write",
-              model: writeModelInfo.id,
-              promptTokens: ev.promptTokens,
-              completionTokens: ev.completionTokens,
-              cachedTokens: ev.cachedTokens ?? 0,
-              reasoningTokens: ev.reasoningTokens ?? 0,
-              costUsd: cost,
-              chapterNo: currentChapter ?? null,
-            });
-            deps.registry.booksRepo.addCost(bookId, cost);
           }
           yield ev;
         }
@@ -234,7 +194,14 @@ export function autoRoutes(deps: AutoRoutesDeps) {
         running.delete(bookId);
       }
     }
-    return streamSseResponse(holdBook(deps.registry, bookId, withCleanup()));
+    return streamSseResponse(holdBook(deps.registry, bookId, withUsageRecording(withCleanup(), {
+      tokenUsageRepo: handle.tokenUsageRepo,
+      booksRepo: deps.registry.booksRepo,
+      bookId,
+      modelInfo: writeModelInfo,
+      auditModelInfo,
+      taskType: "write",
+    })));
   });
 
   app.post("/api/books/:bookId/auto/cancel", async (c) => {

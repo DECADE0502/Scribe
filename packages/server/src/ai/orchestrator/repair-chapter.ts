@@ -77,13 +77,16 @@ export async function* repairChapter(
     };
     return;
   }
-  // 全量计费:修复也是一次完整 LLM 调用,记账。
+  // 全量计费:修复也是一次完整 LLM 调用,记账(用写作模型)。
   yield {
     type: "usage",
     promptTokens: generated.usage.promptTokens,
     completionTokens: generated.usage.completionTokens,
     cachedTokens: generated.usage.cachedTokens,
     reasoningTokens: generated.usage.reasoningTokens,
+    modelRole: "write",
+    taskType: "write",
+    chapterNo: input.chapterNo,
   };
   const content = sanitizeChapterOutput(generated.text);
   if (!content.trim()) return;

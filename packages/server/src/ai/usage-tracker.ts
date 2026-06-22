@@ -94,7 +94,11 @@ export async function* withUsageRecording<T>(
     tokenUsageRepo: TokenUsageRepoLike;
     booksRepo: BooksRepoLike;
     bookId: string;
+    /** 默认/写作模型信息(modelRole=write 或未标注时用) */
     modelInfo: ModelInfo | undefined;
+    /** 审查模型信息(事件标注 modelRole=audit 时用,缺省回退 modelInfo) */
+    auditModelInfo?: ModelInfo;
+    /** 默认任务类型(事件未自带 taskType 时用) */
     taskType: TaskType;
     chapterNo?: number | null;
   },
@@ -106,23 +110,28 @@ export async function* withUsageRecording<T>(
       completionTokens?: number;
       cachedTokens?: number;
       reasoningTokens?: number;
+      taskType?: TaskType;
+      modelRole?: "write" | "audit";
+      chapterNo?: number | null;
     };
     if (e?.type === "usage") {
       const prompt = e.promptTokens ?? 0;
       const completion = e.completionTokens ?? 0;
       const cached = e.cachedTokens ?? 0;
-      const cost = deps.modelInfo
-        ? computeUsageCost(deps.modelInfo, prompt, completion, cached)
-        : 0;
+      // 事件自带的上下文优先:按 modelRole 选模型定价,按 taskType 分类,带上 chapterNo
+      const modelInfo = e.modelRole === "audit"
+        ? (deps.auditModelInfo ?? deps.modelInfo)
+        : deps.modelInfo;
+      const cost = modelInfo ? computeUsageCost(modelInfo, prompt, completion, cached) : 0;
       deps.tokenUsageRepo.record({
-        taskType: deps.taskType,
-        model: deps.modelInfo?.id ?? "unknown",
+        taskType: e.taskType ?? deps.taskType,
+        model: modelInfo?.id ?? "unknown",
         promptTokens: prompt,
         completionTokens: completion,
         cachedTokens: cached,
         reasoningTokens: e.reasoningTokens ?? 0,
         costUsd: cost,
-        chapterNo: deps.chapterNo ?? null,
+        chapterNo: e.chapterNo ?? deps.chapterNo ?? null,
       });
       deps.booksRepo.addCost(deps.bookId, cost);
     }

@@ -124,7 +124,14 @@ export async function* recordChapterState(
   // 单趟记录:此前"没写 upsert 就把 16 步整轮重跑"会让 record-state 成本/延迟翻倍,
   // 收益却很有限(模型本就被提示要落库)。改为只跑一趟,显著降本提速。
   const first = yield* runRecordPass(deps, tools, baseMessages);
-  yield* first.terminal;
+  // 计费标注:记录用审查模型,标为 audit + 本章号
+  for (const ev of first.terminal) {
+    if (ev.type === "usage") {
+      yield { ...ev, modelRole: "audit", taskType: "audit", chapterNo: input.chapterNo };
+    } else {
+      yield ev;
+    }
+  }
 }
 
 /** 组装档案概要(给 record prompt 用) */

@@ -1,7 +1,9 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { randomBytes } from "node:crypto";
 import { serve } from "@hono/node-server";
 import { resolveAppPaths } from "./config/paths.js";
+import { writeFileAtomic } from "./fs/atomic-write.js";
 import { loadConfig } from "./config/load.js";
 import { loadSecrets, providerSecretName } from "./config/secrets.js";
 import { createModelManager } from "./ai/model-manager.js";
@@ -17,6 +19,21 @@ fs.mkdirSync(paths.booksDir, { recursive: true });
 fs.mkdirSync(paths.backupsDir, { recursive: true });
 const config = loadConfig(paths.configJson);
 const secrets = loadSecrets(paths.secretsEnv);
+
+// 本地会话令牌:首启生成并持久化(0600),前端经 Vite 代理注入 X-Scribe-Session。
+const sessionJsonPath = paths.sessionJson ?? path.join(paths.appRoot, "session.json");
+function loadOrCreateSessionToken(): string {
+  try {
+    if (fs.existsSync(sessionJsonPath)) {
+      const t = (JSON.parse(fs.readFileSync(sessionJsonPath, "utf-8")) as { token?: unknown })?.token;
+      if (typeof t === "string" && t.length >= 16) return t;
+    }
+  } catch { /* 损坏则重建 */ }
+  const token = randomBytes(24).toString("hex");
+  writeFileAtomic(sessionJsonPath, JSON.stringify({ token }, null, 2), { mode: 0o600 });
+  return token;
+}
+const sessionToken = loadOrCreateSessionToken();
 const registry = createBookRegistry({ paths });
 
 // 按 provider 取对应的 key(内置与自定义 key 相互独立、不可混用)
@@ -67,6 +84,7 @@ const app = createApp({
   secretsEnvPath: paths.secretsEnv,
   budgetLimitUsd: config.singleBudgetUsd,
   modelManager,
+  sessionToken,
   onChapterCommitted: (bookId) => {
     dirtyBooks.add(bookId);
     snapshotScheduler.onChapterCommitted(bookId);
