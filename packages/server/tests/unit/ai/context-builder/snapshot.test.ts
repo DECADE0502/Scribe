@@ -125,6 +125,97 @@ describe("loadBookSnapshot", () => {
     expect(snap.genreSections[0]!.section.name).toBe("功法体系");
     expect(snap.genreSections[0]!.items).toHaveLength(2);
   });
+
+  it("载入 outline 章→弧→卷 路径与弧/卷总结", () => {
+    // 准备: 卷 1 > 弧 A(章 1,2) > 弧 B(章 3); 弧 A.summary="弧 A 总结"; 卷 1.summary=null
+    const vol1 = repos.outlineRepo.create({
+      parentId: null,
+      level: "volume",
+      title: "卷一",
+      summary: null,
+      status: "planned",
+      sortOrder: 0,
+      metadata: {},
+    });
+    const arcA = repos.outlineRepo.create({
+      parentId: vol1.id,
+      level: "arc",
+      title: "弧 A",
+      summary: "弧 A 总结",
+      status: "planned",
+      sortOrder: 0,
+      metadata: {},
+    });
+    const arcB = repos.outlineRepo.create({
+      parentId: vol1.id,
+      level: "arc",
+      title: "弧 B",
+      summary: null,
+      status: "planned",
+      sortOrder: 1,
+      metadata: {},
+    });
+    repos.outlineRepo.create({
+      parentId: arcA.id,
+      level: "chapter",
+      title: "第一章",
+      summary: null,
+      status: "planned",
+      sortOrder: 0,
+      metadata: { chapterNo: 1 },
+    });
+    repos.outlineRepo.create({
+      parentId: arcA.id,
+      level: "chapter",
+      title: "第二章",
+      summary: null,
+      status: "planned",
+      sortOrder: 1,
+      metadata: { chapterNo: 2 },
+    });
+    repos.outlineRepo.create({
+      parentId: arcB.id,
+      level: "chapter",
+      title: "第三章",
+      summary: null,
+      status: "planned",
+      sortOrder: 0,
+      metadata: { chapterNo: 3 },
+    });
+    // 章节小总结
+    repos.chaptersRepo.saveSummary({
+      chapterNo: 1,
+      oneLiner: "第1章",
+      paragraph: "x".repeat(100),
+      keyEvents: [],
+      generatedAt: 1000,
+      reasoningContent: null,
+    });
+    repos.chaptersRepo.saveSummary({
+      chapterNo: 2,
+      oneLiner: "第2章",
+      paragraph: "x".repeat(100),
+      keyEvents: [],
+      generatedAt: 2000,
+      reasoningContent: null,
+    });
+    repos.chaptersRepo.saveSummary({
+      chapterNo: 3,
+      oneLiner: "第3章",
+      paragraph: "x".repeat(100),
+      keyEvents: [],
+      generatedAt: 3000,
+      reasoningContent: null,
+    });
+
+    const snap = loadBookSnapshot("b1", repos, paths);
+    expect(snap.chapterOutlinePaths.find((p: any) => p.chapterNo === 1)).toMatchObject({
+      arcSummary: "弧 A 总结",
+      volumeSummary: null,
+    });
+    expect(snap.chapterOutlinePaths.find((p: any) => p.chapterNo === 3)?.arcSummary).toBeNull();
+    expect(snap.arcVolumeSummaries.some((s: any) => s.text === "弧 A 总结")).toBe(true);
+  });
 });
 
 describe("createSnapshotCache", () => {

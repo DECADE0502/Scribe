@@ -25,6 +25,21 @@ export interface ChapterFullContent {
   content: string;
 }
 
+export interface ChapterOutlinePath {
+  chapterNo: number;
+  chapterNodeId: string | null;
+  arcNodeId: string | null;
+  arcSummary: string | null;
+  volumeNodeId: string | null;
+  volumeSummary: string | null;
+}
+
+export interface OutlineLevelSummary {
+  nodeId: string;
+  level: "arc" | "volume";
+  text: string;
+}
+
 export interface BookSnapshot {
   bookId: string;
   meta: BookMeta;
@@ -45,12 +60,18 @@ export interface BookSnapshot {
   promptPresets: PromptPreset[];
   promptBlocks: PromptBlock[];
   readerIssues: ReaderIssue[];
+  chapterOutlinePaths: ChapterOutlinePath[];
+  arcVolumeSummaries: OutlineLevelSummary[];
 }
 
 // 用 interface 定义最小依赖, 方便 mock
 export interface SnapshotRepos {
   charactersRepo: { list(): Character[] };
-  outlineRepo: { listAll(): OutlineNode[] };
+  outlineRepo: {
+    listAll(): OutlineNode[];
+    findChapterNode(chapterNo: number): OutlineNode | undefined;
+    get(id: string): OutlineNode | undefined;
+  };
   foreshadowingRepo: {
     list(filterStatus?: "active" | "paid" | "dropped"): Foreshadowing[];
   };
@@ -126,6 +147,31 @@ export function loadBookSnapshot(
     : "";
   const promptPresets =
     repos.promptPresetsRepo?.listPresets({ enabledOnly: true }) ?? [];
+
+  // 章号 → outline 路径 + 弧/卷总结(节点找不到则字段全 null)
+  const chapterOutlinePaths: ChapterOutlinePath[] = allSummaries.map((s) => {
+    const ch = repos.outlineRepo.findChapterNode(s.chapterNo);
+    if (!ch) return { chapterNo: s.chapterNo, chapterNodeId: null, arcNodeId: null, arcSummary: null, volumeNodeId: null, volumeSummary: null };
+    const arc = ch.parentId ? repos.outlineRepo.get(ch.parentId) : undefined;
+    const volume = arc?.parentId ? repos.outlineRepo.get(arc.parentId) : undefined;
+    return {
+      chapterNo: s.chapterNo,
+      chapterNodeId: ch.id,
+      arcNodeId: arc?.level === "arc" ? arc.id : null,
+      arcSummary: arc?.level === "arc" ? (arc.summary ?? null) : null,
+      volumeNodeId: volume?.level === "volume" ? volume.id : null,
+      volumeSummary: volume?.level === "volume" ? (volume.summary ?? null) : null,
+    };
+  });
+  const seen = new Set<string>();
+  const arcVolumeSummaries: OutlineLevelSummary[] = [];
+  for (const node of repos.outlineRepo.listAll()) {
+    if ((node.level === "arc" || node.level === "volume") && node.summary && !seen.has(node.id)) {
+      arcVolumeSummaries.push({ nodeId: node.id, level: node.level, text: node.summary });
+      seen.add(node.id);
+    }
+  }
+
   return {
     bookId,
     meta,
@@ -148,6 +194,8 @@ export function loadBookSnapshot(
           )
         : [],
     readerIssues: repos.readerIssuesRepo?.listOpen() ?? [],
+    chapterOutlinePaths,
+    arcVolumeSummaries,
   };
 }
 
