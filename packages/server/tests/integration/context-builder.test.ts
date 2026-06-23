@@ -242,6 +242,73 @@ describe("buildWriteContext 集成", () => {
     expect(all).toContain("第11章摘要");
   });
 
+  it("arc 全脱出 20 章窗时,塞 ArcSummary;窗内章节用小总结", () => {
+    // 扩 fixture: 加 ch 21-30。outline: 卷 1 > 弧 A(ch 1-3, summary="弧 A 总结") + 弧 B(ch 4-30)
+    for (let i = 21; i <= 30; i++) {
+      repos.chaptersRepo.saveSummary({
+        chapterNo: i,
+        oneLiner: `第${i}章摘要`,
+        paragraph: `这是第 ${i} 章的段落摘要。`.repeat(10),
+        keyEvents: [],
+        generatedAt: i * 1000,
+        reasoningContent: null,
+      });
+    }
+    const vol = repos.outlineRepo.create({ parentId: null, level: "volume", title: "卷 1", summary: null, status: "done", sortOrder: 0, metadata: null });
+    const arcA = repos.outlineRepo.create({ parentId: vol.id, level: "arc", title: "弧 A", summary: "弧 A 总结-唯一锚", status: "done", sortOrder: 0, metadata: null });
+    const arcB = repos.outlineRepo.create({ parentId: vol.id, level: "arc", title: "弧 B", summary: null, status: "in_progress", sortOrder: 1, metadata: null });
+    for (let i = 1; i <= 3; i++) {
+      repos.outlineRepo.create({ parentId: arcA.id, level: "chapter", title: `章 ${i}`, summary: null, status: "done", sortOrder: i, metadata: { chapterNo: i } });
+    }
+    for (let i = 4; i <= 30; i++) {
+      repos.outlineRepo.create({ parentId: arcB.id, level: "chapter", title: `章 ${i}`, summary: null, status: "done", sortOrder: i, metadata: { chapterNo: i } });
+    }
+    // currentChapterNo=31 → windowFloor=11。弧 A(ch 1-3)全脱出窗、有 summary → 用 ArcSummary。
+    const snap = loadBookSnapshot("b1", repos, paths);
+    const r = buildWriteContext({
+      snapshot: snap, currentChapterNo: 31,
+      intent: { characters: [], foreshadowing: [], userMessage: "" },
+      budgetTokens: 500_000,
+    });
+    const all = r.messages.slice(1).map((m) => m.content as string).join("\n");
+    expect(all).toContain("弧 A 总结-唯一锚");
+    // 弧 B 仍部分在窗(ch 11-30),不应被 ArcSummary 化(且其 summary 也为 null)
+    // 窗内章应有小总结(第 11、20 章是 midRange 范畴)
+    expect(all).toContain("第11章摘要");
+    expect(all).toContain("第20章摘要");
+  });
+
+  it("arc 部分脱出窗时,不用 ArcSummary,只用小总结(窗外章被屏蔽)", () => {
+    // 加 ch 21-25。outline: 卷 1 > 弧 A(ch 1-15, summary='不该出现的弧 A 总结')
+    for (let i = 21; i <= 25; i++) {
+      repos.chaptersRepo.saveSummary({
+        chapterNo: i, oneLiner: `第${i}章摘要`,
+        paragraph: `这是第 ${i} 章的段落摘要。`.repeat(10),
+        keyEvents: [], generatedAt: i * 1000, reasoningContent: null,
+      });
+    }
+    const vol = repos.outlineRepo.create({ parentId: null, level: "volume", title: "卷 1", summary: null, status: "done", sortOrder: 0, metadata: null });
+    const arcA = repos.outlineRepo.create({ parentId: vol.id, level: "arc", title: "弧 A", summary: "不该出现的弧 A 总结", status: "done", sortOrder: 0, metadata: null });
+    const arcB = repos.outlineRepo.create({ parentId: vol.id, level: "arc", title: "弧 B", summary: null, status: "in_progress", sortOrder: 1, metadata: null });
+    for (let i = 1; i <= 15; i++) {
+      repos.outlineRepo.create({ parentId: arcA.id, level: "chapter", title: `章 ${i}`, summary: null, status: "done", sortOrder: i, metadata: { chapterNo: i } });
+    }
+    for (let i = 16; i <= 25; i++) {
+      repos.outlineRepo.create({ parentId: arcB.id, level: "chapter", title: `章 ${i}`, summary: null, status: "done", sortOrder: i, metadata: { chapterNo: i } });
+    }
+    // currentChapterNo=26 → windowFloor=6。弧 A(1-15)部分脱出:1-5 出窗、6-15 在窗 → 不用 ArcSummary。
+    const snap = loadBookSnapshot("b1", repos, paths);
+    const r = buildWriteContext({
+      snapshot: snap, currentChapterNo: 26,
+      intent: { characters: [], foreshadowing: [], userMessage: "" },
+      budgetTokens: 500_000,
+    });
+    const all = r.messages.slice(1).map((m) => m.content as string).join("\n");
+    expect(all).not.toContain("不该出现的弧 A 总结");
+    // 第 6 章(窗内 arc A 章)应作为小总结出现
+    expect(all).toContain("第6章摘要");
+  });
+
   it("budgetTokens 极小时 dynamic 被丢或裁", () => {
     const snap = loadBookSnapshot("b1", repos, paths);
     const r = buildWriteContext({

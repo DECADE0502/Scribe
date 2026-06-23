@@ -145,6 +145,34 @@ export function renderRecentFullChaptersBlock(
   return parts.join("\n");
 }
 
+/** 已完成弧的总结(中粒度,跨越多章)。 */
+export function renderArcSummariesBlock(
+  arcs: BookSnapshot["arcVolumeSummaries"],
+): string {
+  const filtered = arcs.filter((a) => a.level === "arc");
+  if (!filtered.length) return "";
+  const parts: string[] = [`## 已完成弧总结(${filtered.length} 条)`];
+  for (const a of filtered) {
+    parts.push(`### 弧 ${a.nodeId.slice(0, 8)}`);
+    parts.push(a.text);
+  }
+  return parts.join("\n");
+}
+
+/** 已完成卷的总结(最粗,远古卷压缩态)。 */
+export function renderVolumeSummariesBlock(
+  vols: BookSnapshot["arcVolumeSummaries"],
+): string {
+  const filtered = vols.filter((v) => v.level === "volume");
+  if (!filtered.length) return "";
+  const parts: string[] = [`## 已完成卷总结(${filtered.length} 条)`];
+  for (const v of filtered) {
+    parts.push(`### 卷 ${v.nodeId.slice(0, 8)}`);
+    parts.push(v.text);
+  }
+  return parts.join("\n");
+}
+
 /** 11-20 章前的摘要（中距离记忆）。 */
 export function renderMidRangeBlock(
   midRange: BookSnapshot["midRangeSummaries"],
@@ -224,6 +252,92 @@ export function renderReaderIssuesBlock(
   return parts.join("\n");
 }
 
+/**
+ * 层级选择算法:决定每章用哪个粒度,并选出该用的弧/卷总结。
+ *
+ * 规则:
+ *   - 章节 N - c ∈ [1,3] 由调用方处理为全文(本函数不管)。
+ *   - 章节 N - c ∈ [4,20] 默认进 summariesToShow(小总结块)。
+ *   - 章节 N - c > 20:
+ *       a. 该章所在 arc 已全脱出窗(全部章号 < windowFloor)且 arc 有 summary → arcsToUse 添加。
+ *       b. arc 未全脱出窗(部分章号 >= windowFloor)→ 窗内章号进 summariesToShow,窗外章号被屏蔽
+ *          (避免半截 arc summary 描述未来事件)。
+ *       c. arc 全脱出窗但无 summary → 屏蔽(等召回兜底)。
+ *   - 进一步合并:若某 volume 下所有 arc 都已 arcsToUse 且 volume 自身有 summary →
+ *     用 VolumeSummary 取代,从 arcsToUse 中移除对应 arc。
+ */
+export function pickLayers(
+  paths: BookSnapshot["chapterOutlinePaths"],
+  currentChapterNo: number,
+): {
+  arcsToUse: Set<string>;
+  volumesToUse: Set<string>;
+  summariesToShow: Set<number>;
+} {
+  const windowFloor = currentChapterNo - 20;
+  const arcsToUse = new Set<string>();
+  const volumesToUse = new Set<string>();
+  const summariesToShow = new Set<number>();
+
+  // 按 arc 分组(arcNodeId 为 key,null 表示扁平 outline 或孤儿章)
+  const byArc = new Map<string | null, BookSnapshot["chapterOutlinePaths"]>();
+  for (const p of paths) {
+    if (p.chapterNo >= currentChapterNo) continue;
+    const key = p.arcNodeId;
+    const list = byArc.get(key) ?? [];
+    list.push(p);
+    byArc.set(key, list);
+  }
+
+  for (const [arcId, chapters] of byArc) {
+    if (arcId === null) {
+      // 扁平 outline / 孤儿章:全部进 summariesToShow,等 T12 的 auto_digest 兜底
+      for (const p of chapters) summariesToShow.add(p.chapterNo);
+      continue;
+    }
+    const arcSummary = chapters[0]!.arcSummary;
+    const allOutOfWindow = chapters.every((c) => c.chapterNo < windowFloor);
+    const someInWindow = chapters.some((c) => c.chapterNo >= windowFloor);
+
+    if (allOutOfWindow && arcSummary) {
+      arcsToUse.add(arcId);
+    } else if (someInWindow) {
+      // 窗内章用小总结,窗外章屏蔽
+      for (const c of chapters) {
+        if (c.chapterNo >= windowFloor) summariesToShow.add(c.chapterNo);
+      }
+    }
+    // else (全脱出且无 summary):屏蔽,走召回
+  }
+
+  // 卷级合并:同一 volume 下所有 arc 都已 arcsToUse 且 volume 有 summary → 改用 VolumeSummary
+  const arcToVolume = new Map<string, { volumeId: string; volumeSummary: string | null }>();
+  for (const p of paths) {
+    if (p.arcNodeId && p.volumeNodeId) {
+      arcToVolume.set(p.arcNodeId, {
+        volumeId: p.volumeNodeId,
+        volumeSummary: p.volumeSummary,
+      });
+    }
+  }
+  const volumeArcs = new Map<string, { arcIds: Set<string>; summary: string | null }>();
+  for (const [arcId, info] of arcToVolume) {
+    const entry = volumeArcs.get(info.volumeId) ?? { arcIds: new Set<string>(), summary: info.volumeSummary };
+    entry.arcIds.add(arcId);
+    volumeArcs.set(info.volumeId, entry);
+  }
+  for (const [volId, entry] of volumeArcs) {
+    if (!entry.summary) continue;
+    const allArcsRolledUp = [...entry.arcIds].every((a) => arcsToUse.has(a));
+    if (allArcsRolledUp) {
+      volumesToUse.add(volId);
+      for (const a of entry.arcIds) arcsToUse.delete(a);
+    }
+  }
+
+  return { arcsToUse, volumesToUse, summariesToShow };
+}
+
 function extractPromptRegexScripts(snapshot: BookSnapshot) {
   return (snapshot.promptPresets ?? [])
     .filter((preset) => preset.enabled && preset.regexScriptsEnabled)
@@ -263,12 +377,17 @@ export function buildWriteContext(opts: BuildOptions): BuildResult {
   // 最近 3 章原文(asc 排,紧贴 task 指令前作 POV/腔调锚);snapshot 加载了最近 10 章,这里只取末 3。
   const recentFullForPrompt = opts.snapshot.recentFullChapters.slice(-3);
   const fullCoveredNos = new Set(recentFullForPrompt.map((c) => c.chapterNo));
-  // 最近 10 章 summary 去掉已被全文覆盖的章号 → 剩下作为"4-10 章 summary"。
-  const recentSummariesForPrompt = opts.snapshot.recentSummaries.filter(
-    (s) => !fullCoveredNos.has(s.chapterNo),
+  // 层级选择:按 outline 树决定哪些章用 ArcSummary/VolumeSummary 整条压,哪些章用小总结,
+  // 哪些章被屏蔽(避免半截 arc 的 summary 描述未来事件)。
+  const layers = pickLayers(opts.snapshot.chapterOutlinePaths, opts.currentChapterNo);
+  // recentSummaries 去掉全文覆盖的,再被 summariesToShow 过滤(arc 全脱出窗的章被屏蔽)。
+  const recentSummariesForPrompt = opts.snapshot.recentSummaries
+    .filter((s) => !fullCoveredNos.has(s.chapterNo))
+    .filter((s) => layers.summariesToShow.has(s.chapterNo) || s.chapterNo >= opts.currentChapterNo - 20);
+  // 11-20 章小总结同样被 summariesToShow 约束;扁平 outline 时 summariesToShow 含全部章号,自然不裁。
+  const midRange = opts.snapshot.midRangeSummaries.filter(
+    (s) => layers.summariesToShow.has(s.chapterNo) || !opts.snapshot.chapterOutlinePaths.some((p) => p.chapterNo === s.chapterNo && p.arcNodeId),
   );
-  // 中程 11-20 章小总结(snapshot 已切好)。
-  const midRange = opts.snapshot.midRangeSummaries;
   // 召回排除最近 10 章窗,避免与 recent/full 重复。
   const recentNos = new Set<number>([
     ...recentFullForPrompt.map((c) => c.chapterNo),
@@ -282,6 +401,13 @@ export function buildWriteContext(opts: BuildOptions): BuildResult {
     intentRecords: opts.intent.records,
     topK: 5,
   }).filter((s) => !recentNos.has(s.chapterNo));
+  // 选出的弧/卷 summary(按 nodeId 过滤)
+  const arcSummaries = opts.snapshot.arcVolumeSummaries.filter(
+    (s) => s.level === "arc" && layers.arcsToUse.has(s.nodeId),
+  );
+  const volumeSummaries = opts.snapshot.arcVolumeSummaries.filter(
+    (s) => s.level === "volume" && layers.volumesToUse.has(s.nodeId),
+  );
   const now = new Date();
   const activePromptBlocks = (opts.snapshot.promptBlocks ?? [])
     .filter((block) => block.enabled && block.stackIndex !== null)
@@ -334,6 +460,8 @@ export function buildWriteContext(opts: BuildOptions): BuildResult {
   const foreshadowingBlock = renderForeshadowingBlock(opts.snapshot);
   const recordsBlock = renderRecordsBlock(opts.snapshot);
   const charactersBlock = renderCharactersBlock(opts.snapshot);
+  const volumeSummaryBlock = renderVolumeSummariesBlock(volumeSummaries);
+  const arcSummaryBlock = renderArcSummariesBlock(arcSummaries);
   const midRangeBlock = renderMidRangeBlock(midRange);
   const recentSummariesBlock = renderRecentBlock(recentSummariesForPrompt);
   const recentFullBlock = renderRecentFullChaptersBlock(recentFullForPrompt);
@@ -348,7 +476,8 @@ export function buildWriteContext(opts: BuildOptions): BuildResult {
     text.trim() ? [{ id, priority, text }] : [];
   const sections: Section[] = [
     ...maybe("setting", 100, settingBlock),
-    // arc-summary / volume-summary 由 Task 5 在这两行之间插入
+    ...maybe("volume-summary", 80, volumeSummaryBlock),
+    ...maybe("arc-summary", 92, arcSummaryBlock),
     ...maybe("mid-range", 90, midRangeBlock),
     ...maybe("recent-summary", 82, recentSummariesBlock),
     ...maybe("worldbook", 88, worldbookBlock),
