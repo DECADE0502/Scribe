@@ -86,7 +86,8 @@ describe("loadBookSnapshot", () => {
     }
     const snap = loadBookSnapshot("b1", repos, paths);
     expect(snap.allSummaries).toHaveLength(5);
-    expect(snap.recentSummaries.map((s: any) => s.chapterNo)).toEqual([5, 4, 3]);
+    // recentSummaries 现在取最近 10 章(总共 5 章全收,desc 排)。
+    expect(snap.recentSummaries.map((s: any) => s.chapterNo)).toEqual([5, 4, 3, 2, 1]);
   });
 
   it("活跃 vs 已回收伏笔分两组", () => {
