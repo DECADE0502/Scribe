@@ -92,5 +92,42 @@ export function createOutlineRepo(db: Database) {
       });
       tx();
     },
+    updateSummary(id: string, summary: string | null): void {
+      db.prepare("UPDATE outline_nodes SET summary=? WHERE id=?").run(summary, id);
+    },
+    findChapterNode(chapterNo: number): OutlineNode | undefined {
+      const r = db.prepare(
+        `SELECT * FROM outline_nodes
+          WHERE level='chapter'
+            AND CAST(json_extract(metadata,'$.chapterNo') AS INTEGER) = ?`
+      ).get(chapterNo);
+      return r ? rowToNode(r) : undefined;
+    },
+    clearAncestorSummaries(nodeId: string): void {
+      const repo = this;
+      const tx = db.transaction(() => {
+        let cur = repo.get(nodeId);
+        while (cur && cur.parentId) {
+          const parent = repo.get(cur.parentId);
+          if (!parent) break;
+          db.prepare("UPDATE outline_nodes SET summary=NULL WHERE id=?").run(parent.id);
+          cur = parent;
+        }
+      });
+      tx();
+    },
+    clearAncestorSummariesByParentId(parentId: string | null): void {
+      if (!parentId) return;
+      const repo = this;
+      const tx = db.transaction(() => {
+        let curId: string | null = parentId;
+        while (curId) {
+          db.prepare("UPDATE outline_nodes SET summary=NULL WHERE id=?").run(curId);
+          const r = db.prepare("SELECT parent_id FROM outline_nodes WHERE id=?").get(curId) as { parent_id?: string } | undefined;
+          curId = r?.parent_id ?? null;
+        }
+      });
+      tx();
+    },
   };
 }
