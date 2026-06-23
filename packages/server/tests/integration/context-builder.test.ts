@@ -347,6 +347,36 @@ describe("buildWriteContext 集成", () => {
     expect(r.droppedSectionIds.length).toBeGreaterThan(0);
   });
 
+  it("POV 连续性:第 21 章 prompt 必含第 20/19/18 章全文(POV/腔调锚)", () => {
+    const fixture = new Map<number, { chapterNo: number; title: string; content: string }>();
+    fixture.set(18, { chapterNo: 18, title: "第 18 章", content: "[POV-18] 我推开神庙大门,冷风扑面而来。「第一人称」锚。\n\n接下来……" });
+    fixture.set(19, { chapterNo: 19, title: "第 19 章", content: "[POV-19] 我握紧黑剑,不退反进。继续第一人称叙述。" });
+    fixture.set(20, { chapterNo: 20, title: "第 20 章", content: "[POV-20] 我和她一前一后跃下深渊。叙事契约未变。" });
+    repos.chapterFiles = { list: () => [...fixture.values()], read: (no: number) => fixture.get(no) };
+    const snap = loadBookSnapshot("b1", repos, paths);
+    const r = buildWriteContext({
+      snapshot: snap,
+      currentChapterNo: 21,
+      intent: { characters: [], foreshadowing: [], userMessage: "继续第 21 章" },
+      budgetTokens: 500_000,
+    });
+    const all = r.messages.slice(1).map((m) => m.content as string).join("\n");
+    // 最近 3 章全文应出现在 prompt(紧贴任务指令前)
+    expect(all).toContain("[POV-20]");
+    expect(all).toContain("[POV-19]");
+    expect(all).toContain("[POV-18]");
+    // 已全文覆盖的章号不应再以摘要形式重复
+    expect(all).not.toContain("这是第 18 章的段落摘要");
+    expect(all).not.toContain("这是第 19 章的段落摘要");
+    expect(all).not.toContain("这是第 20 章的段落摘要");
+    // 核心设定在最前,用户指令在最后(recent-full 在两者之间)
+    const settingIdx = all.indexOf("故事设定");
+    const fullIdx = all.indexOf("[POV-20]");
+    const instructionIdx = all.indexOf("用户最新指令");
+    expect(settingIdx).toBeLessThan(fullIdx);
+    expect(fullIdx).toBeLessThan(instructionIdx);
+  });
+
   it("空 intent 也能生成 prompt (用户什么都没说)", () => {
     const snap = loadBookSnapshot("b1", repos, paths);
     const r = buildWriteContext({
