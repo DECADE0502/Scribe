@@ -353,11 +353,12 @@ describe("buildChapterAuditContext", () => {
     const { auditCtx, recentChapterNos, recalledChapterNos } =
       buildChapterAuditContext(handle, 7, "continue chapter seven");
 
-    expect(recentChapterNos.sort((a, b) => a - b)).toEqual([4, 5, 6]);
+    // recent 窗口扩到 10 章后,6 章 fixture 全在窗内
+    expect(recentChapterNos.sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6]);
     expect(auditCtx.recentSummaries?.map((s) => s.chapterNo).sort((a, b) => a - b))
-      .toEqual([4, 5, 6]);
-    expect(recalledChapterNos).toContain(1);
-    expect(auditCtx.recalledSummaries?.map((s) => s.chapterNo)).toContain(1);
+      .toEqual([1, 2, 3, 4, 5, 6]);
+    // recall cutoff 同步到 N-10,小书全在 recent → recall 为空
+    expect(recalledChapterNos).toEqual([]);
     expect(auditCtx.premise).toBeTruthy();
     expect(auditCtx.characters?.length).toBeGreaterThan(0);
   });
@@ -380,12 +381,12 @@ describe("buildChapterWriteMessages(§6.1 防漂移上下文)", () => {
     expect(text).toContain("A-1");                 // 记录条目
     expect(text).toContain("黑色碎片来历");        // 活跃伏笔
 
-    // 动态块:最近 3 章 = 6/5/4
-    expect(recentChapterNos.sort((a, b) => a - b)).toEqual([4, 5, 6]);
+    // 动态块:recent 窗扩到 10 章,fixture 6 章全在窗内
+    expect(recentChapterNos.sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6]);
     expect(text).toContain("第 6 章");
 
-    // 召回:第 1 章因角色重叠被捞回(currentChapterNo-3=4,候选 1/2/3)
-    expect(recalledChapterNos).toContain(1);
+    // 召回:N-10=-3,小书全部进 recent,recall 为空
+    expect(recalledChapterNos).toEqual([]);
 
     // 任务框架
     expect(text).toContain("第 7 章正文");
@@ -420,7 +421,10 @@ describe("buildChapterWriteMessages(§6.1 防漂移上下文)", () => {
     chap.saveSummary(summary(3, "过渡", ["林尘"]));            // 候选
     chap.saveSummary(summary(4, "近", ["林尘"]));
     chap.saveSummary(summary(5, "近", ["林尘"]));
-    chap.saveSummary(summary(6, "最新只涉及林尘", ["林尘"]));  // latest → 聚焦 [林尘]
+    // 把 recent 窗(N-10..N-1)填满,确保 ch1-5 落到 recall 窗(< N-10)
+    for (let i = 6; i <= 15; i++) {
+      chap.saveSummary(summary(i, "近", ["林尘"]));
+    }
 
     const h2 = {
       bookId: "b2", bookMetaRepo: meta, charactersRepo: chars,
@@ -428,8 +432,8 @@ describe("buildChapterWriteMessages(§6.1 防漂移上下文)", () => {
       genreSectionsRepo: createGenreSectionsRepo(db2), chaptersRepo: chap,
       rulesMdPath: path.join(__dirname, "__none__.md"),
     };
-    // currentChapter=7 → cutoff=4 → 候选 ch1/2/3
-    const { recalledChapterNos } = buildChapterWriteMessages(h2 as any, 7, "继续");
+    // currentChapter=16 → cutoff=N-10=6 → 候选 ch1..5
+    const { recalledChapterNos } = buildChapterWriteMessages(h2 as any, 16, "继续");
     expect(recalledChapterNos).toContain(2);     // 林尘相关 → 捞回
     expect(recalledChapterNos).not.toContain(1); // 韩渊(与续写无关)→ 不捞回
     db2.close();
@@ -445,9 +449,10 @@ describe("buildChapterWriteMessages(§6.1 防漂移上下文)", () => {
       reasoningContent: null,
     });
 
+    // currentChapter=11 → cutoff=N-10=1 → ch0 落到 recall 窗(< 1)
     const { recalledChapterNos } = buildChapterWriteMessages(
       handle,
-      7,
+      11,
       "这一章继续处理 A-1",
     );
 

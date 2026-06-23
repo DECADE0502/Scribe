@@ -371,22 +371,22 @@ export function buildWriteContext(opts: BuildOptions): BuildResult {
   // 最近 3 章原文(asc 排,紧贴 task 指令前作 POV/腔调锚);snapshot 加载了最近 10 章,这里只取末 3。
   const recentFullForPrompt = opts.snapshot.recentFullChapters.slice(-3);
   const fullCoveredNos = new Set(recentFullForPrompt.map((c) => c.chapterNo));
+  // 真正的 recent 窗 = [N-10, N-1]。 snapshot 切了"最近 10 章"但不知道 currentChapterNo,
+  // 对于稀疏数据(章号跳跃)或异常 fixture 可能越界,这里再按窗口绝对位置裁一道。
+  const recentWindowFloor = opts.currentChapterNo - 10;
   // 层级选择:按 outline 树决定哪些章用 ArcSummary/VolumeSummary 整条压,哪些章用小总结,
   // 哪些章被屏蔽(避免半截 arc 的 summary 描述未来事件)。
   const layers = pickLayers(opts.snapshot.chapterOutlinePaths, opts.currentChapterNo);
-  // recentSummaries 去掉全文覆盖的,再被 summariesToShow 过滤(arc 全脱出窗的章被屏蔽)。
+  // recentSummaries:去重全文覆盖 + 窗口裁定 + 层级屏蔽
   const recentSummariesForPrompt = opts.snapshot.recentSummaries
     .filter((s) => !fullCoveredNos.has(s.chapterNo))
-    .filter((s) => layers.summariesToShow.has(s.chapterNo) || s.chapterNo >= opts.currentChapterNo - 20);
-  // 11-20 章小总结同样被 summariesToShow 约束;扁平 outline 时 summariesToShow 含全部章号,自然不裁。
+    .filter((s) => s.chapterNo >= recentWindowFloor && s.chapterNo < opts.currentChapterNo)
+    .filter((s) => layers.summariesToShow.has(s.chapterNo) || !opts.snapshot.chapterOutlinePaths.some((p) => p.chapterNo === s.chapterNo && p.arcNodeId));
+  // 11-20 章小总结同样被 summariesToShow 约束。
   const midRange = opts.snapshot.midRangeSummaries.filter(
     (s) => layers.summariesToShow.has(s.chapterNo) || !opts.snapshot.chapterOutlinePaths.some((p) => p.chapterNo === s.chapterNo && p.arcNodeId),
   );
-  // 召回排除最近 10 章窗,避免与 recent/full 重复。
-  const recentNos = new Set<number>([
-    ...recentFullForPrompt.map((c) => c.chapterNo),
-    ...recentSummariesForPrompt.map((s) => s.chapterNo),
-  ]);
+  // 召回:recall 的 cutoff 已是 N-10,与 recent 不重叠;不再加额外去重。
   const recalled = recallChapters({
     allSummaries: opts.snapshot.allSummaries,
     currentChapterNo: opts.currentChapterNo,
@@ -394,7 +394,7 @@ export function buildWriteContext(opts: BuildOptions): BuildResult {
     intentForeshadowing: opts.intent.foreshadowing,
     intentRecords: opts.intent.records,
     topK: 5,
-  }).filter((s) => !recentNos.has(s.chapterNo));
+  });
   // 选出的弧/卷 summary(按 nodeId 过滤)
   const arcSummaries = opts.snapshot.arcVolumeSummaries.filter(
     (s) => s.level === "arc" && layers.arcsToUse.has(s.nodeId),
