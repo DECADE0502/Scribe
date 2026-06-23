@@ -12,6 +12,7 @@ import { streamLlm } from "../llm-call.js";
 import { prependDeepestPrompt } from "../prompts/deepest-prompt.js";
 import { makeStateTools, type StateToolsDeps } from "../tools/state-tools.js";
 import { makeGenreSectionTools, type GenreToolsDeps } from "../tools/genre-section-tools.js";
+import { compressArc, compressVolume } from "./compress-arc.js";
 
 export const RECORD_STATE_PROMPT = `你是 Scribe 的设定记录员。刚写完一章,你的任务是把本章新出现/变化的信息记录进结构化档案,供后续章节保持一致性。
 
@@ -49,6 +50,15 @@ export interface RecordStateDeps {
   readerIssuesRepo?: {
     create(input: { chapterNo: number; type: "continuity"; severity: "warning"; note: string }): unknown;
   };
+  /** 可选:outline 仓库,供 arc/volume 边界检测与 summary 写入 */
+  outlineRepo?: {
+    findChapterNode(chapterNo: number): { id: string; parentId: string | null; metadata: Record<string, unknown> | null } | undefined;
+    get(id: string): { id: string; parentId: string | null; level: string; title: string; summary: string | null } | undefined;
+    listChildren(parentId: string | null): Array<{ id: string; level: string; title: string; summary: string | null; metadata: Record<string, unknown> | null }>;
+    updateSummary(id: string, summary: string | null): void;
+  };
+  /** 可选:章节摘要仓库,供取该 arc 的小总结做压缩 */
+  chaptersRepo?: { listSummaries(): Array<{ chapterNo: number; oneLiner: string; paragraph: string }> };
 }
 
 export interface RecordStateInput {
@@ -101,6 +111,106 @@ async function* runRecordPass(
   return { hadError, hadSuccessfulUpsert, failedTools, toolCalls, terminal };
 }
 
+/**
+ * 弧/卷边界检测 + 压缩。若本章是其所在 arc/volume 的末章,且所有子 chapter 都已有
+ * ChapterSummary,则跑一趟 LLM 压缩生成 ArcSummary/VolumeSummary 写进 outline_nodes.summary。
+ * 失败时写一条 reader_issue 警告,不阻断章节。
+ */
+async function compressArcBoundary(
+  deps: RecordStateDeps,
+  input: RecordStateInput,
+): Promise<void> {
+  if (!deps.outlineRepo || !deps.chaptersRepo) return;
+  const chapterNode = deps.outlineRepo.findChapterNode(input.chapterNo);
+  if (!chapterNode?.parentId) return;
+
+  const arc = deps.outlineRepo.get(chapterNode.parentId);
+  if (!arc || arc.level !== "arc") return;
+
+  // 获取本 arc 所有 chapter 子节点,找出最大章号
+  const siblings = deps.outlineRepo.listChildren(arc.id)
+    .filter((n) => n.level === "chapter");
+  const arcChapterNos = siblings
+    .map((n) => (n.metadata as Record<string, unknown> | null)?.chapterNo)
+    .filter((no): no is number => typeof no === "number");
+  const maxNo = Math.max(...arcChapterNos);
+  if (input.chapterNo !== maxNo) return;
+
+  // 所有 chapter 是否都有 ChapterSummary?
+  const allSummariesMap = new Map(
+    deps.chaptersRepo.listSummaries().map((s) => [s.chapterNo, s]),
+  );
+  const allDone = arcChapterNos.every((no) => allSummariesMap.has(no));
+  if (!allDone) return;
+
+  try {
+    const arcSummary = await compressArc({
+      model: deps.model,
+      abortSignal: deps.abortSignal,
+      deepestPrompt: deps.deepestPrompt,
+      chapterSummaries: arcChapterNos
+        .sort((a, b) => a - b)
+        .map((no) => {
+          const s = allSummariesMap.get(no)!;
+          return { chapterNo: no, oneLiner: s.oneLiner, paragraph: s.paragraph };
+        }),
+    });
+    deps.outlineRepo.updateSummary(arc.id, arcSummary);
+
+    // Volume 边界检测:若 volume 的所有 arc 都有 summary,进一步压成 VolumeSummary
+    await compressVolumeBoundary(deps, input, arc, arcSummary);
+  } catch (e) {
+    deps.readerIssuesRepo?.create({
+      chapterNo: input.chapterNo,
+      type: "continuity",
+      severity: "warning",
+      note: `弧总结压缩失败:${(e as Error).message};弧 ${arc.title} 暂无 summary。`,
+    });
+  }
+}
+
+async function compressVolumeBoundary(
+  deps: RecordStateDeps,
+  input: RecordStateInput,
+  arc: { id: string; parentId: string | null; title: string },
+  arcSummary: string,
+): Promise<void> {
+  if (!arc.parentId || !deps.outlineRepo) return;
+  const volume = deps.outlineRepo.get(arc.parentId);
+  if (!volume || volume.level !== "volume") return;
+
+  const arcs = deps.outlineRepo.listChildren(volume.id)
+    .filter((n) => n.level === "arc");
+  // 用已写 summary 或刚生成的最新值
+  const allArcsDone = arcs.every(
+    (a) => a.id === arc.id || !!a.summary,
+  );
+  if (!allArcsDone) return;
+
+  try {
+    const updatedArcs = arcs.map((a) =>
+      a.id === arc.id ? { ...a, summary: arcSummary } : a,
+    );
+    const volSummary = await compressVolume({
+      model: deps.model,
+      abortSignal: deps.abortSignal,
+      deepestPrompt: deps.deepestPrompt,
+      arcSummaries: updatedArcs.map((a) => ({
+        nodeTitle: a.title,
+        text: a.summary!,
+      })),
+    });
+    deps.outlineRepo.updateSummary(volume.id, volSummary);
+  } catch (e) {
+    deps.readerIssuesRepo?.create({
+      chapterNo: input.chapterNo,
+      type: "continuity",
+      severity: "warning",
+      note: `卷总结压缩失败:${(e as Error).message};卷 ${volume.title} 暂无 summary。`,
+    });
+  }
+}
+
 export async function* recordChapterState(
   deps: RecordStateDeps,
   input: RecordStateInput,
@@ -147,6 +257,9 @@ export async function* recordChapterState(
       });
     } catch { /* 写警告失败不致命 */ }
   }
+  // 弧/卷边界检测:写完本章小总结后,判断是否是 arc/volume 的末章。
+  // 若是且所有子章节都有 summary,跑一趟压缩生成 ArcSummary/VolumeSummary 写进 outline_nodes。
+  await compressArcBoundary(deps, input);
   // 计费标注:记录用审查模型,标为 audit + 本章号
   for (const ev of first.terminal) {
     if (ev.type === "usage") {
