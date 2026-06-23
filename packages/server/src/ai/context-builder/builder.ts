@@ -260,7 +260,20 @@ function applyPromptRegexScripts(
 }
 
 export function buildWriteContext(opts: BuildOptions): BuildResult {
-  const recent = opts.snapshot.recentSummaries.slice(0, 3);
+  // 最近 3 章原文(asc 排,紧贴 task 指令前作 POV/腔调锚);snapshot 加载了最近 10 章,这里只取末 3。
+  const recentFullForPrompt = opts.snapshot.recentFullChapters.slice(-3);
+  const fullCoveredNos = new Set(recentFullForPrompt.map((c) => c.chapterNo));
+  // 最近 10 章 summary 去掉已被全文覆盖的章号 → 剩下作为"4-10 章 summary"。
+  const recentSummariesForPrompt = opts.snapshot.recentSummaries.filter(
+    (s) => !fullCoveredNos.has(s.chapterNo),
+  );
+  // 中程 11-20 章小总结(snapshot 已切好)。
+  const midRange = opts.snapshot.midRangeSummaries;
+  // 召回排除最近 10 章窗,避免与 recent/full 重复。
+  const recentNos = new Set<number>([
+    ...recentFullForPrompt.map((c) => c.chapterNo),
+    ...recentSummariesForPrompt.map((s) => s.chapterNo),
+  ]);
   const recalled = recallChapters({
     allSummaries: opts.snapshot.allSummaries,
     currentChapterNo: opts.currentChapterNo,
@@ -268,7 +281,7 @@ export function buildWriteContext(opts: BuildOptions): BuildResult {
     intentForeshadowing: opts.intent.foreshadowing,
     intentRecords: opts.intent.records,
     topK: 5,
-  });
+  }).filter((s) => !recentNos.has(s.chapterNo));
   const now = new Date();
   const activePromptBlocks = (opts.snapshot.promptBlocks ?? [])
     .filter((block) => block.enabled && block.stackIndex !== null)
@@ -315,30 +328,36 @@ export function buildWriteContext(opts: BuildOptions): BuildResult {
   const readerIssuesBlock = renderReaderIssuesBlock(opts.snapshot.readerIssues ?? []);
 
   // 分层小块,各自排优先级。final 消息顺序由下面 sections 数组的声明顺序决定
-  // (prompt-cache 友好:静态在前、动态在后);priority 只决定预算紧张时丢/裁的次序。
+  // (按时间倒序:卷/弧→中程→近期→worldbook/state→召回→前文原文→指令);
+  // priority 只决定预算紧张时丢/裁的次序。
   const settingBlock = renderSettingBlock(opts.snapshot);
   const foreshadowingBlock = renderForeshadowingBlock(opts.snapshot);
   const recordsBlock = renderRecordsBlock(opts.snapshot);
   const charactersBlock = renderCharactersBlock(opts.snapshot);
+  const midRangeBlock = renderMidRangeBlock(midRange);
+  const recentSummariesBlock = renderRecentBlock(recentSummariesForPrompt);
+  const recentFullBlock = renderRecentFullChaptersBlock(recentFullForPrompt);
   const recalledBlock = renderRecalledBlock(recalled);
-  const recentBlock = renderRecentBlock(recent);
   const instructionBlock = renderInstructionBlock(opts.intent);
 
-  // 优先级阶梯(数值越大越先保留):
-  //   设定 100 > 用户指令 99 > 最近章 96 > worldbook 95 > reader-issues 94
-  //   > 活跃伏笔 93 > 召回历史 80 > 记录集合 70 > 角色档案 65
-  // 数组顺序=最终拼接顺序(缓存友好),与上面的丢弃优先级解耦。
+  // 裁切优先级阶梯(T5 会在此基础上加 arc/volume 块):
+  //   设定 100 > 任务指令 99 > 前文原文 97 > 最近 summary 82(预算紧时让位给全文)
+  //   > 中程摘要 90 > worldbook 88 > reader-issues 85 > 活跃伏笔 95
+  //   > 召回 70 > 记录集合/角色档案 40(噪声税,首先丢)
   const maybe = (id: string, priority: number, text: string): Section[] =>
     text.trim() ? [{ id, priority, text }] : [];
   const sections: Section[] = [
     ...maybe("setting", 100, settingBlock),
-    ...maybe("foreshadowing", 93, foreshadowingBlock),
-    ...maybe("records", 70, recordsBlock),
-    ...maybe("characters", 65, charactersBlock),
-    ...maybe("worldbook", 95, worldbookBlock),
-    ...maybe("reader-issues", 94, readerIssuesBlock),
-    ...maybe("recalled", 80, recalledBlock),
-    ...maybe("recent", 96, recentBlock),
+    // arc-summary / volume-summary 由 Task 5 在这两行之间插入
+    ...maybe("mid-range", 90, midRangeBlock),
+    ...maybe("recent-summary", 82, recentSummariesBlock),
+    ...maybe("worldbook", 88, worldbookBlock),
+    ...maybe("reader-issues", 85, readerIssuesBlock),
+    ...maybe("foreshadowing", 95, foreshadowingBlock),
+    ...maybe("records", 40, recordsBlock),
+    ...maybe("characters", 40, charactersBlock),
+    ...maybe("recalled", 70, recalledBlock),
+    ...maybe("recent-full", 97, recentFullBlock),
     ...maybe("instruction", 99, instructionBlock),
   ];
   const fitted = fitWithinBudget(sections, {
@@ -360,7 +379,7 @@ export function buildWriteContext(opts: BuildOptions): BuildResult {
   return {
     messages,
     recalledChapterNos: recalled.map((s) => s.chapterNo),
-    recentChapterNos: recent.map((s) => s.chapterNo),
+    recentChapterNos: recentSummariesForPrompt.map((s) => s.chapterNo),
     droppedSectionIds: fitted.dropped.map((s) => s.id),
     usedTokens: fitted.usedTokens,
     diagnostics: {

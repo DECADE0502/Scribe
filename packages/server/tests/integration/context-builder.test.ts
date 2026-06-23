@@ -188,9 +188,58 @@ describe("buildWriteContext 集成", () => {
     expect(allUser).toContain("本章计划");
     expect(allUser).toContain("开场情境:山顶");
     expect(allUser).toContain("本章高潮");
-    // 召回不应包含最近 3 章 (18/19/20)
-    expect(r.recalledChapterNos.every((no) => no <= 17)).toBe(true);
-    expect(r.recentChapterNos).toEqual([20, 19, 18]);
+    // 召回不应包含最近 10 章窗内的章节 (11-20)
+    expect(r.recalledChapterNos.every((no) => no <= 10)).toBe(true);
+    // recent 块覆盖第 11-20 章(无 chapterFiles 时,全 10 章都是 summary)
+    expect(r.recentChapterNos).toEqual([20, 19, 18, 17, 16, 15, 14, 13, 12, 11]);
+  });
+
+  it("snapshot.recentFullChapters 注入后,对应章号小总结不再重复", () => {
+    const fixture = new Map<number, { chapterNo: number; title: string; content: string }>();
+    for (let n = 18; n <= 20; n++) {
+      fixture.set(n, {
+        chapterNo: n,
+        title: `第 ${n} 章`,
+        content: `[FULLTEXT-${n}] 这是第 ${n} 章正文,含有独特锚字符串。`,
+      });
+    }
+    repos.chapterFiles = {
+      list: () => [...fixture.values()],
+      read: (no: number) => fixture.get(no),
+    };
+    const snap = loadBookSnapshot("b1", repos, paths);
+    const r = buildWriteContext({
+      snapshot: snap,
+      currentChapterNo: 21,
+      intent: { characters: [], foreshadowing: [], userMessage: "" },
+      budgetTokens: 500_000,
+    });
+    const all = r.messages.slice(1).map((m) => m.content as string).join("\n");
+    expect(all).toContain("[FULLTEXT-20]");
+    expect(all).toContain("[FULLTEXT-19]");
+    expect(all).toContain("[FULLTEXT-18]");
+    // 这 3 章对应的小总结应被去重屏蔽(不出现 "这是第 18/19/20 章的段落摘要")
+    expect(all).not.toContain("这是第 18 章的段落摘要");
+    expect(all).not.toContain("这是第 19 章的段落摘要");
+    expect(all).not.toContain("这是第 20 章的段落摘要");
+  });
+
+  it("midRangeSummaries(11-20 章前)注入 messages", () => {
+    const snap = loadBookSnapshot("b1", repos, paths);
+    const r = buildWriteContext({
+      snapshot: snap,
+      currentChapterNo: 21,
+      intent: { characters: [], foreshadowing: [], userMessage: "" },
+      budgetTokens: 500_000,
+    });
+    const all = r.messages.slice(1).map((m) => m.content as string).join("\n");
+    // 第 1-10 章的 oneLiner 应出现(midRange 块)
+    expect(all).toContain("第10章摘要");
+    expect(all).toContain("第5章摘要");
+    expect(all).toContain("第1章摘要");
+    // 第 11-20 章也应作为 recent summary 出现
+    expect(all).toContain("第20章摘要");
+    expect(all).toContain("第11章摘要");
   });
 
   it("budgetTokens 极小时 dynamic 被丢或裁", () => {
