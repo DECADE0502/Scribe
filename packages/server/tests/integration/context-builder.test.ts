@@ -145,12 +145,13 @@ describe("buildWriteContext 集成", () => {
     expect(allUser).toContain("[黑剑]");
   });
 
-  it("static 块按通用记录声明渲染记录集合", () => {
+  it("通用记录块只露 label + summary,schema 描述不进写作 prompt", () => {
     const snap = loadBookSnapshot("b1", repos, paths);
     const r = buildWriteContext({
       snapshot: snap,
       currentChapterNo: 21,
       intent: { characters: [], foreshadowing: [], userMessage: "x" },
+      budgetTokens: 500_000,
     });
     const allUser = r.messages
       .slice(1)
@@ -158,10 +159,33 @@ describe("buildWriteContext 集成", () => {
       .join("\n");
 
     expect(allUser).toContain("任意集合");
-    expect(allUser).toContain("identity:代号");
-    expect(allUser).toContain("display:名称");
-    expect(allUser).toContain("A-1");
-    expect(allUser).toContain("重要可检索信息");
+    expect(allUser).toContain("一号"); // label(显示名)
+    expect(allUser).toContain("重要可检索信息"); // summary
+    // 噪声税:schema 字样不进写作 prompt
+    expect(allUser).not.toMatch(/identity:/);
+    expect(allUser).not.toMatch(/display:/);
+    expect(allUser).not.toMatch(/searchFields/);
+  });
+
+  it("character 块只露 currentState,不露 baseData 背景/动机/语言习惯", () => {
+    // 给主角设个 currentState 以确认正向用例(否则 currentState={} 时 block 整体不出)
+    const linchen = repos.charactersRepo.list().find((c: any) => c.name === "林尘")!;
+    repos.charactersRepo.update(linchen.id, { currentState: { 位置: "山顶神庙", 持物: "黑剑" } });
+    const snap = loadBookSnapshot("b1", repos, paths);
+    const r = buildWriteContext({
+      snapshot: snap,
+      currentChapterNo: 21,
+      intent: { characters: [], foreshadowing: [], userMessage: "" },
+      budgetTokens: 500_000,
+    });
+    const allUser = r.messages.slice(1).map((m) => m.content as string).join("\n");
+    // 当下状态出
+    expect(allUser).toContain("山顶神庙");
+    expect(allUser).toContain("黑剑");
+    // baseData 不出(背景"弃婴" / 动机"复仇" / 语言"简洁")
+    expect(allUser).not.toContain("弃婴");
+    expect(allUser).not.toContain("复仇");
+    expect(allUser).not.toMatch(/语言:简洁/);
   });
 
   it("dynamic 块含最近 3 章 + 召回 + 用户指令", () => {

@@ -82,42 +82,36 @@ export function renderForeshadowingBlock(snapshot: BookSnapshot): string {
   return parts.join("\n");
 }
 
-/** 通用记录集合:批量档案,预算紧张时可先裁。 */
+/** 通用记录条目:写作 prompt 只露 label + 一句 summary,schema 描述属于记录员,不进写作员。 */
 export function renderRecordsBlock(snapshot: BookSnapshot): string {
   if (!snapshot.genreSections.length) return "";
-  const parts: string[] = [`## 通用记录集合`];
+  const parts: string[] = [`## 通用记录条目(当前已存)`];
   for (const { section, items } of snapshot.genreSections) {
-    const identity = resolveIdentityFieldNames(section).join(",") || "(未声明)";
-    const display = resolveDisplayFieldNames(section).join(",") || "(未声明)";
-    const search = section.searchFields?.join(",") || "(未声明)";
-    parts.push(`### ${section.name} (identity:${identity}; display:${display}; search:${search})`);
+    if (!items.length) continue;
+    parts.push(`### ${section.name}`);
     for (const item of items) {
       const label = resolveItemLabel(section, item.data, "?");
-      const identityKey = resolveItemIdentityKey(section, item.data) ?? "?";
-      const searchText = resolveItemSearchText(section, item.data);
-      parts.push(`- ${label} | ${identityKey}${searchText ? ` | ${searchText}` : ""}`);
+      const summary = resolveItemSearchText(section, item.data);
+      parts.push(`- ${label}${summary ? `:${summary}` : ""}`);
     }
   }
-  return parts.join("\n");
+  return parts.length > 1 ? parts.join("\n") : "";
 }
 
-/** 角色档案:批量,预算紧张时最先裁(最近章摘要已含当下角色动态)。 */
+/** 角色当下状态:写作时只需 currentState(位置/持物/认知);baseData 背景信息进召回层。 */
 export function renderCharactersBlock(snapshot: BookSnapshot): string {
   if (!snapshot.characters.length) return "";
-  const parts: string[] = [`## 主要角色`];
+  const parts: string[] = [`## 当下角色状态`];
   for (const c of snapshot.characters) {
-    const b = c.baseData as Record<string, unknown> | undefined;
-    const items: string[] = [];
-    if (b && typeof b.background === "string")
-      items.push(`背景:${b.background}`);
-    if (b && typeof b.motivation === "string")
-      items.push(`动机:${b.motivation}`);
-    if (b && typeof b.languageHabits === "string")
-      items.push(`语言:${b.languageHabits}`);
-    parts.push(`### ${c.name}${c.role ? ` (${c.role})` : ""}`);
-    if (items.length) parts.push(items.join("\n"));
+    const state = c.currentState as Record<string, unknown> | undefined;
+    if (!state || Object.keys(state).length === 0) continue;
+    const summary = Object.entries(state)
+      .filter(([, v]) => v != null && v !== "")
+      .map(([k, v]) => `${k}:${typeof v === "string" ? v : JSON.stringify(v)}`)
+      .join("; ");
+    if (summary) parts.push(`### ${c.name}${c.role ? `(${c.role})` : ""}\n${summary}`);
   }
-  return parts.join("\n");
+  return parts.length > 1 ? parts.join("\n") : "";
 }
 
 /** 向后兼容:整块静态档案(设定+伏笔+记录+角色)。内部已改用分层小块。 */
