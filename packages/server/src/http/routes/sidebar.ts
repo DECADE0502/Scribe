@@ -65,6 +65,8 @@ export function sidebarRoutes(deps: SidebarRoutesDeps) {
       sortOrder: typeof body.sortOrder === "number" ? body.sortOrder : 0,
       metadata: null,
     });
+    // 新节点的父链 summary 失效(新子节点改变了 arc/volume 内容)
+    if (node.parentId) handle.outlineRepo.clearAncestorSummariesByParentId(node.parentId);
     return c.json(node, 201);
   });
 
@@ -80,7 +82,15 @@ export function sidebarRoutes(deps: SidebarRoutesDeps) {
     if (typeof body.level === "string") patch.level = body.level;
     if (typeof body.sortOrder === "number") patch.sortOrder = body.sortOrder;
     if (typeof body.parentId === "string" || body.parentId === null) patch.parentId = body.parentId;
+    const oldNode = handle.outlineRepo.get(c.req.param("nodeId"));
     const node = handle.outlineRepo.update(c.req.param("nodeId"), patch);
+    // 章/弧/卷内容改了,自身 + 父链全部 summary 失效
+    handle.outlineRepo.updateSummary(node.id, null);
+    handle.outlineRepo.clearAncestorSummaries(node.id);
+    if (oldNode && oldNode.parentId !== node.parentId && oldNode.parentId) {
+      // 移动了节点:原父链也清空(旧 ancestors 引用旧内容)
+      handle.outlineRepo.clearAncestorSummariesByParentId(oldNode.parentId);
+    }
     return c.json(node);
   });
 
@@ -88,7 +98,9 @@ export function sidebarRoutes(deps: SidebarRoutesDeps) {
   app.delete("/api/books/:bookId/outline/:nodeId", async (c) => {
     const handle = withBook(c.req.param("bookId"));
     if (!handle) return c.json({ error: "书不存在" }, 404);
+    const dying = handle.outlineRepo.get(c.req.param("nodeId"));
     handle.outlineRepo.delete(c.req.param("nodeId"));
+    if (dying?.parentId) handle.outlineRepo.clearAncestorSummariesByParentId(dying.parentId);
     return c.json({ ok: true });
   });
 
