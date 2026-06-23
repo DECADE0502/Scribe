@@ -59,5 +59,9 @@ export const LOCAL_MODEL_TABLE: Record<string, Partial<ModelInfo>> = {
 };
 
 export function lookupLocal(id: string): Partial<ModelInfo> | undefined {
+  if (id.endsWith("[1m]")) {
+    const base = LOCAL_MODEL_TABLE[id.slice(0, -4)] ?? {};
+    return { ...base, contextWindow: 1_000_000 };
+  }
   return LOCAL_MODEL_TABLE[id];
 }
