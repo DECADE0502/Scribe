@@ -71,11 +71,11 @@ export function conversationRoutes(deps: ConversationDeps = {}) {
           abortSignal: c.req.raw.signal,
           deepestPrompt,
           styleReferences: deps.getStyleReferences?.() ?? [],
+          writeModelInfo: deps.writeModelInfo,
         },
         { message, history, executionMode },
       );
-      // 全量计费:统一交给 withUsageRecording(按事件 modelRole/taskType 分类定价,
-      // 缺 modelInfo 也记 token、费用为 0);不再在此手写,也不再因缺 writeModelInfo 而漏记。
+      // 全量计费
       const tracked = withUsageRecording(inner, {
         tokenUsageRepo: handle.tokenUsageRepo,
         booksRepo,

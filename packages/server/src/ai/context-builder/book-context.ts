@@ -567,9 +567,9 @@ export function buildChapterWriteMessages(
   handle: BookHandle,
   chapterNo: number,
   userIntent: string,
-  /** 覆盖默认"写第 N 章"任务指令(如 /rewrite 传入"重写并改进 + 现有正文") */
   taskInstruction?: string,
   styleReferences: StyleReference[] = [],
+  writeBudgetTokens?: number,
 ): ChapterWriteContext {
   const snapshot = loadBookSnapshot(
     handle.bookId,
@@ -599,6 +599,7 @@ export function buildChapterWriteMessages(
       userMessage: userIntent,
       chapterPlan: buildChapterPlanFromOutline(handle.outlineRepo, chapterNo),
     },
+    budgetTokens: writeBudgetTokens,
   });
   // 动态构建硬状态词表(不硬编码任何题材词汇)
   const dynamicTerms = buildDynamicHardStateTerms(snapshot);
@@ -661,6 +662,7 @@ export function buildChapterAuditContext(
   chapterNo: number,
   userIntent: string,
   chapterPlan?: string,
+  writeBudgetTokens?: number,
 ): ChapterAuditPromptContext {
   const base = buildBookPromptContext(handle).auditCtx;
   const snapshot = loadBookSnapshot(
@@ -690,6 +692,7 @@ export function buildChapterAuditContext(
       userMessage: userIntent,
       chapterPlan,
     },
+    budgetTokens: writeBudgetTokens,
   });
 
   const recalled = new Set(result.recalledChapterNos);

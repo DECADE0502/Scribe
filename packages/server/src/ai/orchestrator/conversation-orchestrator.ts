@@ -1,5 +1,5 @@
 import type { CoreMessage, LanguageModel } from "ai";
-import { buildExecutionPolicy, type AcceptanceReport, type ExecutionMode, type ExecutionStep, type ExecutionTrace, type IntentContract, type SseEvent } from "@scribe/shared";
+import { buildExecutionPolicy, type AcceptanceReport, type ExecutionMode, type ExecutionStep, type ExecutionTrace, type IntentContract, type ModelInfo, type SseEvent } from "@scribe/shared";
 import { parseSlashCommand, SLASH_COMMANDS } from "@scribe/shared";
 import type { BookHandle } from "../../http/book-registry.js";
 import type { StyleReference } from "../../config/load.js";
@@ -23,6 +23,7 @@ import { makeWorldbookTools } from "../tools/worldbook-tools.js";
 import { analyzeIntent, type IntentCategory } from "./intent.js";
 import { isOnboardComplete, formatCompletenessHint } from "./onboard-completeness.js";
 import { loadBookSnapshot } from "../context-builder/snapshot.js";
+import { pickWriteBudget } from "../context-builder/budget-profile.js";
 import { NEW_BOOK_ONBOARD_PROMPT } from "../prompts/new-book-onboard.js";
 import {
   buildWriteIntentContract,
@@ -52,6 +53,8 @@ export interface ConversationOrchestratorDeps {
   deepestPrompt?: string;
   /** 全局文风参考列表,按本书选择注入写作 Agent */
   styleReferences?: StyleReference[];
+  /** 写作模型信息(含 contextWindow,用于预算计算) */
+  writeModelInfo?: ModelInfo;
 }
 
 export interface ConversationInput {
@@ -185,6 +188,7 @@ async function* writeChapterFlow(
         fullUserIntent,
         taskInstruction,
         styleReferences,
+        pickWriteBudget(deps.writeModelInfo?.contextWindow),
       ).messages,
       source: mode === "rewrite" ? "ai_rewrite" : "ai_write",
       auditCtx: promptCtx.auditCtx,

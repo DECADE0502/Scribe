@@ -22,7 +22,7 @@ describe("recallChapters", () => {
     ];
     const top = recallChapters({
       allSummaries: summaries,
-      currentChapterNo: 10,
+      currentChapterNo: 14, // cutoff=4, 全部 3 章 < 4 → 入候选
       intentCharacters: ["林尘"],
       intentForeshadowing: ["黑剑之谜"],
       topK: 3,
@@ -43,7 +43,7 @@ describe("recallChapters", () => {
     };
     const top = recallChapters({
       allSummaries: [s],
-      currentChapterNo: 10,
+      currentChapterNo: 12,          // cutoff=2, ch1 < 2 → 入候选
       intentCharacters: ["方同"], // 仅在 prose 出现,不在 keyEvents 标注
       intentForeshadowing: [],
       topK: 5,
@@ -63,7 +63,7 @@ describe("recallChapters", () => {
 
     const top = recallChapters({
       allSummaries: [s],
-      currentChapterNo: 10,
+      currentChapterNo: 12,          // cutoff=2, ch1 < 2 → 入候选
       intentCharacters: [],
       intentForeshadowing: [],
       intentRecords: ["A-1"],
@@ -73,7 +73,7 @@ describe("recallChapters", () => {
     expect(top.map((x) => x.chapterNo)).toEqual([1]);
   });
 
-  it("排除最近 3 章 (currentChapterNo - 3 之内)", () => {
+  it("排除最近 10 章窗(currentChapterNo - 10 之内)", () => {
     const summaries = [
       sum(8, ["林"], []),
       sum(7, ["林"], []),
@@ -82,20 +82,19 @@ describe("recallChapters", () => {
     ];
     const top = recallChapters({
       allSummaries: summaries,
-      currentChapterNo: 10,
+      currentChapterNo: 16, // cutoff=6, ch8/7/6 在窗内(≥6)被排除, ch5 在窗外(<6)入候选
       intentCharacters: ["林"],
       intentForeshadowing: [],
       topK: 5,
     });
-    // cutoff = 7, 只保留 chapterNo < 7 的: 6 / 5
-    expect(top.map((s) => s.chapterNo).sort()).toEqual([5, 6]);
+    expect(top.map((s) => s.chapterNo).sort()).toEqual([5]);
   });
 
   it("score=0 的章节被过滤", () => {
     const summaries = [sum(1, ["A"], []), sum(2, ["B"], [])];
     const top = recallChapters({
       allSummaries: summaries,
-      currentChapterNo: 10,
+      currentChapterNo: 12,
       intentCharacters: ["A"],
       intentForeshadowing: [],
       topK: 5,
@@ -108,7 +107,7 @@ describe("recallChapters", () => {
     const summaries = [sum(1, ["A"], []), sum(2, ["A"], [])];
     const top = recallChapters({
       allSummaries: summaries,
-      currentChapterNo: 10,
+      currentChapterNo: 13,          // cutoff=3, ch1/2 < 3 → 都入候选
       intentCharacters: ["A"],
       intentForeshadowing: [],
     });

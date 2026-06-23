@@ -13,6 +13,7 @@ import {
   resolveChapterTitle,
 } from "../../ai/context-builder/book-context.js";
 import { resolveDeepestPrompt } from "../../ai/prompts/deepest-prompt.js";
+import { pickWriteBudget } from "../../ai/context-builder/budget-profile.js";
 import { recordChapterState, buildArchiveSummary } from "../../ai/orchestrator/record-state.js";
 import { auditChapter } from "../../ai/orchestrator/audit-chapter.js";
 import { persistAuditResult } from "../../ai/orchestrator/audit-persist.js";
@@ -63,8 +64,9 @@ export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
     const auditModelId = deps.auditModelInfo?.id ?? "unknown";
 
     // spec §6.1:注入完整防漂移上下文(召回+最近摘要+通用记录集合+伏笔)
-    const writeContext = buildChapterWriteMessages(handle, no, userIntent, undefined, styleReferences);
-    const auditCtx = buildChapterAuditContext(handle, no, userIntent).auditCtx;
+    const budget = pickWriteBudget(deps.writeModelInfo?.contextWindow);
+    const writeContext = buildChapterWriteMessages(handle, no, userIntent, undefined, styleReferences, budget);
+    const auditCtx = buildChapterAuditContext(handle, no, userIntent, undefined, budget).auditCtx;
     const deepestPrompt = resolveDeepestPrompt({
       perBook: handle.bookMetaRepo.get("master_prompt"),
       perBookEnabled: handle.bookMetaRepo.get("master_prompt_enabled") !== "0",

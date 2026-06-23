@@ -14,6 +14,7 @@ import {
   enrichUserIntentWithOutline,
 } from "../../ai/context-builder/book-context.js";
 import { loadBookSnapshot } from "../../ai/context-builder/snapshot.js";
+import { pickWriteBudget } from "../../ai/context-builder/budget-profile.js";
 import { isOnboardComplete } from "../../ai/orchestrator/onboard-completeness.js";
 import {
   recordChapterState,
@@ -95,6 +96,7 @@ export function autoRoutes(deps: AutoRoutesDeps) {
 
     const writeModelInfo = deps.writeModelInfo ?? { id: "unknown" };
     const auditModelInfo = deps.auditModelInfo ?? writeModelInfo;
+    const writeBudget = pickWriteBudget(writeModelInfo.contextWindow);
     // B-5-001 修复:把书的设定(premise/角色/大纲/规则)注入写作与审查 prompt
     const promptCtx = buildBookPromptContext(handle, styleReferences);
     // 最深处提示词:每本覆盖 || 全局
@@ -176,9 +178,10 @@ export function autoRoutes(deps: AutoRoutesDeps) {
                 enrichUserIntentWithOutline(handle.outlineRepo, chapterNo, ""),
                 undefined,
                 styleReferences,
+                writeBudget,
               ).messages,
             buildAuditCtx: (chapterNo) =>
-              buildChapterAuditContext(handle, chapterNo, "").auditCtx,
+              buildChapterAuditContext(handle, chapterNo, "", undefined, writeBudget).auditCtx,
             resolveChapterTitle: (chapterNo) => resolveChapterTitle(handle.outlineRepo, chapterNo),
             deepestPrompt,
           },
