@@ -138,6 +138,8 @@ export function autoRoutes(deps: AutoRoutesDeps) {
           abortSignal: controller.signal,
           deepestPrompt,
           readerIssuesRepo: handle.readerIssuesRepo,
+          outlineRepo: handle.outlineRepo,
+          chaptersRepo: handle.chaptersRepo,
         },
         {
           chapterNo,

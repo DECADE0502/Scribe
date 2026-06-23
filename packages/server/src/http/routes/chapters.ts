@@ -148,6 +148,8 @@ export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
             abortSignal: c.req.raw.signal,
             deepestPrompt,
             readerIssuesRepo: handle.readerIssuesRepo,
+            outlineRepo: handle.outlineRepo,
+            chaptersRepo: handle.chaptersRepo,
           },
           {
             chapterNo: no,

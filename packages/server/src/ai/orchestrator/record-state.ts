@@ -133,6 +133,7 @@ async function compressArcBoundary(
   const arcChapterNos = siblings
     .map((n) => (n.metadata as Record<string, unknown> | null)?.chapterNo)
     .filter((no): no is number => typeof no === "number");
+  if (arcChapterNos.length === 0) return;
   const maxNo = Math.max(...arcChapterNos);
   if (input.chapterNo !== maxNo) return;
 
