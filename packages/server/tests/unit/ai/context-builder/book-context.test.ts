@@ -439,6 +439,30 @@ describe("buildChapterWriteMessages(§6.1 防漂移上下文)", () => {
     db2.close();
   });
 
+  it("write 路径自动从 outline 节点拼出 chapterPlan,并以本章计划块出现在 messages", () => {
+    // 给第 7 章创建 outline chapter 节点(标题含章号 → findChapterOutlineNode 能命中)
+    handle.outlineRepo.create({
+      parentId: null,
+      level: "chapter",
+      title: "第 7 章 山顶决战",
+      summary: "林尘在山顶神庙与黑剑对峙,触发第一道契约",
+      status: "planned",
+      sortOrder: 7,
+      metadata: { chapterNo: 7, keyEvents: ["触发契约", "黑剑显形"] },
+    });
+    const { messages } = buildChapterWriteMessages(handle, 7, "继续写第七章");
+    const text = messages
+      .map((m) => (typeof m.content === "string" ? m.content : ""))
+      .join("\n");
+    // 本章计划块标记应出现
+    expect(text).toContain("## 本章计划");
+    // outline 节点的标题/summary/关键事件都进 chapterPlan
+    expect(text).toContain("第 7 章 山顶决战");
+    expect(text).toContain("林尘在山顶神庙与黑剑对峙");
+    expect(text).toContain("触发契约");
+    expect(text).toContain("黑剑显形");
+  });
+
   it("用户指令点名通用记录实体时召回相关旧章", () => {
     handle.chaptersRepo.saveSummary({
       chapterNo: 0,

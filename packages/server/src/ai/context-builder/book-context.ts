@@ -155,6 +155,27 @@ export function findChapterOutlineSummary(
 }
 
 /**
+ * 把本章 outline 节点拼成结构化的 chapterPlan(供 buildWriteContext 的 intent.chapterPlan)。
+ * 内容: 标题 + summary + metadata.keyEvents(若有)。这是"本章计划"专用 slot,与
+ * enrichUserIntentWithOutline 走的是不同槽位,前者落到"## 本章计划",后者落到"## 用户最新指令"。
+ */
+export function buildChapterPlanFromOutline(
+  outlineRepo: { listAll(): OutlineNode[] },
+  chapterNo: number,
+): string | undefined {
+  const node = findChapterOutlineNode(outlineRepo, chapterNo);
+  if (!node) return undefined;
+  const parts: string[] = [`### ${node.title}`];
+  if (node.summary) parts.push(node.summary);
+  const meta = node.metadata as Record<string, unknown> | null;
+  if (meta && Array.isArray(meta.keyEvents)) {
+    parts.push("关键事件:");
+    for (const e of meta.keyEvents) parts.push(`- ${String(e)}`);
+  }
+  return parts.length > 1 ? parts.join("\n") : undefined;
+}
+
+/**
  * 把章级大纲摘要拼进 userIntent。如果没有大纲节点则原样返回。
  */
 export function enrichUserIntentWithOutline(
@@ -576,6 +597,7 @@ export function buildChapterWriteMessages(
       foreshadowing: recallIntent.foreshadowing,
       records: recallIntent.records,
       userMessage: userIntent,
+      chapterPlan: buildChapterPlanFromOutline(handle.outlineRepo, chapterNo),
     },
   });
   // 动态构建硬状态词表(不硬编码任何题材词汇)
