@@ -99,31 +99,25 @@ export function createOutlineRepo(db: Database) {
       const r = db.prepare(
         `SELECT * FROM outline_nodes
           WHERE level='chapter'
-            AND CAST(json_extract(metadata,'$.chapterNo') AS INTEGER) = ?`
+            AND CAST(json_extract(metadata,'$.chapterNo') AS INTEGER) = ?
+          LIMIT 1`
       ).get(chapterNo);
       return r ? rowToNode(r) : undefined;
     },
     clearAncestorSummaries(nodeId: string): void {
-      const repo = this;
-      const tx = db.transaction(() => {
-        let cur = repo.get(nodeId);
-        while (cur && cur.parentId) {
-          const parent = repo.get(cur.parentId);
-          if (!parent) break;
-          db.prepare("UPDATE outline_nodes SET summary=NULL WHERE id=?").run(parent.id);
-          cur = parent;
-        }
-      });
-      tx();
+      const node = this.get(nodeId);
+      if (!node) return;
+      this.clearAncestorSummariesByParentId(node.parentId);
     },
     clearAncestorSummariesByParentId(parentId: string | null): void {
       if (!parentId) return;
-      const repo = this;
+      const update = db.prepare("UPDATE outline_nodes SET summary=NULL WHERE id=?");
+      const select = db.prepare("SELECT parent_id FROM outline_nodes WHERE id=?");
       const tx = db.transaction(() => {
         let curId: string | null = parentId;
         while (curId) {
-          db.prepare("UPDATE outline_nodes SET summary=NULL WHERE id=?").run(curId);
-          const r = db.prepare("SELECT parent_id FROM outline_nodes WHERE id=?").get(curId) as { parent_id?: string } | undefined;
+          update.run(curId);
+          const r = select.get(curId) as { parent_id?: string } | undefined;
           curId = r?.parent_id ?? null;
         }
       });

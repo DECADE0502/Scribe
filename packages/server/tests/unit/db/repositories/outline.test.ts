@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import Database from "better-sqlite3";
 import * as fs from "node:fs";
 import * as path from "node:path";
