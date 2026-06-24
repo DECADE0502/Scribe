@@ -202,75 +202,13 @@ describe("worldbook routes", () => {
     );
   });
 
-  it("streams setting chat and lets the model persist worldbook entries", async () => {
-    let turn = 0;
-    const stubModel = {
-      specificationVersion: "v1" as const,
-      provider: "stub",
-      modelId: "stub",
-      async doGenerate() {
-        throw new Error("not used");
-      },
-      async doStream() {
-        const current = turn++;
-        return {
-          stream: new ReadableStream({
-            start(ctrl) {
-              if (current === 0) {
-                ctrl.enqueue({
-                  type: "tool-call",
-                  toolCallType: "function",
-                  toolCallId: "tc-worldbook",
-                  toolName: "create_worldbook_entry",
-                  args: JSON.stringify({
-                    title: "Tide city rule",
-                    content: "Tide engines are civic infrastructure, not magic.",
-                    activation: "constant",
-                    constant: true,
-                    keys: ["tide engine"],
-                    priority: 70,
-                  }),
-                });
-                ctrl.enqueue({
-                  type: "finish",
-                  finishReason: "tool-calls",
-                  usage: { promptTokens: 10, completionTokens: 5 },
-                });
-              } else {
-                ctrl.enqueue({
-                  type: "text-delta",
-                  textDelta: "I recorded the tide city rule.",
-                });
-                ctrl.enqueue({
-                  type: "finish",
-                  finishReason: "stop",
-                  usage: { promptTokens: 20, completionTokens: 8 },
-                });
-              }
-              ctrl.close();
-            },
-          }),
-          rawCall: { rawPrompt: null, rawSettings: {} },
-        };
-      },
-    };
-    const appWithModel = createApp({
-      bookRegistry: registry,
-      getModel: () => stubModel as never,
-    });
-
-    const res = await appWithModel.request(`/api/books/${bookId}/worldbook/chat`, {
+  it("removes legacy worldbook chat as an executable AI route", async () => {
+    const res = await app.request(`/api/books/${bookId}/worldbook/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: "Refine the tide city setting." }),
     });
 
-    expect(res.status).toBe(200);
-    const text = await new Response(res.body).text();
-    expect(text).toContain("event: tool_call_start");
-    expect(text).toContain("event: tool_call_end");
-    expect(text).toContain("I recorded the tide city rule.");
-    expect(registry.open(bookId).worldbookRepo.list().map((entry) => entry.title))
-      .toContain("Tide city rule");
-  });
-});
+    expect(res.status).toBe(410);
+    expect(await res.json()).toMatchObject({ error: "legacy_worldbook_chat_removed" });
+  });});

@@ -73,116 +73,41 @@ async function setupBookWithChapter(app: ReturnType<typeof createApp>): Promise<
   return id;
 }
 
-describe("POST /chapters/:no/revise-segment", () => {
-  it("流式输出新段落,不落盘", async () => {
-    const app = createApp({
-      bookRegistry: registry,
-      getModel: () => makeStubModel(["这一段", "如刀刻般冷峻。"]) as never,
-    });
+describe("legacy revision routes", () => {
+  it("removes revise-segment as an executable AI route", async () => {
+    const app = createApp({ bookRegistry: registry, getModel: () => makeStubModel(["x"]) as never });
     const id = await setupBookWithChapter(app);
     const res = await app.request(`/api/books/${id}/chapters/1/revise-segment`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ segmentText: "这一段写得平淡。", instruction: "更冷峻" }),
+      body: JSON.stringify({ segmentText: "text", instruction: "rewrite" }),
     });
-    expect(res.status).toBe(200);
-    const text = await new Response(res.body).text();
-    expect(text).toContain("event: text_delta");
-    expect(text).toContain("如刀刻般冷峻");
-    expect(text).toContain("event: done");
-    // 不落盘:仍只有 1 个 version
-    const handle = registry.open(id);
-    expect(handle.chaptersRepo.listVersions(1)).toHaveLength(1);
-    expect(handle.chapterFiles.read(1)?.content).toContain("这一段写得平淡。");
+
+    expect(res.status).toBe(410);
+    expect(await res.json()).toMatchObject({ error: "legacy_revise_segment_removed" });
   });
 
-  it("segmentText 与章节不匹配 → SSE error 事件", async () => {
-    const app = createApp({
-      bookRegistry: registry,
-      getModel: () => makeStubModel(["x"]) as never,
-    });
-    const id = await setupBookWithChapter(app);
-    const res = await app.request(`/api/books/${id}/chapters/1/revise-segment`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ segmentText: "不存在的段落", instruction: "x" }),
-    });
-    const text = await new Response(res.body).text();
-    expect(text).toContain("event: error");
-    expect(text).toContain("segment_not_found");
-  });
-
-  it("空 segmentText 返回 400;无 model 返回 503;章节缺失 404", async () => {
-    const appNoModel = createApp({ bookRegistry: registry });
-    const id = await setupBookWithChapter(appNoModel);
-
-    const r400 = await appNoModel.request(`/api/books/${id}/chapters/1/revise-segment`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ segmentText: " " }),
-    });
-    expect(r400.status).toBe(400);
-
-    const r503 = await appNoModel.request(`/api/books/${id}/chapters/1/revise-segment`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ segmentText: "这一段写得平淡。" }),
-    });
-    expect(r503.status).toBe(503);
-
-    const appWithModel = createApp({ bookRegistry: registry, getModel: () => makeStubModel(["x"]) as never });
-    const r404 = await appWithModel.request(`/api/books/${id}/chapters/9/revise-segment`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ segmentText: "x" }),
-    });
-    expect(r404.status).toBe(404);
-  });
-});
-
-describe("POST /chapters/:no/apply-revision", () => {
-  it("happy:替换段落,新增 segment_revise version,.md 同步", async () => {
+  it("removes apply-revision as a direct persistence route", async () => {
     const app = createApp({ bookRegistry: registry });
     const id = await setupBookWithChapter(app);
     const res = await app.request(`/api/books/${id}/chapters/1/apply-revision`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        segmentText: "这一段写得平淡。",
-        newSegment: "这一段如刀刻般冷峻。",
-      }),
+      body: JSON.stringify({ segmentText: "text", newSegment: "new" }),
     });
-    expect(res.status).toBe(200);
-    const j = await res.json() as { versionNo: number; content: string };
-    expect(j.versionNo).toBe(2);
-    expect(j.content.trim()).toBe("开头。这一段如刀刻般冷峻。结尾。");
 
-    const handle = registry.open(id);
-    const versions = handle.chaptersRepo.listVersions(1);
-    expect(versions).toHaveLength(2);
-    expect(versions[0]!.source).toBe("segment_revise"); // listVersions desc
-    expect(handle.chapterFiles.read(1)?.content.trim()).toBe("开头。这一段如刀刻般冷峻。结尾。");
+    expect(res.status).toBe(410);
+    expect(await res.json()).toMatchObject({ error: "legacy_apply_revision_removed" });
   });
 
-  it("段落不匹配返回 409(章节可能已被修改)", async () => {
+  it("keeps invalid chapter numbers as request validation errors", async () => {
     const app = createApp({ bookRegistry: registry });
-    const id = await setupBookWithChapter(app);
-    const res = await app.request(`/api/books/${id}/chapters/1/apply-revision`, {
+    const res = await app.request("/api/books/b1/chapters/abc/revise-segment", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ segmentText: "已经不存在的旧段落", newSegment: "x" }),
+      body: JSON.stringify({ segmentText: "text" }),
     });
-    expect(res.status).toBe(409);
-  });
 
-  it("缺参数返回 400", async () => {
-    const app = createApp({ bookRegistry: registry });
-    const id = await setupBookWithChapter(app);
-    const res = await app.request(`/api/books/${id}/chapters/1/apply-revision`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ segmentText: "x" }),
-    });
     expect(res.status).toBe(400);
   });
 });

@@ -11,7 +11,7 @@ describe("ExecutionConfirmationCard", () => {
     const policy = buildExecutionPolicy({
       taskId: "task-1",
       configuredMode: "low_risk_auto",
-      actions: [{ type: "chapter_write" }],
+      actions: [{ type: "chapter_version" }],
     });
 
     render(
@@ -26,7 +26,8 @@ describe("ExecutionConfirmationCard", () => {
     );
 
     expect(screen.getByText(/Confirmation required/)).toBeInTheDocument();
-    expect(screen.getByText(/low_risk_auto/)).toBeInTheDocument();
+    expect(screen.getByText(/低风险自动/)).toBeInTheDocument();
+    expect(screen.getByText(/写入/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("execution-approve"));
     fireEvent.click(screen.getByTestId("execution-reroll"));
@@ -37,3 +38,4 @@ describe("ExecutionConfirmationCard", () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 });
+

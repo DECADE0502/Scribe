@@ -5,7 +5,6 @@ import {
   type CoreMessage,
   type Tool,
 } from "ai";
-import type { SseEvent } from "@scribe/shared";
 import { readDeepSeekUsage } from "./providers/deepseek-metadata.js";
 import { withRetry, classifyLlmError } from "./retry.js";
 
@@ -43,6 +42,15 @@ export interface GeneratedLlmText {
   };
 }
 
+export type LlmStreamEvent =
+  | { type: "text_delta"; delta: string }
+  | { type: "reasoning_delta"; delta: string }
+  | { type: "tool_call_start"; toolName: string; args?: unknown }
+  | { type: "tool_call_end"; toolName: string; result: unknown }
+  | { type: "usage"; promptTokens: number; completionTokens: number; cachedTokens?: number; reasoningTokens?: number }
+  | { type: "done" }
+  | { type: "error"; errorClass: string; message: string };
+
 /**
  * B-6-002 修复:工具执行抛错时,SDK 会把整个流断掉(LLM 没机会纠正)。
  * 这里把每个工具的 execute 包一层 try/catch,错误转成普通工具结果
@@ -74,7 +82,7 @@ function withToolErrorRecovery(
   return wrapped;
 }
 
-export async function* streamLlm(input: LlmCallInput): AsyncIterable<SseEvent> {
+export async function* streamLlm(input: LlmCallInput): AsyncIterable<LlmStreamEvent> {
   try {
     const result = streamText({
       model: input.model,

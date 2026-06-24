@@ -7,7 +7,7 @@ import type { BookHandle } from "../../src/http/book-registry.js";
 import { createApp } from "../../src/http/server.js";
 import { makeStubLanguageModel } from "../fixtures/mock-llm.js";
 import type { AppPaths } from "../../src/config/paths.js";
-import { deleteChaptersFrom } from "../../src/ai/orchestrator/delete-chapter.js";
+import { deleteChaptersFrom } from "../../src/services/delete-chapters.js";
 
 function makePaths(root: string): AppPaths {
   return {

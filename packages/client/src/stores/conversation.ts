@@ -149,7 +149,7 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
 
   startWorkflow(stages) {
     set(s => s.streaming
-      ? { streaming: { ...s.streaming, workflowStages: stages, suppressText: true } }
+      ? { streaming: { ...s.streaming, workflowStages: stages } }
       : {});
   },
 
@@ -254,8 +254,8 @@ export const useConversationStore = create<ConversationStore>((set, get) => ({
   hydrate(msgs) {
     set(s => ({
       messages: s.messages.length === 0 ? msgs : s.messages,
-      streaming: null,
-      error: null,
+      streaming: s.messages.length === 0 ? null : s.streaming,
+      error: s.messages.length === 0 ? null : s.error,
     }));
   },
 

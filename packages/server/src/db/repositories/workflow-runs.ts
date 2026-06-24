@@ -23,8 +23,7 @@ export function createWorkflowRunsRepo(db: Database) {
   });
 
   return {
-    create(bookId: string, source: string): WorkflowRun {
-      const id = randomUUID();
+    create(bookId: string, source: string, id: string = randomUUID()): WorkflowRun {
       const now = Date.now();
       db.prepare(
         `INSERT INTO workflow_runs(id,book_id,source,phase,created_at,updated_at) VALUES(?,?,?,?,?,?)`,
@@ -75,6 +74,9 @@ export function createWorkflowRunsRepo(db: Database) {
     },
     markChangeCommitted(id: string): void {
       db.prepare("UPDATE workflow_staged_changes SET committed=1 WHERE id=?").run(id);
+    },
+    deleteChanges(runId: string): void {
+      db.prepare("DELETE FROM workflow_staged_changes WHERE run_id=? AND committed=0").run(runId);
     },
   };
 }

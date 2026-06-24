@@ -5,7 +5,6 @@ import { useConversationStore } from "../../src/stores/conversation.js";
 
 type EventSink = (ev: { type: string; [key: string]: unknown }) => void;
 
-/** 可手动推事件的 stream mock */
 function makeManualStream() {
   let sink: EventSink | null = null;
   const cancelSpy = vi.fn();
@@ -24,14 +23,20 @@ function makeManualStream() {
 
 beforeEach(() => {
   useConversationStore.getState().reset();
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({ messages: [], ok: true }),
+  } as Response));
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function renderPane(streamFn: StreamFn, bookId = "b1") {
-  return render(<ConversationPane bookId={bookId} streamFn={streamFn} />);
+async function renderPane(streamFn: StreamFn, bookId = "b1") {
+  const view = render(<ConversationPane bookId={bookId} streamFn={streamFn} />);
+  await waitFor(() => expect(fetch).toHaveBeenCalled());
+  return view;
 }
 
 function sendMessage(text: string) {
@@ -40,126 +45,156 @@ function sendMessage(text: string) {
 }
 
 describe("ConversationPane", () => {
-  it("切换书本时用新书聊天记录替换旧书记录", async () => {
+  it("replaces history when switching books", async () => {
     const stream = makeManualStream();
     const fetchMock = vi.fn((url: string) => {
-      const messages = url.includes("/books/b1/")
-        ? [{ id: 1, role: "user", content: "旧书消息", metadata: { kind: "chat" }, createdAt: 1 }]
-        : [{ id: 2, role: "user", content: "新书消息", metadata: { kind: "chat" }, createdAt: 2 }];
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({ messages }),
-      } as Response);
+      if (url.includes("/conversation")) {
+        const messages = url.includes("/books/b1/")
+          ? [{ id: 1, role: "user", content: "鏃т功娑堟伅", createdAt: 1 }]
+          : [{ id: 2, role: "user", content: "鏂颁功娑堟伅", createdAt: 2 }];
+        return Promise.resolve({ ok: true, json: async () => ({ messages }) } as Response);
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: true }) } as Response);
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const view = renderPane(stream.streamFn, "b1");
-    await waitFor(() => expect(screen.getByText("旧书消息")).toBeInTheDocument());
+    const view = await renderPane(stream.streamFn, "b1");
+    await waitFor(() => expect(screen.getByText("鏃т功娑堟伅")).toBeInTheDocument());
 
     view.rerender(<ConversationPane bookId="b2" streamFn={stream.streamFn} />);
 
-    await waitFor(() => expect(screen.getByText("新书消息")).toBeInTheDocument());
-    expect(screen.queryByText("旧书消息")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("鏂颁功娑堟伅")).toBeInTheDocument());
+    expect(screen.queryByText("鏃т功娑堟伅")).not.toBeInTheDocument();
   });
 
-  it("发送后:占位 → 文本逐字 → done 固化到消息列表", async () => {
+  it("sends chat through the unified agent endpoint and renders main_output", async () => {
     const m = makeManualStream();
-    renderPane(m.streamFn);
+    await renderPane(m.streamFn);
 
-    sendMessage("你好");
-    // 用户消息立即出现
-    expect(screen.getByText("你好")).toBeInTheDocument();
-    // 流式占位(AI 思考中)
+    sendMessage("浣犲ソ");
+
+    expect(screen.getByText("浣犲ソ")).toBeInTheDocument();
     expect(screen.getByTestId("streaming-placeholder")).toBeInTheDocument();
 
-    m.push({ type: "text_delta", delta: "在" });
-    m.push({ type: "text_delta", delta: "的" });
-    expect(screen.getByTestId("streaming-message")).toHaveTextContent("在的");
+    m.push({ type: "main_output", reply: "鍦ㄧ殑" });
+    expect(screen.getByTestId("streaming-message")).toHaveTextContent("鍦ㄧ殑");
 
-    m.push({ type: "done" });
-    await waitFor(() => {
-      expect(screen.queryByTestId("streaming-message")).not.toBeInTheDocument();
-    });
-    // 固化的 assistant 消息
-    expect(screen.getByText("在的")).toBeInTheDocument();
+    m.push({ type: "done", committed: false, needsUserDecision: false, runId: "r1" });
+    await waitFor(() => expect(screen.queryByTestId("streaming-message")).not.toBeInTheDocument());
+    expect(screen.getByText("鍦ㄧ殑")).toBeInTheDocument();
   });
 
-  it("工具调用:start 显示进行中,end 后消失", () => {
+  it("shows agent phases and validation report for workflow runs", async () => {
     const m = makeManualStream();
-    renderPane(m.streamFn);
-    sendMessage("建板块");
+    await renderPane(m.streamFn);
+    sendMessage("鏁寸悊瑙掕壊");
 
-    m.push({ type: "tool_call_start", toolName: "create_genre_section" });
-    expect(screen.getByTestId("tool-running")).toHaveTextContent("创建记录集合");
+    m.push({ type: "agent_phase", phase: "thinking" });
+    m.push({ type: "agent_progress", phase: "executing", label: "整理角色", status: "running", detail: "小佑" });
+    m.push({ type: "validation_report", verdict: "pass", issues: [], commitAllowed: true });
 
-    m.push({ type: "tool_call_end", toolName: "create_genre_section", result: {} });
-    expect(screen.queryByTestId("tool-running")).not.toBeInTheDocument();
+    expect(screen.getByTestId("workflow-progress")).toHaveTextContent("整理角色");
+    expect(screen.getByTestId("validation-report")).toHaveTextContent("pass");
   });
 
-  it("error 事件:显示中文错误 + 重试按钮重发", async () => {
+  it("done committed=false does not refresh chapters for agent workflow runs", async () => {
     const m = makeManualStream();
-    renderPane(m.streamFn);
+    await renderPane(m.streamFn);
+    sendMessage("write next chapter");
+    const before = useConversationStore.getState().chapterRefreshTrigger;
+
+    m.push({ type: "agent_progress", phase: "executing", label: "执行变更", status: "running", detail: "chapter_version" });
+    m.push({ type: "done", committed: false, needsUserDecision: true, runId: "r1" });
+
+    await waitFor(() => expect(screen.queryByTestId("streaming-message")).not.toBeInTheDocument());
+    expect(useConversationStore.getState().chapterRefreshTrigger).toBe(before);
+  });
+
+  it("does not show mutation-failure copy for query-only runs", async () => {
+    const m = makeManualStream();
+    await renderPane(m.streamFn);
+    sendMessage("先聊聊第一人称");
+
+    m.push({ type: "agent_progress", phase: "executing", label: "无需变更", status: "done", detail: "本轮仅对话" });
+    m.push({ type: "main_output", reply: "可以，先保持第一人称。" });
+    m.push({ type: "done", committed: false, needsUserDecision: false, runId: "r1" });
+
+    await waitFor(() => expect(screen.queryByTestId("streaming-message")).not.toBeInTheDocument());
+    expect(screen.getByText("可以，先保持第一人称。")).toBeInTheDocument();
+    expect(screen.queryByText("流程未提交变更。")).not.toBeInTheDocument();
+    expect(screen.queryByText("流程已暂停，等待确认或修复。")).not.toBeInTheDocument();
+  });
+
+  it("done committed=true refreshes chapters and library", async () => {
+    const m = makeManualStream();
+    await renderPane(m.streamFn);
+    sendMessage("写第一章");
+    const beforeChapter = useConversationStore.getState().chapterRefreshTrigger;
+    const beforeLibrary = useConversationStore.getState().libraryRefreshTrigger;
+
+    m.push({ type: "agent_progress", phase: "executing", label: "执行变更", status: "running", detail: "chapter_version" });
+    m.push({ type: "done", committed: true, needsUserDecision: false, runId: "r1" });
+
+    await waitFor(() => expect(screen.queryByTestId("streaming-message")).not.toBeInTheDocument());
+    expect(useConversationStore.getState().chapterRefreshTrigger).toBe(beforeChapter + 1);
+    expect(useConversationStore.getState().libraryRefreshTrigger).toBe(beforeLibrary + 1);
+  });
+
+  it("shows errors and retries the last message", async () => {
+    const m = makeManualStream();
+    await renderPane(m.streamFn);
     sendMessage("写一章");
 
-    m.push({ type: "error", errorClass: "rate_limit", message: "请求过于频繁,请稍后重试" });
-    await waitFor(() => screen.getByTestId("conversation-error"));
-    expect(screen.getByText(/请求过于频繁/)).toBeInTheDocument();
+    m.push({ type: "error", errorClass: "rate_limit", message: "请求过于频繁，请稍后重试" });
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("请求过于频繁"));
 
-    // 点重试会重新发起 stream(再次出现 streaming 占位)
     fireEvent.click(screen.getByTestId("btn-retry"));
     expect(screen.getByTestId("streaming-placeholder")).toBeInTheDocument();
   });
 
-  it("Ctrl+Enter 发送", () => {
+  it("Ctrl+Enter sends the message", async () => {
     const m = makeManualStream();
-    renderPane(m.streamFn);
+    await renderPane(m.streamFn);
     const input = screen.getByTestId("composer-input");
-    fireEvent.change(input, { target: { value: "测试消息" } });
+    fireEvent.change(input, { target: { value: "娴嬭瘯娑堟伅" } });
     fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
-    expect(screen.getByText("测试消息")).toBeInTheDocument();
+    expect(screen.getByText("娴嬭瘯娑堟伅")).toBeInTheDocument();
     expect(screen.getByTestId("streaming-placeholder")).toBeInTheDocument();
   });
 
-  it("流式中按 Esc 取消:已收到的部分固化", async () => {
+  it("Escape cancels and preserves received assistant text", async () => {
     const m = makeManualStream();
-    renderPane(m.streamFn);
-    sendMessage("长文");
-    m.push({ type: "text_delta", delta: "已写的部分" });
+    await renderPane(m.streamFn);
+    sendMessage("闀挎枃");
+    m.push({ type: "main_output", reply: "已写的部分" });
 
     fireEvent.keyDown(screen.getByTestId("composer-input"), { key: "Escape" });
     expect(m.cancelSpy).toHaveBeenCalled();
-    await waitFor(() => {
-      expect(screen.queryByTestId("streaming-message")).not.toBeInTheDocument();
-    });
+    await waitFor(() => expect(screen.queryByTestId("streaming-message")).not.toBeInTheDocument());
     expect(screen.getByText("已写的部分")).toBeInTheDocument();
   });
 
-  it("流式中发送按钮禁用", () => {
+  it("disables send while streaming", async () => {
     const m = makeManualStream();
-    renderPane(m.streamFn);
+    await renderPane(m.streamFn);
     sendMessage("第一条");
     const input = screen.getByTestId("composer-input");
     fireEvent.change(input, { target: { value: "第二条" } });
     expect(screen.getByTestId("btn-send")).toBeDisabled();
   });
 
-  it("写作流程显示完整阶段进度,不显示正文内容", async () => {
+  it("active audit sends a structured asset_audit run without exposing raw prompt as the visible message", async () => {
     const m = makeManualStream();
-    renderPane(m.streamFn);
-    sendMessage("写下一章");
+    await renderPane(m.streamFn);
 
-    m.push({ type: "tool_call_start", toolName: "chapter_write", args: {} });
-    m.push({ type: "text_delta", delta: "不应该出现在左侧的正文" });
-    m.push({ type: "tool_call_end", toolName: "chapter_write", result: { wordCount: 12 } });
-    m.push({ type: "tool_call_end", toolName: "chapter_audit", result: { verdict: "ok" } });
+    fireEvent.click(screen.getByTestId("btn-asset-audit"));
+    fireEvent.click(screen.getByTestId("asset-audit-option-characters"));
 
-    expect(screen.getByTestId("workflow-progress")).toHaveTextContent("写正文");
-    expect(screen.getByTestId("workflow-progress")).toHaveTextContent("审查");
-    expect(screen.getByTestId("workflow-progress")).toHaveTextContent("硬事实检查");
-    expect(screen.queryByText("不应该出现在左侧的正文")).not.toBeInTheDocument();
-
-    m.push({ type: "done" });
-    await waitFor(() => expect(screen.queryByTestId("streaming-message")).not.toBeInTheDocument());
-    expect(screen.queryByText("不应该出现在左侧的正文")).not.toBeInTheDocument();
+    expect(screen.getByText("已触发主动审查：角色")).toBeInTheDocument();
+    expect(screen.queryByText(/必须读取已有相关资产/)).not.toBeInTheDocument();
   });
 });
+
+
+
+

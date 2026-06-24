@@ -209,7 +209,7 @@ describe("POST /api/books/:bookId/onboard/skip", () => {
 });
 
 describe("POST /api/books/:bookId/onboard", () => {
-  it("空 message 返回 400", async () => {
+  it("removed legacy onboard route returns 410 for existing books", async () => {
     const create = await app.request("/api/books", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -219,90 +219,18 @@ describe("POST /api/books/:bookId/onboard", () => {
     const res = await app.request(`/api/books/${id}/onboard`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ message: "hello" }),
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(410);
+    expect(await res.json()).toMatchObject({ error: "legacy_onboard_route_removed" });
   });
 
-  it("无 model 注入返回 503", async () => {
-    const create = await app.request("/api/books", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "x" }),
-    });
-    const { id } = await json<BookCreated>(create);
-    const res = await app.request(`/api/books/${id}/onboard`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "你好" }),
-    });
-    expect(res.status).toBe(503);
-  });
-
-  it("书不存在返回 404", async () => {
+  it("returns 404 when the book does not exist", async () => {
     const res = await app.request("/api/books/no-id/onboard", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: "x" }),
     });
     expect(res.status).toBe(404);
-  });
-
-  it("注入 stub model + 真实 toolDeps:SSE 流通,DB 落到 SQLite", async () => {
-    let turn = 0;
-    const stubModel = {
-      specificationVersion: "v1" as const,
-      provider: "stub",
-      modelId: "stub",
-      async doGenerate() { throw new Error("not used"); },
-      async doStream() {
-        const t = turn++;
-        return {
-          stream: new ReadableStream({
-            start(ctrl) {
-              if (t === 0) {
-                ctrl.enqueue({
-                  type: "tool-call",
-                  toolCallType: "function",
-                  toolCallId: "tc1",
-                  toolName: "set_book_meta",
-                  args: JSON.stringify({ genre: "仙侠" }),
-                });
-                ctrl.enqueue({ type: "finish", finishReason: "tool-calls", usage: { promptTokens: 10, completionTokens: 5 } });
-              } else {
-                ctrl.enqueue({ type: "text-delta", textDelta: "题材是仙侠,主角叫什么?" });
-                ctrl.enqueue({ type: "finish", finishReason: "stop", usage: { promptTokens: 30, completionTokens: 10 } });
-              }
-              ctrl.close();
-            },
-          }),
-          rawCall: { rawPrompt: null, rawSettings: {} },
-        };
-      },
-    };
-    const appWithModel = createApp({ bookRegistry: registry, getModel: () => stubModel as never });
-    const create = await appWithModel.request("/api/books", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "x" }),
-    });
-    const { id } = await json<BookCreated>(create);
-    const res = await appWithModel.request(`/api/books/${id}/onboard`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "我想写仙侠" }),
-    });
-    expect(res.status).toBe(200);
-    expect(res.headers.get("Content-Type")).toContain("text/event-stream");
-    const text = await new Response(res.body).text();
-    expect(text).toContain("event: workflow_mode");
-    expect(text).toContain("event: execution_step");
-    expect(text).toContain("event: acceptance_report");
-    expect(text).toContain("event: tool_call_start");
-    expect(text).toContain("event: text_delta");
-    expect(text).toContain("event: done");
-    expect(text).toContain("题材是仙侠");
-    const handle = registry.open(id);
-    expect(handle.bookMetaRepo.get("genre")).toBe("仙侠");
   });
 });

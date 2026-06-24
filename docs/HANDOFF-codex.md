@@ -1,6 +1,110 @@
 # Scribe Handoff
 
-Last updated: 2026-06-22 01:10 Asia/Shanghai
+Last updated: 2026-06-25 03:30 Asia/Shanghai
+
+## 2026-06-25 Current State
+
+This file supersedes the older workflow notes below where they describe `/conversation`, `/auto`, `/onboard`, chapter draft/finalize, or worldbook chat as executable AI routes. The current implementation direction is the unified Agent workflow:
+
+```text
+user visible request
+  -> POST /api/books/:bookId/agent/run
+  -> main agent classifies intent and writes hidden draft/proposals
+  -> executor turns the contract into staged changes
+  -> validator checks chapter/asset changes before commit
+  -> optional repair or user confirmation
+  -> workflow-staging commit
+  -> visible chat only stores user-visible messages and summaries
+```
+
+Current production rules:
+
+- The only executable AI entrypoint is `/api/books/:bookId/agent/run`.
+- `/api/books/:bookId/conversation` is history-only; POST returns 410.
+- `/auto`, chapter write/draft/finalize, revise/apply, worldbook chat, and onboard AI routes are removed or wrappers/410, not separate agent systems.
+- Generated chapter prose must stay hidden from normal chat unless it is an explicit revision preview.
+- Writes are staged first and only committed after validation and execution policy checks.
+- `done.committed === true` is the only front-end signal that should refresh chapter/editor data.
+
+## 2026-06-25 Fix Summary
+
+### Workflow consolidation
+
+- Removed old production orchestrator files for auto/chat/new-book/record-state/revise/write/worldbook execution paths.
+- Added guard tests to prevent legacy production imports and legacy trigger reintroduction.
+- Routed chat/editor/onboard/active audit style flows through the unified Agent request contract.
+- Kept legacy routes as 410 or non-AI status/manual CRUD endpoints where needed.
+
+### Conversation isolation and persistence
+
+- Conversation history is book-scoped.
+- Added a conversation message service so visible chat, progress summaries, hidden prompts/drafts, and manual asset notices can be separated by kind.
+- Active audit prompts should not be saved as ordinary chat text; the visible record is only that an audit was triggered with its scope.
+
+### Main agent
+
+- `main-agent.ts` no longer uses regex or keyword shortcuts to trigger writing.
+- It asks the configured model for a structured JSON decision.
+- Non-structured or invalid model output falls back to `query_only`.
+- It now supports `assetChanges` for structured character/outline/worldbook updates, so the executor does not lose model-provided content.
+
+### Executor
+
+- `executor-agent.ts` supports:
+  - `write_chapter`
+  - `update_character`
+  - `update_outline`
+  - `update_worldbook`
+  - `asset_audit`
+- Structured `assetChanges` are preferred over bare `affectedEntities`.
+- Outline/worldbook changes can now carry explicit summaries/content/keys instead of becoming empty title-only writes.
+
+### Validator
+
+- `validator-agent.ts` now validates more than shape:
+  - requested chapter number must match the staged chapter number;
+  - chapter content shorter than 100 chars is repairable;
+  - chapter endings like `未完待续`, `下一章再展开`, `且听下回`, `to be continued` are blocked;
+  - if the user or acceptance criteria require first person, the chapter must visibly use first-person narration;
+  - empty acceptance criteria are blocked;
+  - outline/worldbook/audit mutation shapes are checked before commit.
+- Critical validation failures are not auto-repaired or committed.
+
+### UI behavior
+
+- Conversation pane shows workflow progress from canonical Agent events.
+- Pending low-risk writes show confirmation instead of endlessly rerunning the prompt.
+- Approving a run commits the paused staged changes via `/agent/runs/:runId/approve`.
+- Client tests were cleaned so full client vitest no longer emits visible React `act(...)` warnings.
+
+### Verification on 2026-06-25
+
+```powershell
+pnpm --filter @scribe/server typecheck
+pnpm --filter @scribe/client typecheck
+pnpm --filter @scribe/shared typecheck
+pnpm --filter @scribe/server exec vitest run
+pnpm --filter @scribe/client exec vitest run
+pnpm --filter @scribe/shared exec vitest run
+```
+
+Observed result:
+
+```text
+server typecheck: passed
+client typecheck: passed
+shared typecheck: passed
+server tests: 103 files / 578 tests passed
+client tests: 25 files / 122 tests passed
+shared tests: 5 files / 48 tests passed
+```
+
+## Remaining Risks After 2026-06-25
+
+- Validator quality is stronger but still mostly deterministic. A future validation agent should read the same writing context bundle as the main agent and judge outline adherence, style reference adherence, continuity, chapter length targets, and user acceptance criteria with model assistance.
+- Full long-context writing memory is still the next major product need: recent full chapters, mid-range summaries, older global summary, target chapter outline, style reference, and book rules should be packaged as one canonical `WritingContextBundle`.
+- The LLM usage gateway exists but phase-level attribution should continue to be tightened so users can see exactly which phase spent tokens.
+- Some historical docs still mention obsolete routes. Treat this `HANDOFF-codex.md` and `docs/TASKS-2026-06-24-FLOW-CONSOLIDATION.md` as the current handoff baseline.
 
 ## Project
 

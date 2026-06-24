@@ -1,137 +1,148 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { AcceptanceReport, ExecutionStep } from "@scribe/shared";
 import { t } from "../i18n/zh-CN.js";
 import { startSseStream, type SseStreamHandle } from "../api/streaming.js";
 
-interface Msg { role: "user" | "assistant" | "system"; content: string }
-interface ToolChip { id: number; toolName: string; done: boolean }
+interface Msg {
+  role: "user" | "assistant" | "system";
+  content: string;
+}
+
+interface AgentStage {
+  id: string;
+  label: string;
+  status: "active" | "done" | "error";
+}
 
 const INTRO =
-  "我们用对话把这本书的底子搭起来吧。你可以直接说想写什么——题材、主角、大概的故事走向都行,想到哪说到哪。我会一边聊一边把设定记到右边的资料库里。";
+  "我们用对话把这本书的底子搭起来吧。您可以直接说想写什么，题材、主角、大概的故事走向都行。小克会通过统一工作流整理设定，并把需要落库的变更交给执行与验收流程。";
+
+const PHASE_LABELS: Record<string, string> = {
+  thinking: "理解需求",
+  executing: "整理设定",
+  validating: "验收变更",
+  waiting_user: "等待确认",
+  repairing: "修复问题",
+  completed: "完成",
+};
 
 export function OnboardPage() {
   const { bookId = "" } = useParams();
   const navigate = useNavigate();
   const [messages, setMessages] = useState<Msg[]>([{ role: "system", content: INTRO }]);
   const [streamingText, setStreamingText] = useState("");
-  const [tools, setTools] = useState<ToolChip[]>([]);
-  const [workflowSteps, setWorkflowSteps] = useState<ExecutionStep[]>([]);
-  const [acceptanceReport, setAcceptanceReport] = useState<AcceptanceReport | null>(null);
+  const [stages, setStages] = useState<AgentStage[]>([]);
+  const [validation, setValidation] = useState<string | null>(null);
   const [status, setStatus] = useState<{ ok: boolean; missing: string[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const handleRef = useRef<SseStreamHandle | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const toolSeq = useRef(0);
 
   const refreshStatus = useCallback(async () => {
     try {
       const res = await fetch(`/api/books/${encodeURIComponent(bookId)}/onboard-status`);
       if (res.ok) setStatus(await res.json());
-    } catch { /* 忽略 */ }
+    } catch {
+      // Status is advisory; the chat can still proceed.
+    }
   }, [bookId]);
 
-  useEffect(() => { void refreshStatus(); }, [refreshStatus]);
+  useEffect(() => {
+    void refreshStatus();
+  }, [refreshStatus]);
+
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, streamingText, tools]);
+  }, [messages, streamingText, stages]);
+
+  useEffect(() => () => handleRef.current?.cancel(), []);
+
+  const markStage = useCallback((phase: string) => {
+    setStages((prev) => {
+      const label = PHASE_LABELS[phase] ?? phase;
+      const next = prev.map((item) => item.status === "active" ? { ...item, status: "done" as const } : item);
+      const existingIndex = next.findIndex((item) => item.id === phase);
+      if (existingIndex >= 0) {
+        return next.map((item) => item.id === phase ? { ...item, label, status: "active" as const } : item);
+      }
+      return [...next, { id: phase, label, status: "active" }];
+    });
+  }, []);
+
+  const finishRun = useCallback((buf: string) => {
+    if (buf.trim()) {
+      setMessages((prev) => [...prev, { role: "assistant", content: buf }]);
+    }
+    setStreamingText("");
+    setBusy(false);
+    handleRef.current = null;
+    setStages((prev) => prev.map((item) => item.status === "active" ? { ...item, status: "done" } : item));
+    void refreshStatus();
+  }, [refreshStatus]);
 
   const send = useCallback((text: string) => {
     const content = text.trim();
     if (!content || busy) return;
+
     setError(null);
-    // 仅把真实对话(user/assistant)作为 history 传给后端
-    const history = messages
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({ role: m.role, content: m.content }));
     setMessages((prev) => [...prev, { role: "user", content }]);
     setStreamingText("");
-    setTools([]);
-    setWorkflowSteps([]);
-    setAcceptanceReport(null);
+    setStages([]);
+    setValidation(null);
     setBusy(true);
 
     let buf = "";
     handleRef.current = startSseStream({
-      url: `/api/books/${encodeURIComponent(bookId)}/onboard`,
-      body: { message: content, history, executionMode: "trusted_auto" },
+      url: `/api/books/${encodeURIComponent(bookId)}/agent/run`,
+      body: {
+        message: content,
+        source: "onboard",
+        executionMode: "trusted_auto",
+      },
       onEvent: (ev) => {
         switch (ev.type) {
-          case "text_delta":
-            buf += String(ev.delta ?? "");
-            setStreamingText(buf);
+          case "agent_phase":
+            markStage(String(ev.phase ?? ""));
             break;
-          case "tool_call_start":
-            toolSeq.current += 1;
-            setTools((prev) => [...prev, { id: toolSeq.current, toolName: String(ev.toolName ?? ""), done: false }]);
+          case "main_output": {
+            const reply = String(ev.reply ?? "");
+            if (reply) {
+              buf = reply;
+              setStreamingText(reply);
+            }
             break;
-          case "tool_call_end":
-            setTools((prev) => {
-              const i = [...prev].reverse().find((x) => x.toolName === String(ev.toolName ?? "") && !x.done);
-              return prev.map((x) => (i && x.id === i.id ? { ...x, done: true } : x));
-            });
+          }
+          case "validation_report":
+            setValidation(`验收:${String(ev.verdict ?? "unknown")}`);
             break;
-          case "execution_step":
-            setWorkflowSteps((prev) => {
-              const step = ev.step as ExecutionStep;
-              const index = prev.findIndex((item) => item.id === step.id);
-              return index >= 0
-                ? prev.map((item) => item.id === step.id ? step : item)
-                : [...prev, step];
-            });
-            break;
-          case "acceptance_report":
-            setAcceptanceReport(ev.report as AcceptanceReport);
+          case "repair_plan":
+            setValidation(String(ev.summary ?? "正在修复验收发现的问题"));
             break;
           case "done":
-            if (buf.trim()) setMessages((prev) => [...prev, { role: "assistant", content: buf }]);
-            setStreamingText("");
-            setBusy(false);
-            handleRef.current = null;
-            void refreshStatus();
+            finishRun(buf);
             break;
           case "error":
-            // 固化已收到的部分内容为一条消息,清空流式气泡,避免半截 bubble 滞留
             if (buf.trim()) setMessages((prev) => [...prev, { role: "assistant", content: buf }]);
             setStreamingText("");
             setError(String(ev.message ?? t.errors.unknown));
             setBusy(false);
             handleRef.current = null;
+            setStages((prev) => prev.map((item) => item.status === "active" ? { ...item, status: "error" } : item));
             break;
           default:
             break;
         }
       },
     });
-  }, [bookId, busy, messages, refreshStatus]);
+  }, [bookId, busy, finishRun, markStage]);
 
   const skip = useCallback(async () => {
     await fetch(`/api/books/${encodeURIComponent(bookId)}/onboard/skip`, { method: "POST" }).catch(() => {});
     navigate(`/books/${encodeURIComponent(bookId)}`);
   }, [bookId, navigate]);
-
-  const toolLabel = (name: string) => {
-    const map: Record<string, string> = {
-      set_book_meta: "记录书籍设定",
-      create_character: "创建角色",
-      update_character: "更新角色",
-      create_outline_node: "添加大纲",
-      update_outline_node: "更新大纲",
-      set_rules_md: "更新写作规则",
-      create_record_collection: "创建记录集合",
-      update_record_collection_schema: "调整记录结构",
-      upsert_record_item: "写入记录条目",
-      link_record_items: "链接记录关系",
-      create_genre_section: "创建记录集合",
-      add_genre_section_item: "写入记录条目",
-      update_genre_section_schema: "调整记录结构",
-      upsert_genre_section_item: "写入记录条目",
-    };
-    return map[name] ?? name;
-  };
 
   return (
     <main data-testid="page-onboard" style={{ display: "flex", flexDirection: "column", height: "100vh", maxWidth: 760, margin: "0 auto" }}>
@@ -145,19 +156,26 @@ export function OnboardPage() {
         <div
           data-testid="onboard-status"
           style={{
-            padding: "8px 16px", fontSize: 13,
+            padding: "8px 16px",
+            fontSize: 13,
             background: status.ok ? "#e8f7ec" : "#fff7e6",
             borderBottom: "1px solid var(--ios-separator, #e5e5e5)",
-            display: "flex", alignItems: "center", justifyContent: "space-between",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
           }}
         >
           <span>
-            {status.ok ? "✅ 基础设定齐了,可以开始写第一章" : `还差:${status.missing.join("、") || "—"}`}
+            {status.ok ? "基础设定已齐，可以开始写第一章" : `还差:${status.missing.join("、") || "无"}`}
           </span>
           {status.ok && (
-            <button className="ios-btn-primary" data-testid="onboard-start" style={{ padding: "4px 14px", fontSize: 13 }}
-              onClick={() => navigate(`/books/${encodeURIComponent(bookId)}`)}>
-              进入工作台 ›
+            <button
+              className="ios-btn-primary"
+              data-testid="onboard-start"
+              style={{ padding: "4px 14px", fontSize: 13 }}
+              onClick={() => navigate(`/books/${encodeURIComponent(bookId)}`)}
+            >
+              进入工作台
             </button>
           )}
         </div>
@@ -166,50 +184,55 @@ export function OnboardPage() {
       <div ref={scrollRef} style={{ flex: 1, overflow: "auto", padding: 16 }}>
         {messages.map((m, i) => (
           <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start", marginBottom: 10 }}>
-            <div className={m.role === "user" ? "bubble bubble-user" : "bubble bubble-assistant"}
+            <div
+              className={m.role === "user" ? "bubble bubble-user" : "bubble bubble-assistant"}
               style={{
-                maxWidth: "78%", padding: "9px 13px", borderRadius: 16, whiteSpace: "pre-wrap", lineHeight: 1.5,
+                maxWidth: "78%",
+                padding: "9px 13px",
+                borderRadius: 16,
+                whiteSpace: "pre-wrap",
+                lineHeight: 1.5,
                 background: m.role === "user" ? "var(--ios-blue, #007AFF)" : m.role === "system" ? "#f0f0f3" : "#fff",
                 color: m.role === "user" ? "#fff" : "#1c1c1e",
                 border: m.role === "assistant" ? "1px solid #ececf0" : "none",
                 fontSize: m.role === "system" ? 13 : 15,
-              }}>
+              }}
+            >
               {m.content}
             </div>
           </div>
         ))}
-        {tools.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "4px 0 10px" }}>
-            {tools.map((tc) => (
-              <span key={tc.id} data-testid="onboard-tool-chip" style={{
-                fontSize: 12, padding: "3px 9px", borderRadius: 12,
-                background: tc.done ? "#e8f7ec" : "#eef1ff", color: "#444",
-                display: "inline-flex", alignItems: "center", gap: 5,
-              }}>
-                {tc.done ? <span style={{ color: "#34a853" }}>✓</span> : <span className="chip-spinner" aria-hidden />}
-                {toolLabel(tc.toolName)}
+
+        {stages.length > 0 && (
+          <div data-testid="onboard-workflow" style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "4px 0 10px" }}>
+            {stages.map((stage) => (
+              <span
+                key={stage.id}
+                data-testid={`onboard-workflow-step-${stage.id}`}
+                style={{
+                  fontSize: 12,
+                  padding: "3px 9px",
+                  borderRadius: 12,
+                  background: stage.status === "done" ? "#e8f7ec" : stage.status === "error" ? "#fff2f0" : "#eef1ff",
+                  color: "#444",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                }}
+              >
+                {stage.status === "done" ? "✓" : stage.status === "error" ? "×" : <span className="chip-spinner" aria-hidden />}
+                {stage.label}
               </span>
             ))}
           </div>
         )}
-        {workflowSteps.length > 0 && (
-          <div data-testid="onboard-workflow" style={{ display: "grid", gap: 6, margin: "4px 0 10px", fontSize: 12.5, color: "#445" }}>
-            {workflowSteps.map((step) => (
-              <div key={step.id} data-testid={`onboard-workflow-step-${step.id}`} style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span style={{ width: 14, textAlign: "center" }}>
-                  {step.status === "succeeded" ? "✓" : step.status === "failed" ? "×" : "◐"}
-                </span>
-                <span>{toolLabel(step.actionType)}</span>
-                {step.verification?.detail ? <span style={{ color: "#778" }}>{step.verification.detail}</span> : null}
-              </div>
-            ))}
+
+        {validation && (
+          <div data-testid="onboard-validation" style={{ fontSize: 12.5, color: "#445", margin: "4px 0 10px" }}>
+            {validation}
           </div>
         )}
-        {acceptanceReport && (
-          <div data-testid="onboard-acceptance" style={{ fontSize: 12.5, color: "#445", margin: "4px 0 10px" }}>
-            验收: {acceptanceReport.verdict}
-          </div>
-        )}
+
         {streamingText && (
           <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 10 }}>
             <div className="bubble bubble-assistant" style={{ maxWidth: "78%", padding: "9px 13px", borderRadius: 16, whiteSpace: "pre-wrap", lineHeight: 1.5, background: "#fff", border: "1px solid #ececf0", fontSize: 15 }}>
@@ -218,11 +241,12 @@ export function OnboardPage() {
             </div>
           </div>
         )}
+
         {busy && !streamingText && (
           <div data-testid="onboard-thinking" style={{ display: "flex", justifyContent: "flex-start", marginBottom: 10 }}>
             <div className="bubble bubble-assistant" style={{ padding: "11px 14px", borderRadius: 16, background: "#fff", border: "1px solid #ececf0", display: "flex", alignItems: "center", gap: 9 }}>
               <span className="typing-dots" aria-hidden><span /><span /><span /></span>
-              <span style={{ fontSize: 13, color: "#8a8a8e" }}>AI 正在思考…</span>
+              <span style={{ fontSize: 13, color: "#8a8a8e" }}>AI 正在思考</span>
             </div>
           </div>
         )}
@@ -239,7 +263,7 @@ export function OnboardPage() {
           data-testid="onboard-input"
           value={input}
           rows={2}
-          placeholder="说说你想写的故事…(Ctrl/⌘ + Enter 发送)"
+          placeholder="说说您想写的故事… Ctrl/⌘ + Enter 发送"
           style={{ width: "100%", resize: "vertical", padding: 8, borderRadius: 8, border: "1px solid #d0d0d0", fontSize: 15 }}
           disabled={busy}
           onChange={(e) => setInput(e.target.value)}
@@ -252,8 +276,15 @@ export function OnboardPage() {
           }}
         />
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
-          <button className="ios-btn-primary" data-testid="onboard-send" disabled={busy || !input.trim()}
-            onClick={() => { send(input); setInput(""); }}>
+          <button
+            className="ios-btn-primary"
+            data-testid="onboard-send"
+            disabled={busy || !input.trim()}
+            onClick={() => {
+              send(input);
+              setInput("");
+            }}
+          >
             {busy ? t.app.loading : t.conversation.sendButton}
           </button>
         </div>

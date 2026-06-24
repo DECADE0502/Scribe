@@ -21,11 +21,11 @@ const ch1 = { chapterNo: 1, title: "第一章", content: "# 第一章\n\n正文�
 const ch2 = { chapterNo: 2, title: "第二章", content: "第二章内容。", wordCount: 5 };
 
 describe("EditorPane", () => {
-  it("无章节:显示空状态引导(含 /write 提示)", async () => {
+  it("无章节:显示自然语言写作引导", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ chapters: [] }));
     render(<EditorPane bookId="b1" />);
     await waitFor(() => expect(screen.getByTestId("editor-empty")).toBeInTheDocument());
-    expect(screen.getByText(/\/write/)).toBeInTheDocument();
+    expect(screen.getByText(/自然语言请求|第一章/)).toBeInTheDocument();
     expect(screen.getByTestId("chapter-new")).toBeInTheDocument();
   });
 
@@ -93,13 +93,13 @@ describe("EditorPane", () => {
     await waitFor(() => expect(screen.getByTestId("version-history")).toBeInTheDocument());
   });
 
-  it("重写当前章调用当前章节 write-draft,不新开下一章", async () => {
+  it("重写当前章通过 agent/run 提交当前章节目标,不新开下一章", async () => {
     const calls: Array<[string, RequestInit | undefined]> = [];
     vi.spyOn(window, "prompt").mockReturnValue("重写这一章");
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       calls.push([String(url), init]);
       const u = String(url);
-      if (init?.method === "POST" && u.includes("/write-draft")) {
+      if (init?.method === "POST" && u.includes("/agent/run")) {
         return {
           ok: true,
           body: new ReadableStream({ start(ctrl) { ctrl.close(); } }),
@@ -118,9 +118,111 @@ describe("EditorPane", () => {
     fireEvent.click(screen.getByTestId("btn-rewrite-current"));
 
     await waitFor(() => {
-      const writeDraft = calls.find(([url, init]) => init?.method === "POST" && url.includes("/write-draft"));
-      expect(writeDraft).toBeTruthy();
-      expect(writeDraft![0]).toContain("/chapters/1/write-draft");
+      const agentRun = calls.find(([url, init]) => init?.method === "POST" && url.includes("/agent/run"));
+      expect(agentRun).toBeTruthy();
+      expect(agentRun![0]).toContain("/books/b1/agent/run");
+      expect(JSON.parse(String(agentRun![1]?.body))).toMatchObject({
+        source: "editor",
+        target: { chapterNo: 1, mode: "rewrite" },
+      });
+    });
+  });
+
+  it("does not expose legacy draft/finalize editor controls", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      const u = String(url);
+      if (u.endsWith("/chapters")) return jsonResponse({ chapters: [ch1] });
+      if (u.endsWith("/chapters/1")) return jsonResponse(ch1);
+      return jsonResponse({}, 404);
+    });
+
+    render(<EditorPane bookId="b1" />);
+
+    await waitFor(() => screen.getByTestId("chapter-tab-1"));
+    expect(screen.queryByTestId("btn-write-draft")).toBeNull();
+    expect(screen.queryByTestId("btn-finalize")).toBeNull();
+    expect(screen.getByTestId("btn-write-next")).toBeInTheDocument();
+  });
+
+  it("does not refresh chapters when agent run finishes without commit", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("rewrite current chapter");
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (init?.method === "POST" && u.includes("/agent/run")) {
+        const payload = `event: done\ndata: ${JSON.stringify({ type: "done", committed: false, needsUserDecision: true, runId: "r1" })}\n\n`;
+        return {
+          ok: true,
+          body: new ReadableStream({
+            start(ctrl) {
+              ctrl.enqueue(new TextEncoder().encode(payload));
+              ctrl.close();
+            },
+          }),
+        } as Response;
+      }
+      if (u.endsWith("/chapters")) return jsonResponse({ chapters: [ch1, ch2] });
+      if (u.endsWith("/chapters/2")) return jsonResponse(ch2);
+      if (u.endsWith("/chapters/1")) return jsonResponse(ch1);
+      return jsonResponse({}, 404);
+    });
+
+    render(<EditorPane bookId="b1" />);
+    await waitFor(() => screen.getByTestId("chapter-tab-2"));
+    fetchMock.mockClear();
+
+    fireEvent.click(screen.getByTestId("btn-rewrite-current"));
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        init?.method === "POST" && String(url).includes("/agent/run")
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      init?.method !== "POST" && String(url).endsWith("/chapters")
+    ))).toBe(false);
+  });
+
+  it("shows an editor confirmation bar and commits the pending agent run", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("write next chapter");
+    const calls: Array<[string, RequestInit | undefined]> = [];
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      calls.push([String(url), init]);
+      const u = String(url);
+      if (init?.method === "POST" && u.includes("/agent/run")) {
+        const payload = `event: done\ndata: ${JSON.stringify({ type: "done", committed: false, needsUserDecision: true, runId: "run-1" })}\n\n`;
+        return {
+          ok: true,
+          body: new ReadableStream({
+            start(ctrl) {
+              ctrl.enqueue(new TextEncoder().encode(payload));
+              ctrl.close();
+            },
+          }),
+        } as Response;
+      }
+      if (init?.method === "POST" && u.includes("/agent/runs/run-1/approve")) {
+        return jsonResponse({ ok: true, committed: 1 });
+      }
+      if (u.endsWith("/chapters")) return jsonResponse({ chapters: [ch1, ch2] });
+      if (u.endsWith("/chapters/2")) return jsonResponse(ch2);
+      if (u.endsWith("/chapters/1")) return jsonResponse(ch1);
+      return jsonResponse({}, 404);
+    });
+
+    render(<EditorPane bookId="b1" />);
+    await waitFor(() => screen.getByTestId("chapter-tab-2"));
+
+    fireEvent.click(screen.getByTestId("btn-write-next"));
+
+    await waitFor(() => expect(screen.getByTestId("editor-pending-run")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("editor-approve-run"));
+
+    await waitFor(() => {
+      expect(calls.some(([url, init]) => (
+        init?.method === "POST" && url.includes("/agent/runs/run-1/approve")
+      ))).toBe(true);
     });
   });
 });
+
+

@@ -17,12 +17,12 @@ export async function runRepair(
     .filter((issue) => issue.suggestedAction === "repair");
 
   if (repairable.length === 0) {
-    return { repairedPlan: plan, summary: "无需修复(无选中 repair 条目)" };
+    return { repairedPlan: plan, summary: "无需修复，没有选中的 repair 条目" };
   }
 
   const issueMsgs = repairable.map((i) => i.message).join("; ");
   return {
-    repairedPlan: { ...plan, summary: `修复:${issueMsgs}` },
-    summary: `修复了 ${repairable.length} 个问题:${issueMsgs}`,
+    repairedPlan: { ...plan, summary: `修复: ${issueMsgs}` },
+    summary: `修复了 ${repairable.length} 个问题: ${issueMsgs}`,
   };
 }

@@ -2,7 +2,7 @@ import type { ExecutionMode } from "@scribe/shared";
 import { useConversationStore } from "../../stores/conversation.js";
 
 const LABELS: Record<ExecutionMode, string> = {
-  trusted_auto: "全权交给",
+  trusted_auto: "全权交给 AI",
   low_risk_auto: "低风险自动",
   confirm_each: "每次确认",
   plan_only: "只出方案",

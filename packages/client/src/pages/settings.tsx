@@ -546,7 +546,7 @@ export function SettingsPage() {
         </div>
       </div>
       <p className="settings-caption" style={{ marginTop: -14, marginBottom: 24 }}>
-        自动写作(/auto N)启动前会按此上限做预算预检。
+        自动写作启动前会按此上限做预算预检。
       </p>
 
       <button className="ios-btn-primary" data-testid="settings-save" onClick={() => void save()} disabled={saving} style={{ width: "100%", padding: "11px 0", fontSize: 15 }}>

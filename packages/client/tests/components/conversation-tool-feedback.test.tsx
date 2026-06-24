@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
 import { ConversationPane, type StreamFn } from "../../src/components/conversation/conversation-pane.js";
 import { useConversationStore } from "../../src/stores/conversation.js";
 
@@ -20,23 +20,20 @@ function makeManualStream() {
 }
 
 async function renderPane(streamFn: StreamFn) {
-  await act(async () => {
-    render(<ConversationPane bookId="b1" streamFn={streamFn} />);
-  });
+  render(<ConversationPane bookId="b1" streamFn={streamFn} />);
+  await waitFor(() => expect(fetch).toHaveBeenCalled());
 }
 
 function sendMessage(text: string) {
-  act(() => {
-    fireEvent.change(screen.getByTestId("composer-input"), { target: { value: text } });
-    fireEvent.click(screen.getByTestId("btn-send"));
-  });
+  fireEvent.change(screen.getByTestId("composer-input"), { target: { value: text } });
+  fireEvent.click(screen.getByTestId("btn-send"));
 }
 
 beforeEach(() => {
   useConversationStore.getState().reset();
   vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({
     ok: true,
-    json: async () => ({ messages: [] }),
+    json: async () => ({ messages: [], ok: true }),
   } as Response)));
 });
 
@@ -44,8 +41,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("ConversationPane tool feedback", () => {
-  it("shows deterministic feedback and refreshes side data after successful book tool mutations", async () => {
+describe("ConversationPane legacy tool events", () => {
+  it("does not render deterministic mutation feedback from legacy tool_call_end events", async () => {
     const m = makeManualStream();
     await renderPane(m.streamFn);
     sendMessage("add outline");
@@ -57,11 +54,11 @@ describe("ConversationPane tool feedback", () => {
       result: { created: true, id: "o1", title: "Chapter 2" },
     });
 
-    expect(screen.getByText("已添加大纲节点：Chapter 2")).toBeInTheDocument();
-    expect(useConversationStore.getState().libraryRefreshTrigger).toBe(before + 1);
+    expect(screen.queryByText("已添加大纲节点:Chapter 2")).not.toBeInTheDocument();
+    expect(useConversationStore.getState().libraryRefreshTrigger).toBe(before);
   });
 
-  it("shows tool failures instead of letting the model claim success silently", async () => {
+  it("ignores legacy tool failures because validation_report/error must carry failures now", async () => {
     const m = makeManualStream();
     await renderPane(m.streamFn);
     sendMessage("add outline");
@@ -72,6 +69,6 @@ describe("ConversationPane tool feedback", () => {
       result: { success: false, error: "parentId is required" },
     });
 
-    expect(screen.getByText("工具添加大纲节点失败：parentId is required")).toBeInTheDocument();
+    expect(screen.queryByText(/parentId is required/)).not.toBeInTheDocument();
   });
 });

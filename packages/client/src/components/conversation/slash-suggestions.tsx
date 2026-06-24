@@ -1,15 +1,15 @@
 import { useEffect, useState } from "react";
-import { matchSlashCommands, SLASH_COMMANDS } from "@scribe/shared";
+import { matchSlashSuggestions, SLASH_SUGGESTIONS } from "@scribe/shared";
 
 export interface SlashSuggestionsProps {
   input: string;
   visible: boolean;
-  onPick: (alias: string) => void;
+  onPick: (insertText: string) => void;
   onClose: () => void;
 }
 
 export function SlashSuggestions(props: SlashSuggestionsProps) {
-  const matches = props.visible ? matchSlashCommands(props.input) : [];
+  const matches = props.visible ? matchSlashSuggestions(props.input) : [];
   const [index, setIndex] = useState(0);
 
   useEffect(() => { setIndex(0); }, [props.input]);
@@ -26,7 +26,7 @@ export function SlashSuggestions(props: SlashSuggestionsProps) {
       } else if (e.key === "Tab" || e.key === "Enter") {
         e.preventDefault();
         const cmd = matches[index];
-        if (cmd) props.onPick(cmd.aliases[0]);
+        if (cmd) props.onPick(cmd.insertText);
       } else if (e.key === "Escape") {
         props.onClose();
       }
@@ -56,28 +56,30 @@ export function SlashSuggestions(props: SlashSuggestionsProps) {
         zIndex: 40,
       }}
     >
-      {matches.map((cmd, i) => (
-        <button
-          key={cmd.id}
-          data-testid={`slash-option-${cmd.id}`}
-          onClick={() => props.onPick(cmd.aliases[0])}
-          style={{
-            display: "flex",
-            width: "100%",
-            justifyContent: "space-between",
-            border: "none",
-            borderRadius: 0,
-            background: i === index ? "#eef4ff" : "transparent",
-            padding: "6px 10px",
-            textAlign: "left",
-          }}
-        >
-          <span style={{ fontFamily: "monospace" }}>{cmd.aliases.join(" ")}</span>
-          <span style={{ color: "#888", fontSize: 12 }}>{cmd.help}</span>
-        </button>
-      ))}
+      {matches.map((cmd, i) => {
+        const optionId = `option-${i}`;
+        return (
+          <button
+            key={cmd.label}
+            data-testid={`slash-${optionId}`}
+            onClick={() => props.onPick(cmd.insertText)}
+            style={{
+              display: "flex",
+              width: "100%",
+              justifyContent: "space-between",
+              border: "none",
+              borderRadius: 0,
+              background: i === index ? "#eef4ff" : "transparent",
+              padding: "6px 10px",
+              textAlign: "left",
+            }}
+          >
+            <span>{cmd.label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-export { SLASH_COMMANDS };
+export { SLASH_SUGGESTIONS };

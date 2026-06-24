@@ -41,7 +41,7 @@ export function buildWriteIntentContract(input: {
       "Do not claim completion before read-back verification",
     ],
     acceptanceCriteria: [
-      `There are ${count} successful chapter write steps`,
+      `There are ${count} successful chapter version steps`,
       "Read-back verifies every target chapter",
       "Workflow status remains visible",
       "No hidden draft prose is emitted as ordinary chat",
@@ -61,26 +61,13 @@ export function makeExecutionSteps(actions: IntendedAction[]): ExecutionStep[] {
 }
 
 export function makeWriteActions(chapterNos: number[]): IntendedAction[] {
-  const isBulkWrite = chapterNos.length > 1;
-  const type = isBulkWrite ? "multi_chapter_write" : "chapter_write";
-  const riskHint = isBulkWrite ? "bulk_write" : "write";
-
-  return chapterNos.flatMap(chapterNo => [
-    {
-      id: `write-chapter-${chapterNo}`,
-      type,
-      target: { chapterNo },
-      riskHint,
-      reason: `Persist chapter ${chapterNo}`,
-    },
-    {
-      id: `record-chapter-state-${chapterNo}`,
-      type: "record_chapter_state",
-      target: { chapterNo },
-      riskHint,
-      reason: `Record chapter ${chapterNo} state`,
-    },
-  ]);
+  return chapterNos.map(chapterNo => ({
+    id: `chapter-version-${chapterNo}`,
+    type: "chapter_version",
+    target: { chapterNo },
+    riskHint: "write",
+    reason: `Stage chapter ${chapterNo} version`,
+  }));
 }
 
 export function makeWritePolicy(input: {
@@ -131,7 +118,7 @@ export function makeAcceptanceReport(input: {
     recommendedActions: verdict === "fail"
       ? [{ type: "stop", reason: "workflow criteria failed" }]
       : verdict === "repairable"
-        ? [{ type: "auto_repair", reason: "requested chapter writes passed; follow-up workflow work failed" }]
+        ? [{ type: "auto_repair", reason: "requested chapter versions passed; follow-up workflow work failed" }]
         : [],
   };
 }
@@ -142,7 +129,7 @@ function evaluateUserCriterion(
   expectedWriteCount: number,
   expectedWriteTargets?: number[],
 ): CheckResult {
-  if (criterion.includes("successful chapter write steps")) {
+  if (criterion.includes("successful chapter version steps")) {
     const verifiedWriteCount = getVerifiedWriteSteps(trace).length;
     const countMatch = verifiedWriteCount === expectedWriteCount;
     const verifiedTargets = getVerifiedWriteTargets(trace, expectedWriteTargets);
@@ -155,8 +142,8 @@ function evaluateUserCriterion(
       status: passed ? "pass" : "fail",
       evidence:
         countMatch && expectedWriteTargets && !targetMatch
-          ? `Expected verified chapter write targets ${formatTargets(expectedWriteTargets)}, found ${formatTargets(verifiedTargets)}.`
-          : `Expected ${expectedWriteCount} verified chapter write steps, found ${verifiedWriteCount}.`,
+          ? `Expected verified chapter targets ${formatTargets(expectedWriteTargets)}, found ${formatTargets(verifiedTargets)}.`
+          : `Expected ${expectedWriteCount} verified chapter version steps, found ${verifiedWriteCount}.`,
     };
   }
 
@@ -216,7 +203,7 @@ function getActionChapterNo(action: IntendedAction): number | undefined {
 
 function getExpectedWriteCount(criteria: string[]): number | undefined {
   for (const criterion of criteria) {
-    const match = criterion.match(/There are (\d+) successful chapter write steps/);
+    const match = criterion.match(/There are (\d+) successful chapter version steps/);
     if (match) {
       return Number(match[1]);
     }
@@ -247,7 +234,7 @@ function getExpectedWriteTargetsFromSteps(steps: ExecutionStep[]): number[] | un
 }
 
 function getWriteSteps(trace: ExecutionTrace): ExecutionStep[] {
-  return trace.steps.filter(step => step.actionType.includes("write"));
+  return trace.steps.filter(step => step.actionType === "chapter_version");
 }
 
 function getVerifiedWriteSteps(trace: ExecutionTrace): ExecutionStep[] {
@@ -296,3 +283,4 @@ function uniqueSortedNumbers(values: number[]): number[] {
 function formatTargets(targets: number[]): string {
   return `[${targets.join(", ")}]`;
 }
+

@@ -153,125 +153,44 @@ describe("章节写入 round-trip(HTTP 端到端)", () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("HTTP POST /chapters/1/write 默认不通过 SSE 泄露正文,但章节落地", async () => {
-    // 先通过 API 创建一本书
-    const createApp1 = createApp({ bookRegistry: registry });
-    const createRes = await createApp1.request("/api/books", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "测试书", genre: "test" }),
-    });
-    const book = (await createRes.json()) as { id: string };
-    const bookId = book.id;
-
-    const app = createApp({
-      bookRegistry: registry,
-      getAuditModel: () => makeAuditAndRecordModel(),
-      auditModelInfo: { id: "stub-audit" },
-      getChapterDeps: (_bookId) => ({
-        model: makeStubLanguageModel({ chunks: ["雾气", "弥漫", "山道。"] }),
-        chaptersRepo: registry.open(bookId).chaptersRepo,
-        chapterFiles: registry.open(bookId).chapterFiles,
-      }),
-    });
-    const res = await app.request(`/api/books/${bookId}/chapters/1/write`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userIntent: "写第 1 章" }),
-    });
-    expect(res.status).toBe(200);
-    const text = await new Response(res.body).text();
-    // 按 SSE 行解析,与真实客户端行为一致:写作流程不应把正文发到左侧对话流
-    const events = text
-      .split("\n")
-      .filter((line) => line.startsWith("data: "))
-      .map((line) => JSON.parse(line.slice(6)) as { type: string; delta?: string });
-    expect(events.some((ev) => ev.type === "text_delta")).toBe(false);
-    expect(events.some((ev) => ev.type === "done")).toBe(true);
-    // 验证章节落地
-    const handle = registry.open(bookId);
-    const versions = handle.chaptersRepo.listVersions(1);
-    expect(versions.length).toBeGreaterThanOrEqual(1);
-    expect(versions[0]!.contentMd).toBe("雾气弥漫山道。");
-  });
-
-  it("HTTP POST /chapters/1/finalize 修复阶段默认不通过 SSE 泄露修复正文", async () => {
-    const createApp1 = createApp({ bookRegistry: registry });
-    const createRes = await createApp1.request("/api/books", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "测试书", genre: "test" }),
-    });
-    const book = (await createRes.json()) as { id: string };
-    const bookId = book.id;
-    const handle = registry.open(bookId);
-    const firstVersion = handle.chaptersRepo.saveVersion({
-      chapterNo: 1,
-      source: "user_edit",
-      contentMd: "需要修复的原文",
-    });
-    handle.chapterFiles.save({
-      chapterNo: 1,
-      title: "第一章",
-      content: "需要修复的原文",
-      versionNo: firstVersion.versionNo,
-    });
-
-    const app = createApp({
-      bookRegistry: registry,
-      getAuditModel: () => makeSequencedAuditAndRecordModel([criticalAudit, okAudit]),
-      auditModelInfo: { id: "stub-audit" },
-      getChapterDeps: (_bookId) => ({
-        model: makeStubLanguageModel({ chunks: ["修复后的正文"] }),
-        chaptersRepo: handle.chaptersRepo,
-        chapterFiles: handle.chapterFiles,
-      }),
-    });
-    const res = await app.request(`/api/books/${bookId}/chapters/1/finalize`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userIntent: "确认第一章" }),
-    });
-
-    expect(res.status).toBe(200);
-    const text = await new Response(res.body).text();
-    const events = text
-      .split("\n")
-      .filter((line) => line.startsWith("data: "))
-      .map((line) => JSON.parse(line.slice(6)) as { type: string; delta?: string; toolName?: string });
-    expect(events.some((ev) => ev.type === "text_delta")).toBe(false);
-    expect(events).toContainEqual(expect.objectContaining({ type: "tool_call_end", toolName: "chapter_repair_audit" }));
-    expect(events.some((ev) => ev.type === "done")).toBe(true);
-    expect(handle.chapterFiles.read(1)?.content.trim()).toBe("修复后的正文");
-    expect(handle.chaptersRepo.listVersions(1)[0]!.source).toBe("ai_rewrite");
-  });
-
-  it("没注入 chapter deps 时返回 503 + 中文提示", async () => {
+  it("legacy chapter write route is removed", async () => {
     const app = createApp({ bookRegistry: registry });
     const res = await app.request("/api/books/b1/chapters/1/write", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userIntent: "x" }),
     });
-    expect(res.status).toBe(503);
-    const j = (await res.json()) as { error: string };
-    expect(j.error).toContain("未配置模型");
+
+    expect(res.status).toBe(410);
+    expect(await res.json()).toMatchObject({ error: "legacy_write_route_removed" });
   });
 
-  it("章节号非法返回 400", async () => {
-    const app = createApp({
-      bookRegistry: registry,
-      getChapterDeps: () => ({
-        model: makeStubLanguageModel(),
-        chaptersRepo: registry.open("nonexistent").chaptersRepo,
-        chapterFiles: registry.open("nonexistent").chapterFiles,
-      }),
+  it("legacy chapter draft/finalize routes are removed", async () => {
+    const app = createApp({ bookRegistry: registry });
+    const draft = await app.request("/api/books/b1/chapters/1/write-draft", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userIntent: "x" }),
     });
+    const finalize = await app.request("/api/books/b1/chapters/1/finalize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userIntent: "x" }),
+    });
+
+    expect(draft.status).toBe(410);
+    expect(finalize.status).toBe(410);
+    expect(await draft.json()).toMatchObject({ error: "legacy_write_draft_route_removed" });
+    expect(await finalize.json()).toMatchObject({ error: "legacy_finalize_route_removed" });
+  });
+
+  it("invalid legacy chapter write route chapter number returns 410 before legacy execution", async () => {
+    const app = createApp({ bookRegistry: registry });
     const res = await app.request("/api/books/b1/chapters/abc/write", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userIntent: "x" }),
     });
-    expect(res.status).toBe(400);
-  });
-});
+
+    expect(res.status).toBe(410);
+  });});

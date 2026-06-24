@@ -30,14 +30,14 @@ function makePaths(root: string) {
 const dsPro: ModelInfo = { id: "ds-pro", pricing: { input: 0.27, output: 1.1 } };
 const dsFlash: ModelInfo = { id: "ds-flash", pricing: { input: 0.07, output: 0.28 } };
 
-/** 写作 stub:非流式 doGenerate 输出固定正文 */
-function makeWriteModel() {
+function makeStubModel() {
   return {
     specificationVersion: "v1" as const,
-    provider: "stub", modelId: "stub-write",
+    provider: "stub",
+    modelId: "stub-model",
     async doGenerate() {
       return {
-        text: "本章正文。",
+        text: "ok",
         finishReason: "stop",
         usage: { promptTokens: 10, completionTokens: 5 },
         rawCall: { rawPrompt: null, rawSettings: {} },
@@ -47,54 +47,6 @@ function makeWriteModel() {
       return {
         stream: new ReadableStream({
           start(ctrl) {
-            ctrl.enqueue({ type: "text-delta", textDelta: "本章正文。" });
-            ctrl.enqueue({ type: "finish", finishReason: "stop", usage: { promptTokens: 10, completionTokens: 5 } });
-            ctrl.close();
-          },
-        }),
-        rawCall: { rawPrompt: null, rawSettings: {} },
-      };
-    },
-  };
-}
-
-const okAudit = JSON.stringify({
-  verdict: "ok",
-  issues: Array.from({ length: 7 }, (_, i) => ({
-    dimension: ["setting_consistency","character_behavior","pacing","narrative_coherence","foreshadowing","hook_strength","aesthetic_quality"][i],
-    severity: "ok", score: 8, note: "ok",
-  })),
-  summary: { oneLiner: "一句话", paragraph: "段落".repeat(30), keyEvents: [] },
-});
-
-const criticalAudit = JSON.stringify({
-  verdict: "critical",
-  issues: [
-    { dimension: "character_behavior", severity: "critical", score: 2, note: "OOC" },
-    ...Array.from({ length: 6 }, (_, i) => ({
-      dimension: ["setting_consistency","pacing","narrative_coherence","foreshadowing","hook_strength","aesthetic_quality"][i],
-      severity: "ok", score: 8, note: "ok",
-    })),
-  ],
-  summary: { oneLiner: "一句话", paragraph: "段落".repeat(30), keyEvents: [] },
-});
-
-/** audit stub:按章节序列返回 verdict(repair 后再审同样吃序列) */
-function makeAuditModel(sequence: string[]) {
-  let i = 0;
-  return {
-    specificationVersion: "v1" as const,
-    provider: "stub", modelId: "stub-audit",
-    async doGenerate() {
-      const text = sequence[Math.min(i, sequence.length - 1)]!;
-      i++;
-      return { text, finishReason: "stop", usage: { promptTokens: 10, completionTokens: 5 }, rawCall: { rawPrompt: null, rawSettings: {} } };
-    },
-    async doStream() {
-      return {
-        stream: new ReadableStream({
-          start(ctrl) {
-            ctrl.enqueue({ type: "text-delta", textDelta: "记录完成。" });
             ctrl.enqueue({ type: "finish", finishReason: "stop", usage: { promptTokens: 10, completionTokens: 5 } });
             ctrl.close();
           },
@@ -121,25 +73,29 @@ async function createBook(app: ReturnType<typeof createApp>): Promise<string> {
   const res = await app.request("/api/books", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title: "自动测试" }),
+    body: JSON.stringify({ title: "Auto workflow test" }),
   });
   return (await res.json() as { id: string }).id;
 }
 
-describe("budget-check 单元", () => {
-  it("无历史用默认估算,2 章成本可计算", () => {
+async function readSseText(res: Response): Promise<string> {
+  return new Response(res.body).text();
+}
+
+describe("budget-check", () => {
+  it("estimates multi-chapter cost from default values when history is unavailable", () => {
     const est = estimateAutoModeCost(2, dsPro, dsFlash);
     expect(est.basis).toBe("default");
     expect(est.estimatedUsd).toBeGreaterThan(0);
     expect(est.estimatedUsd).toBeCloseTo(est.perChapterUsd * 2, 10);
   });
 
-  it("超限拒绝", () => {
-    const r = checkAutoModeBudget(1000, 0.01, dsPro, dsFlash);
-    expect(r.ok).toBe(false);
+  it("rejects over-budget runs", () => {
+    const result = checkAutoModeBudget(1000, 0.01, dsPro, dsFlash);
+    expect(result.ok).toBe(false);
   });
 
-  it("有历史时用历史均值", () => {
+  it("uses recent write averages when available", () => {
     const est = estimateAutoModeCost(1, dsPro, dsFlash, {
       recentWriteAverage: () => ({ promptTokens: 100, completionTokens: 100 }),
     });
@@ -147,193 +103,182 @@ describe("budget-check 单元", () => {
   });
 });
 
-function completeOnboarding(bookId: string): void {
-  const handle = registry.open(bookId);
-  handle.bookMetaRepo.set("genre", "测试题材");
-  handle.bookMetaRepo.set("premise", "测试 premise");
-  handle.bookMetaRepo.set("tone", "测试调性");
-  handle.charactersRepo.create({
-    name: "测试主角",
-    role: "protagonist",
-    baseData: {},
-    currentState: {},
-  });
-  const volume = handle.outlineRepo.create({
-    parentId: null,
-    level: "volume",
-    title: "第一卷",
-    summary: "测试结构分组",
-    status: "planned",
-    sortOrder: 0,
-    metadata: null,
-  });
-  for (let chapterNo = 1; chapterNo <= 3; chapterNo++) {
-    handle.outlineRepo.create({
-      parentId: volume.id,
-      level: "chapter",
-      title: `第${chapterNo}章 自动测试${chapterNo}`,
-      summary: `本章写自动测试第 ${chapterNo} 章的具体事件、角色推进和结尾落点`,
-      status: "planned",
-      sortOrder: chapterNo,
-      metadata: null,
-    });
-  }
-}
-
-describe("POST /api/books/:id/auto", () => {
-  it("rejects auto writing when onboarding is incomplete", async () => {
-    const app = makeApp();
-    const id = await createBook(app);
-    const res = await app.request(`/api/books/${id}/auto`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ n: 1 }),
-    });
-    expect(res.status).toBe(409);
-    const j = await res.json() as { error: string; missing: string[] };
-    expect(j.error).toContain("建书");
-    expect(j.missing).toContain("主角");
-    expect(registry.open(id).chaptersRepo.maxChapterNo()).toBe(0);
-  });
-
+describe("unified auto agent entry", () => {
   function makeApp() {
     return createApp({
       bookRegistry: registry,
-      getModel: () => makeWriteModel() as never,
-      getAuditModel: () => makeAuditModel([okAudit, criticalAudit]) as never,
+      getModel: () => makeStubModel() as never,
+      getAuditModel: () => makeStubModel() as never,
       budgetLimitUsd: 100,
       writeModelInfo: dsPro,
       auditModelInfo: dsFlash,
     });
   }
 
-  it("第 1 章 ok 第 2 章 critical → 只完成 1 章,paused_by_critical", async () => {
+  it("runs auto requests through /agent/run without legacy auto_status events", async () => {
     const app = makeApp();
     const id = await createBook(app);
-    completeOnboarding(id);
-    const res = await app.request(`/api/books/${id}/auto`, {
+
+    const res = await app.request(`/api/books/${id}/agent/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ n: 3 }),
+      body: JSON.stringify({
+        message: "连续写 3 章",
+        source: "auto",
+        target: { chapterCount: 3, defaultChapterLength: "short" },
+        executionMode: "low_risk_auto",
+      }),
     });
+
     expect(res.status).toBe(200);
-    const text = await new Response(res.body).text();
-    expect(text).toContain("paused_by_critical");
-    expect(text).not.toContain('"state":"done"');
-
-    const handle = registry.open(id);
-    // 第 1 章 ok(1 version),第 2 章 critical 且 repair 后再审仍 critical(序列耗尽重复 critical)
-    expect(handle.chaptersRepo.getAudit(1)?.verdict).toBe("ok");
-    expect(handle.chaptersRepo.getAudit(2)?.verdict).toBe("critical");
+    const text = await readSseText(res);
+    expect(text).toContain("event: agent_phase");
+    expect(text).toContain("event: main_output");
+    expect(text).toContain("event: agent_progress");
+    expect(text).toContain("event: validation_report");
+    expect(text).toContain("event: done");
+    expect(text).not.toContain("event: auto_status");
+    expect(text).not.toContain("event: execution_plan");
+    expect(text).not.toContain("event: tool_call_start");
+    expect(text).not.toContain("event: tool_call_end");
   });
 
-  it("预算超限 → SSE budget_exceeded", async () => {
-    const app = createApp({
-      bookRegistry: registry,
-      getModel: () => makeWriteModel() as never,
-      getAuditModel: () => makeAuditModel([okAudit]) as never,
-      budgetLimitUsd: 0.000001,
-      writeModelInfo: dsPro,
-      auditModelInfo: dsFlash,
-    });
-    const id = await createBook(app);
-    completeOnboarding(id);
-    const res = await app.request(`/api/books/${id}/auto`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ n: 5 }),
-    });
-    const text = await new Response(res.body).text();
-    expect(text).toContain("budget_exceeded");
-    expect(text).toContain("超过单次上限");
-  });
-
-  it("n 非法 400;书不存在 404;无 model 503", async () => {
+  it("rejects blank /agent/run messages", async () => {
     const app = makeApp();
     const id = await createBook(app);
-    const r400 = await app.request(`/api/books/${id}/auto`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ n: 0 }),
-    });
-    expect(r400.status).toBe(400);
 
-    const r404 = await app.request("/api/books/ghost/auto", {
+    const res = await app.request(`/api/books/${id}/agent/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ n: 1 }),
+      body: JSON.stringify({
+        message: "   \n\t  ",
+        source: "chat",
+      }),
     });
-    expect(r404.status).toBe(404);
 
-    const appNoModel = createApp({ bookRegistry: registry });
-    const id2 = await createBook(appNoModel);
-    const r503 = await appNoModel.request(`/api/books/${id2}/auto`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ n: 1 }),
-    });
-    expect(r503.status).toBe(503);
+    expect(res.status).toBe(400);
   });
 
-  it("全部 ok → done 状态 + N 章完成", async () => {
-    const app = createApp({
-      bookRegistry: registry,
-      getModel: () => makeWriteModel() as never,
-      getAuditModel: () => makeAuditModel([okAudit]) as never,
-      budgetLimitUsd: 100,
-      writeModelInfo: dsPro,
-      auditModelInfo: dsFlash,
-    });
+  it("persists /agent/run visible chat by book without storing hidden drafts", async () => {
+    const app = makeApp();
     const id = await createBook(app);
-    completeOnboarding(id);
+
+    const res = await app.request(`/api/books/${id}/agent/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "先讨论一下第一人称。",
+        source: "chat",
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    await readSseText(res);
+
+    const history = await app.request(`/api/books/${id}/conversation`);
+    expect(history.status).toBe(200);
+    const body = await history.json() as { messages: Array<{ role: string; content: string }> };
+    expect(body.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: "user", content: "先讨论一下第一人称。" }),
+      expect.objectContaining({ role: "assistant", content: expect.any(String) }),
+    ]));
+    expect(body.messages.map((m) => m.content).join("\n")).not.toContain("hidden draft");
+  });
+
+  it("removes legacy /auto as an executable AI route", async () => {
+    const app = makeApp();
+    const id = await createBook(app);
+
     const res = await app.request(`/api/books/${id}/auto`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ n: 2 }),
     });
-    const text = await new Response(res.body).text();
-    expect(text).toContain('"state":"done"');
-    const handle = registry.open(id);
-    expect(handle.chaptersRepo.maxChapterNo()).toBe(2);
+
+    expect(res.status).toBe(410);
+    expect(await res.json()).toMatchObject({ error: "legacy_auto_route_removed" });
+  });
+
+  it("does not validate legacy /auto request shape because the route is removed", async () => {
+    const app = makeApp();
+    const id = await createBook(app);
+
+    const res = await app.request(`/api/books/${id}/auto`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ n: 0 }),
+    });
+
+    expect(res.status).toBe(410);
+  });
+
+  it("returns 404 for unknown legacy /auto book and never reaches model checks", async () => {
+    const app = makeApp();
+    const missingBook = await app.request("/api/books/ghost/auto", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ n: 1 }),
+    });
+    expect(missingBook.status).toBe(404);
+
+    const appNoModel = createApp({ bookRegistry: registry });
+    const id = await createBook(appNoModel);
+    const missingModel = await appNoModel.request(`/api/books/${id}/auto`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ n: 1 }),
+    });
+    expect(missingModel.status).toBe(410);
+  });
+
+  it("legacy /auto/cancel no longer owns cancellation state", async () => {
+    const app = makeApp();
+    const id = await createBook(app);
+
+    const res = await app.request(`/api/books/${id}/auto/cancel`, { method: "POST" });
+    const body = await res.json() as { cancelled: boolean; reason: string };
+
+    expect(res.status).toBe(200);
+    expect(body.cancelled).toBe(false);
+    expect(body.reason).toContain("legacy_auto_cancel_removed");
   });
 });
 
-describe("版本路由", () => {
-  it("GET versions 倒序;restore-version 创建新 user_edit version", async () => {
+describe("version routes", () => {
+  it("lists versions in descending order and restore-version creates a user_edit version", async () => {
     const app = createApp({ bookRegistry: registry });
     const id = await createBook(app);
-    // 直接写两个版本
+
     await app.request(`/api/books/${id}/chapters/1`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: "v1 内容", title: "第一章" }),
+      body: JSON.stringify({ content: "v1 content", title: "Chapter 1" }),
     });
     await app.request(`/api/books/${id}/chapters/1`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: "v2 内容" }),
+      body: JSON.stringify({ content: "v2 content" }),
     });
 
     const list = await app.request(`/api/books/${id}/chapters/1/versions`);
     const j = await list.json() as { versions: Array<{ versionNo: number; source: string }> };
     expect(j.versions.map(v => v.versionNo)).toEqual([2, 1]);
 
-    // 回滚到 v1
     const restore = await app.request(`/api/books/${id}/chapters/1/restore-version`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ versionNo: 1 }),
     });
     expect(restore.status).toBe(200);
-    const rj = await restore.json() as { versionNo: number; restoredFrom: number };
-    expect(rj.versionNo).toBe(3);
-    expect(rj.restoredFrom).toBe(1);
+    const restored = await restore.json() as { versionNo: number; restoredFrom: number };
+    expect(restored.versionNo).toBe(3);
+    expect(restored.restoredFrom).toBe(1);
     const handle = registry.open(id);
-    expect(handle.chapterFiles.read(1)?.content).toContain("v1 内容");
+    expect(handle.chapterFiles.read(1)?.content).toContain("v1 content");
     expect(handle.chaptersRepo.listVersions(1)).toHaveLength(3);
   });
 
-  it("restore 不存在的版本 404", async () => {
+  it("returns 404 when restoring an unknown version", async () => {
     const app = createApp({ bookRegistry: registry });
     const id = await createBook(app);
     const res = await app.request(`/api/books/${id}/chapters/1/restore-version`, {
@@ -345,8 +290,8 @@ describe("版本路由", () => {
   });
 });
 
-describe("用量与设置路由", () => {
-  it("usage/summary 聚合正确", async () => {
+describe("usage and settings routes", () => {
+  it("aggregates usage summary", async () => {
     const app = createApp({ bookRegistry: registry });
     const id = await createBook(app);
     const handle = registry.open(id);
@@ -358,6 +303,7 @@ describe("用量与设置路由", () => {
       taskType: "audit", model: "ds-flash", promptTokens: 50, completionTokens: 20,
       cachedTokens: 0, reasoningTokens: 0, costUsd: 0.1, chapterNo: 1,
     });
+
     const res = await app.request(`/api/books/${id}/usage/summary`);
     const j = await res.json() as {
       totalUsd: number;
@@ -365,13 +311,14 @@ describe("用量与设置路由", () => {
       byModel: Array<{ model: string }>;
       byChapter: Array<{ chapterNo: number | null; costUsd: number }>;
     };
+
     expect(j.totalUsd).toBeCloseTo(0.6, 5);
     expect(j.byTaskType).toHaveLength(2);
     expect(j.byModel.map(m => m.model).sort()).toEqual(["ds-flash", "ds-pro"]);
     expect(j.byChapter[0]!.costUsd).toBeCloseTo(0.6, 5);
   });
 
-  it("usage/recent 返回明细", async () => {
+  it("lists recent usage records", async () => {
     const app = createApp({ bookRegistry: registry });
     const id = await createBook(app);
     const handle = registry.open(id);
@@ -379,13 +326,14 @@ describe("用量与设置路由", () => {
       taskType: "chat", model: "ds-pro", promptTokens: 10, completionTokens: 5,
       cachedTokens: 0, reasoningTokens: 0, costUsd: 0.01, chapterNo: null,
     });
+
     const res = await app.request(`/api/books/${id}/usage/recent?limit=10`);
     const j = await res.json() as { records: Array<{ taskType: string }> };
     expect(j.records).toHaveLength(1);
     expect(j.records[0]!.taskType).toBe("chat");
   });
 
-  it("GET/PUT settings 读写预算上限", async () => {
+  it("reads and writes the budget setting", async () => {
     const configPath = path.posix.join(tmp, "config.json");
     const app = createApp({ bookRegistry: registry, configJsonPath: configPath });
     const get1 = await app.request("/api/settings");

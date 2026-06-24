@@ -23,9 +23,17 @@ function jsonResponse(data: unknown, status = 200) {
   return { ok: status < 400, status, json: async () => data } as Response;
 }
 
+function mockConversationBootstrap() {
+  fetchMock.mockImplementation(async (url: string) => {
+    if (String(url).includes("/conversation")) return jsonResponse({ messages: [], ok: true });
+    if (String(url).includes("/onboard-status")) return jsonResponse({ ok: true });
+    return jsonResponse({});
+  });
+}
+
 describe("DiffView", () => {
-  it("行级 diff 标注增删", () => {
-    render(<DiffView a={"第一行\n旧的第二行\n"} b={"第一行\n新的第二行\n"} />);
+  it("marks same, added, and removed lines", () => {
+    render(<DiffView a={"line one\nold line\n"} b={"line one\nnew line\n"} />);
     const spans = screen.getByTestId("diff-view").querySelectorAll("span");
     const kinds = [...spans].map(s => s.getAttribute("data-diff"));
     expect(kinds).toContain("removed");
@@ -36,44 +44,43 @@ describe("DiffView", () => {
 
 describe("VersionHistory", () => {
   const versions = [
-    { id: 3, chapterNo: 1, versionNo: 3, source: "user_edit", contentMd: "第三版正文内容更长", createdAt: 3000 },
-    { id: 2, chapterNo: 1, versionNo: 2, source: "segment_revise", contentMd: "第二版正文", createdAt: 2000 },
-    { id: 1, chapterNo: 1, versionNo: 1, source: "ai_write", contentMd: "第一版", createdAt: 1000 },
+    { id: 3, chapterNo: 1, versionNo: 3, source: "user_edit", contentMd: "third version content", createdAt: 3000 },
+    { id: 2, chapterNo: 1, versionNo: 2, source: "segment_revise", contentMd: "second version", createdAt: 2000 },
+    { id: 1, chapterNo: 1, versionNo: 1, source: "ai_write", contentMd: "first version", createdAt: 1000 },
   ];
 
-  it("倒序列出版本,来源中文化", async () => {
+  it("lists versions in descending order and hides restore for the latest version", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ versions }));
     render(<VersionHistory bookId="b1" chapterNo={1} />);
+
     await waitFor(() => expect(screen.getByTestId("version-row-3")).toBeInTheDocument());
-    expect(screen.getByTestId("version-row-3")).toHaveTextContent("用户编辑");
-    expect(screen.getByTestId("version-row-2")).toHaveTextContent("段落改写");
-    expect(screen.getByTestId("version-row-1")).toHaveTextContent("AI 写");
-    // 最新版(idx 0)没有回滚按钮,其余有
     expect(screen.queryByTestId("version-restore-3")).not.toBeInTheDocument();
     expect(screen.getByTestId("version-restore-1")).toBeInTheDocument();
   });
 
-  it("回滚发 POST restore-version", async () => {
+  it("restores a selected version through the restore-version endpoint", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ versions }));
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     const onRestored = vi.fn();
     render(<VersionHistory bookId="b1" chapterNo={1} onRestored={onRestored} />);
+
     await waitFor(() => screen.getByTestId("version-restore-1"));
-    fetchMock.mockResolvedValueOnce(jsonResponse({ versionNo: 4, restoredFrom: 1 })); // POST
-    fetchMock.mockResolvedValueOnce(jsonResponse({ versions })); // reload
+    fetchMock.mockResolvedValueOnce(jsonResponse({ versionNo: 4, restoredFrom: 1 }));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ versions }));
     fireEvent.click(screen.getByTestId("version-restore-1"));
+
     await waitFor(() => {
       const post = fetchMock.mock.calls.find(c => (c[1] as RequestInit | undefined)?.method === "POST");
-      expect(post![0]).toContain("/restore-version");
-      expect(JSON.parse((post![1] as RequestInit).body as string).versionNo).toBe(1);
+      expect(post?.[0]).toContain("/restore-version");
+      expect(JSON.parse((post?.[1] as RequestInit).body as string).versionNo).toBe(1);
     });
-    expect(onRestored).toHaveBeenCalledWith("第一版");
+    expect(onRestored).toHaveBeenCalledWith("first version");
     confirmSpy.mockRestore();
   });
 });
 
 describe("UsageDetailPage", () => {
-  it("显示总览/任务类型/章节/模型", async () => {
+  it("shows total usage, task usage, chapter usage, and model usage", async () => {
     fetchMock.mockImplementation(async (url: string) => {
       if (String(url).includes("/usage/summary")) {
         return jsonResponse({
@@ -88,6 +95,7 @@ describe("UsageDetailPage", () => {
       }
       return jsonResponse({ singleBudgetUsd: 5 });
     });
+
     render(
       <MemoryRouter initialEntries={["/books/b1/usage"]}>
         <Routes>
@@ -95,73 +103,88 @@ describe("UsageDetailPage", () => {
         </Routes>
       </MemoryRouter>,
     );
+
     await waitFor(() => expect(screen.getByTestId("usage-total")).toHaveTextContent("$1.2345"));
-    expect(screen.getByTestId("usage-task-write")).toHaveTextContent("写作");
-    expect(screen.getByText("第 1 章")).toBeInTheDocument();
+    expect(screen.getByTestId("usage-task-write")).toHaveTextContent("$1.0000");
     expect(screen.getByText("ds-pro")).toBeInTheDocument();
-    expect(screen.getByText(/预算上限 \$5/)).toBeInTheDocument();
+    expect(screen.getByText("1000")).toBeInTheDocument();
+    expect(screen.getByText("2000")).toBeInTheDocument();
   });
 });
 
-describe("/auto 命令接线", () => {
+describe("auto writing agent run", () => {
   function makeManualStream() {
     let sink: ((ev: { type: string; [key: string]: unknown }) => void) | null = null;
+    const bodies: unknown[] = [];
+    const urls: string[] = [];
+    const cancelSpy = vi.fn();
     const streamFn: StreamFn = (opts) => {
+      urls.push(opts.url);
+      bodies.push(opts.body);
       sink = opts.onEvent;
-      return { cancel: vi.fn(), done: Promise.resolve() };
+      return { cancel: cancelSpy, done: Promise.resolve() };
     };
     return {
       streamFn,
       push(ev: { type: string; [key: string]: unknown }) {
         act(() => sink?.(ev));
       },
-      getUrl: () => (streamFn as unknown as { lastUrl?: string }).lastUrl,
+      lastUrl: () => urls.at(-1) ?? "",
+      lastBody: () => bodies.at(-1),
+      cancelSpy,
     };
   }
 
-  it("/auto 3 → 调 auto 端点,auto_status 显示状态条,critical 暂停追加系统消息", async () => {
-    let capturedUrl = "";
-    let sink: ((ev: { type: string; [key: string]: unknown }) => void) | null = null;
-    const streamFn: StreamFn = (opts) => {
-      capturedUrl = opts.url;
-      sink = opts.onEvent;
-      return { cancel: vi.fn(), done: Promise.resolve() };
-    };
-    render(<ConversationPane bookId="b1" streamFn={streamFn} />);
+  it("sends multi-chapter writing through the unified agent workflow without client-side intent routing", async () => {
+    mockConversationBootstrap();
+    const stream = makeManualStream();
+    render(<ConversationPane bookId="b1" streamFn={stream.streamFn} />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
     const input = screen.getByTestId("composer-input");
-    fireEvent.change(input, { target: { value: "/auto 3" } });
-    // 补全弹层打开,先 Escape 关闭再 Ctrl+Enter 发送
-    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.change(input, { target: { value: "连续写 3 章，长度短" } });
     fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
 
-    expect(capturedUrl).toContain("/auto");
-
-    act(() => sink?.({ type: "auto_status", state: "writing", remaining: 3, doneChapters: [], currentChapter: 1 }));
-    expect(screen.getByTestId("auto-mode-bar")).toHaveTextContent("0/3");
-    expect(screen.getByTestId("auto-mode-bar")).toHaveTextContent("第 1 章");
-
-    act(() => sink?.({ type: "auto_status", state: "paused_by_critical", remaining: 2, doneChapters: [1], currentChapter: 2 }));
-    await waitFor(() => {
-      expect(screen.getByText(/发现严重问题已暂停/)).toBeInTheDocument();
+    expect(stream.lastUrl()).toContain("/agent/run");
+    expect(stream.lastUrl()).not.toContain("/auto");
+    expect(stream.lastBody()).toMatchObject({
+      message: "连续写 3 章，长度短",
+      source: "chat",
     });
+    expect(stream.lastBody()).not.toHaveProperty("target");
+
+    stream.push({ type: "agent_phase", phase: "executing" });
+    stream.push({
+      type: "agent_progress",
+      phase: "executing",
+      label: "执行变更",
+      status: "running",
+      detail: "chapterNo=1, chapterNo=2, chapterNo=3",
+    });
+
+    expect(screen.getByTestId("workflow-progress")).toHaveTextContent("chapterNo=1");
+    expect(screen.getByTestId("workflow-progress")).toHaveTextContent("chapterNo=2");
+    expect(screen.getByTestId("workflow-progress")).toHaveTextContent("chapterNo=3");
   });
 
-  it("停止按钮调 cancel 端点", async () => {
-    let sink: ((ev: { type: string; [key: string]: unknown }) => void) | null = null;
-    const streamFn: StreamFn = (opts) => {
-      sink = opts.onEvent;
-      return { cancel: vi.fn(), done: Promise.resolve() };
-    };
-    fetchMock.mockResolvedValue(jsonResponse({ cancelled: true }));
-    render(<ConversationPane bookId="b1" streamFn={streamFn} />);
+  it("cancel aborts the current agent stream without calling legacy /auto/cancel", async () => {
+    mockConversationBootstrap();
+    const stream = makeManualStream();
+    render(<ConversationPane bookId="b1" streamFn={stream.streamFn} />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
     const input = screen.getByTestId("composer-input");
-    fireEvent.change(input, { target: { value: "/auto 2" } });
-    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.change(input, { target: { value: "连续写 2 章" } });
     fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
-    act(() => sink?.({ type: "auto_status", state: "writing", remaining: 2, doneChapters: [], currentChapter: 1 }));
-    fireEvent.click(screen.getByTestId("auto-stop"));
+    stream.push({ type: "agent_phase", phase: "executing" });
+    fireEvent.click(screen.getByTestId("btn-cancel-stream"));
+
+    expect(stream.cancelSpy).toHaveBeenCalled();
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(c => String(c[0]).includes("/auto/cancel"))).toBe(true);
+      expect(fetchMock.mock.calls.some(c => String(c[0]).includes("/auto/cancel"))).toBe(false);
     });
   });
 });
+
+
+

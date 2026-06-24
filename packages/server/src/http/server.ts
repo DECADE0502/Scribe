@@ -118,7 +118,7 @@ export function createApp(deps: AppDeps = {}) {
     getMasterPrompt,
     getStyleReferences,
   }));
-  app.route("/", chapterRoutes({ getDeps: getChapterDeps, registry: deps.bookRegistry, onChapterCommitted: deps.onChapterCommitted, getMasterPrompt, getStyleReferences, getAuditModel, writeModelInfo, auditModelInfo }));
+  app.route("/", chapterRoutes({ registry: deps.bookRegistry, onChapterCommitted: deps.onChapterCommitted, getMasterPrompt, getStyleReferences, getAuditModel, writeModelInfo, auditModelInfo, getDeps: getChapterDeps }));
   if (deps.bookRegistry) {
     app.route("/", bookRoutes({ registry: deps.bookRegistry, getModel, writeModelInfo, getMasterPrompt, getStyleReferences }));
     app.route("/", reviseRoutes({ registry: deps.bookRegistry, getModel, writeModelInfo }));
@@ -126,7 +126,14 @@ export function createApp(deps: AppDeps = {}) {
     app.route("/", worldbookRoutes({ registry: deps.bookRegistry, getModel, writeModelInfo }));
     app.route("/", importRoutes({ registry: deps.bookRegistry }));
     app.route("/", presetRoutes({ registry: deps.bookRegistry }));
-    app.route("/", agentRoutes({ registry: deps.bookRegistry, getModel, getAuditModel }));
+    app.route("/", agentRoutes({
+      registry: deps.bookRegistry,
+      getModel,
+      getAuditModel,
+      writeModelInfo,
+      auditModelInfo,
+      onChapterCommitted: deps.onChapterCommitted,
+    }));
     app.route("/", autoRoutes({
       registry: deps.bookRegistry,
       getModel,
@@ -152,3 +159,4 @@ export function createApp(deps: AppDeps = {}) {
   }
   return app;
 }
+

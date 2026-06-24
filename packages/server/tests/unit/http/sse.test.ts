@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { streamSseResponse } from "../../../src/http/sse.js";
+import { describe, expect, it } from "vitest";
 import type { SseEvent } from "@scribe/shared";
+import { streamSseResponse } from "../../../src/http/sse.js";
 
 async function readSse(res: Response): Promise<string[]> {
   const reader = res.body!.getReader();
@@ -15,34 +15,37 @@ async function readSse(res: Response): Promise<string[]> {
 }
 
 describe("streamSseResponse", () => {
-  it("发出 event 头与 JSON data,以 \\n\\n 分隔", async () => {
+  it("emits event headers and JSON data separated by blank lines", async () => {
     async function* gen(): AsyncIterable<SseEvent> {
-      yield { type: "text_delta", delta: "你好" };
+      yield { type: "agent_progress", phase: "thinking", label: "理解意图", status: "running" };
       yield { type: "done" };
     }
+
     const res = streamSseResponse(gen());
     expect(res.headers.get("Content-Type")).toContain("text/event-stream");
     const all = (await readSse(res)).join("");
-    expect(all).toContain("event: text_delta");
-    expect(all).toContain('"delta":"你好"');
+    expect(all).toContain("event: agent_progress");
+    expect(all).toContain('"label":"理解意图"');
     expect(all).toContain("event: done");
     expect(all.endsWith("\n\n")).toBe(true);
   });
 
-  it("done 事件后流结束,不再发后续事件", async () => {
+  it("stops after done and does not emit later events", async () => {
     async function* gen(): AsyncIterable<SseEvent> {
       yield { type: "done" };
-      yield { type: "text_delta", delta: "不应出现" };
+      yield { type: "agent_progress", phase: "completed", label: "不应出现", status: "done" };
     }
+
     const all = (await readSse(streamSseResponse(gen()))).join("");
     expect(all).not.toContain("不应出现");
   });
 
-  it("生成器抛错时,发出 error 事件", async () => {
+  it("emits error when the generator throws", async () => {
     async function* gen(): AsyncIterable<SseEvent> {
-      yield { type: "text_delta", delta: "前半段" };
+      yield { type: "agent_progress", phase: "thinking", label: "前半段", status: "running" };
       throw new Error("oops");
     }
+
     const all = (await readSse(streamSseResponse(gen()))).join("");
     expect(all).toContain("event: error");
     expect(all).toContain("oops");

@@ -8,7 +8,7 @@ import { createGenreSectionsRepo } from "../../src/db/repositories/genre-section
 import { createCharactersRepo } from "../../src/db/repositories/characters.js";
 import { makeGenreSectionTools } from "../../src/ai/tools/genre-section-tools.js";
 import { streamLlm } from "../../src/ai/llm-call.js";
-import { RECORD_STATE_PROMPT } from "../../src/ai/orchestrator/record-state.js";
+import { RECORD_STATE_PROMPT } from "../../src/ai/prompts/record-state-contract.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

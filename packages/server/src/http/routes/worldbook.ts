@@ -5,14 +5,11 @@ import {
   WorldbookEntryPatchSchema,
   type ModelInfo,
 } from "@scribe/shared";
-import { holdBook, type BookRegistry } from "../book-registry.js";
-import { streamSseResponse } from "../sse.js";
-import { withUsageRecording } from "../../ai/usage-tracker.js";
+import type { BookRegistry } from "../book-registry.js";
 import {
   renderWorldbookEntries,
   retrieveWorldbookEntries,
 } from "../../ai/worldbook/retrieval.js";
-import { runWorldbookChat } from "../../ai/orchestrator/worldbook-chat.js";
 
 export interface WorldbookRoutesDeps {
   registry: BookRegistry;
@@ -97,52 +94,12 @@ export function worldbookRoutes(deps: WorldbookRoutesDeps) {
   app.post("/api/books/:bookId/worldbook/chat", async (c) => {
     const handle = openHandle(c.req.param("bookId"));
     if (!handle) return c.json({ error: "book_not_found" }, 404);
-    const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
-    const message = typeof body.message === "string" ? body.message.trim() : "";
-    if (!message) return c.json({ error: "message_required" }, 400);
-    const model = deps.getModel?.();
-    if (!model) return c.json({ error: "model_not_configured" }, 503);
-    const history = Array.isArray(body.history) ? body.history : [];
-    const chatHandle = handle;
-    const chatModel = model;
-
-    async function* persisting() {
-      chatHandle.conversationsRepo.append({
-        role: "user",
-        content: message,
-        metadata: { kind: "worldbook" },
-      });
-      let buffer = "";
-      for await (const event of withUsageRecording(
-        runWorldbookChat(
-          {
-            model: chatModel,
-            toolDeps: { repo: chatHandle.worldbookRepo },
-            abortSignal: c.req.raw.signal,
-          },
-          { message, history: history as never },
-        ),
-        {
-          tokenUsageRepo: chatHandle.tokenUsageRepo,
-          booksRepo: deps.registry.booksRepo,
-          bookId: c.req.param("bookId"),
-          modelInfo: deps.writeModelInfo,
-          taskType: "other",
-        },
-      )) {
-        if (event.type === "text_delta") buffer += event.delta;
-        if (event.type === "done" && buffer.trim()) {
-          chatHandle.conversationsRepo.append({
-            role: "assistant",
-            content: buffer,
-            metadata: { kind: "worldbook" },
-          });
-        }
-        yield event;
-      }
-    }
-
-    return streamSseResponse(holdBook(deps.registry, c.req.param("bookId"), persisting()));
+    const bookId = c.req.param("bookId");
+    return c.json({
+      error: "legacy_worldbook_chat_removed",
+      message: "Use /api/books/:bookId/agent/run with a worldbook target.",
+      bookId,
+    }, 410);
   });
 
   return app;

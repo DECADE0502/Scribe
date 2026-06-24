@@ -124,8 +124,9 @@ describe("SettingsPage", () => {
     await waitFor(() => expect(screen.getByTestId("api-key-masked")).toHaveTextContent("sk-ar****1111"));
     fireEvent.change(screen.getByTestId("provider-select"), { target: { value: "deepseek" } });
 
-    expect(screen.queryByTestId("api-key-masked")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByTestId("api-key-masked")).not.toBeInTheDocument());
     expect(screen.getByTestId("api-key-input")).toHaveValue("");
+    await waitFor(() => expect(screen.queryByText(/加载模型列表失败/)).toBeInTheDocument());
   });
 
   it("can add and save a custom OpenAI-compatible provider", async () => {

@@ -341,61 +341,40 @@ describe("writer-facing user journeys", () => {
     expect(registry.open(bookId).chapterFiles.read(2)).toBeUndefined();
   });
 
-  it("supports AI draft/finalize flow without leaking prose through SSE text deltas", async () => {
-    const handle = registry.open(bookId);
-    handle.bookMetaRepo.set("premise", "雨巷会在夜里改变位置。");
-    handle.bookMetaRepo.set("tone", "温柔悬疑");
-    handle.charactersRepo.create({ name: "林澈", role: "protagonist", baseData: {}, currentState: {} });
-    handle.outlineRepo.create({
-      parentId: null,
-      level: "chapter",
-      title: "第1章 雨巷",
-      summary: "林澈拿到旧地图。",
-      status: "planned",
-      sortOrder: 1,
-      metadata: null,
-    });
-
+  it("keeps legacy AI draft/finalize routes removed", async () => {
     const draft = await app.request(`/api/books/${bookId}/chapters/1/write-draft`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userIntent: "按大纲写第一章" }),
     });
-    expect(draft.status).toBe(200);
-    const draftEvents = await readSseEvents(draft);
-    expect(draftEvents.some((event) => event.type === "text_delta")).toBe(false);
-    expect(handle.chapterFiles.read(1)?.content).toContain("林澈");
-
     const finalize = await app.request(`/api/books/${bookId}/chapters/1/finalize`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userIntent: "确认第一章" }),
     });
-    expect(finalize.status).toBe(200);
-    const finalizeEvents = await readSseEvents(finalize);
-    expect(finalizeEvents.some((event) => event.type === "text_delta")).toBe(false);
-    expect(finalizeEvents).toContainEqual(expect.objectContaining({ type: "tool_call_end", toolName: "chapter_audit" }));
-    expect(finalizeEvents).toContainEqual(expect.objectContaining({ type: "tool_call_end", toolName: "hard_fact_gate" }));
-    expect(finalizeEvents).toContainEqual(expect.objectContaining({ type: "tool_call_end", toolName: "record_chapter_state" }));
-    expect(handle.chaptersRepo.getAudit(1)?.verdict).toBe("ok");
-  });
 
+    expect(draft.status).toBe(410);
+    expect(finalize.status).toBe(410);
+  });
   it("supports conversation, worldbook editing, imports, settings, usage, and common error paths", async () => {
     const chatApp = createApp({
       bookRegistry: registry,
       appPaths: paths,
       configJsonPath: paths.configJson,
       secretsEnvPath: paths.secretsEnv,
-      getModel: () => makeStreamingModel(["收到，我会整理雨街设定。"]),
+      getModel: () => makeStreamingModel([JSON.stringify({ intent: "query_only", reply: "收到，我会整理雨街设定。" })]),
     });
 
-    const conversation = await chatApp.request(`/api/books/${bookId}/conversation?mode=chat`, {
+    const conversation = await chatApp.request(`/api/books/${bookId}/agent/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "帮我整理雨街规则" }),
+      body: JSON.stringify({ message: "帮我整理雨街规则", source: "chat" }),
     });
     expect(conversation.status).toBe(200);
-    expect((await new Response(conversation.body).text())).toContain("收到");
+    const conversationText = await new Response(conversation.body).text();
+    expect(conversationText).toContain("event: main_output");
+    expect(conversationText).toContain("收到，我会整理雨街设定。");
+    expect(conversationText).not.toContain("event: text_delta");
 
     const worldbook = await chatApp.request(`/api/books/${bookId}/worldbook`, {
       method: "POST",

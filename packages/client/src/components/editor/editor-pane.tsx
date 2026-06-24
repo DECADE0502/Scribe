@@ -8,6 +8,54 @@ import { VersionHistory } from "./version-history.js";
 import { useToastStore } from "../../stores/toast.js";
 import { useConversationStore } from "../../stores/conversation.js";
 
+interface AgentRunResult {
+  committed: boolean;
+  failed: boolean;
+  needsUserDecision: boolean;
+  runId?: string;
+}
+
+async function readAgentRunResult(body: ReadableStream<Uint8Array>): Promise<AgentRunResult> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let committed = false;
+  let failed = false;
+  let needsUserDecision = false;
+  let resultRunId: string | undefined;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buffer.indexOf("\n\n")) !== -1) {
+      const block = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      const dataLines = block.split("\n").filter((line) => line.startsWith("data:"));
+      if (dataLines.length === 0) continue;
+      try {
+        const event = JSON.parse(dataLines.map((line) => line.slice(5).trim()).join("\n")) as {
+          type?: string;
+          committed?: boolean;
+          needsUserDecision?: boolean;
+          runId?: string;
+        };
+        if (event.type === "error") failed = true;
+        if (event.type === "done") {
+          committed = event.committed === true;
+          needsUserDecision = event.needsUserDecision === true;
+          if (typeof event.runId === "string") resultRunId = event.runId;
+        }
+      } catch {
+        // Ignore malformed legacy chunks.
+      }
+    }
+  }
+
+  return { committed, failed, needsUserDecision, runId: resultRunId };
+}
+
 interface ChapterMeta {
   chapterNo: number;
   title: string;
@@ -23,13 +71,12 @@ export function EditorPane(props: { bookId: string }) {
   const [currentNo, setCurrentNo] = useState<number | null>(null);
   const [current, setCurrent] = useState<ChapterMeta | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
-  const [revise, setRevise] = useState<{ segmentText: string; instruction: string } | null>(null);
+  const [revise, setRevise] = useState<{ segmentText: string; instruction: string; from: number; to: number } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [loading, setLoading] = useState(true);
   const [writingDraft, setWritingDraft] = useState(false);
-  const [finalizing, setFinalizing] = useState(false);
+  const [pendingRun, setPendingRun] = useState<{ runId: string; targetNo: number } | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [hasAudit, setHasAudit] = useState(false);
 
   // 用 ref 拿 currentNo，避免 reloadList 依赖 currentNo 导致 stale closure 和 effect 重跑
   const currentNoRef = useRef<number | null>(null);
@@ -108,73 +155,84 @@ export function EditorPane(props: { bookId: string }) {
       if (!typed?.trim()) return;
       instruction = typed.trim();
     }
-    setRevise({ segmentText: selectedText, instruction });
-  }, []);
+    const selection = editor?.state.selection;
+    setRevise({
+      segmentText: selectedText,
+      instruction,
+      from: selection?.from ?? 0,
+      to: selection?.to ?? 0,
+    });
+  }, [editor]);
 
-  const runDraft = useCallback(async (targetNo: number, mode: "next" | "rewrite") => {
+  const runDraft = useCallback(async (targetNo: number, mode: "write" | "rewrite") => {
     const userIntent = window.prompt("写什么？(一句话描述本章意图)") ?? "";
     if (!userIntent.trim()) return;
     setWritingDraft(true);
     try {
-      const res = await fetch(`/api/books/${encodeURIComponent(bookId)}/chapters/${targetNo}/write-draft`, {
+      const res = await fetch(`/api/books/${encodeURIComponent(bookId)}/agent/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userIntent: mode === "rewrite" ? `重写第 ${targetNo} 章。${userIntent}` : userIntent,
+          message: userIntent,
+          source: "editor",
+          target: { chapterNo: targetNo, mode },
         }),
       });
       if (!res.ok || !res.body) { pushToast({ level: "error", text: "写作失败" }); return; }
       // 读取 SSE 流
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
+      const result = await readAgentRunResult(res.body);
+      if (!result.committed) {
+        if (result.needsUserDecision && result.runId) {
+          setPendingRun({ runId: result.runId, targetNo });
+          pushToast({ level: "warning", text: "写作已暂停，等待确认提交" });
+          return;
+        }
+        pushToast({ level: "error", text: result.failed ? "写作流程失败" : "写作尚未提交，等待确认或修复" });
+        return;
       }
       await reloadList();
       setCurrentNo(targetNo);
-      setHasAudit(false);
-      pushToast({ level: "info", text: "正文已生成,确认后点击「确认本章」" });
+      pushToast({ level: "info", text: "正文已生成并提交" });
     } finally {
       setWritingDraft(false);
     }
   }, [bookId, reloadList, pushToast]);
 
-  const writeDraft = useCallback(async () => {
+  const approvePendingRun = useCallback(async () => {
+    if (!pendingRun) return;
+    const res = await fetch(`/api/books/${encodeURIComponent(bookId)}/agent/runs/${encodeURIComponent(pendingRun.runId)}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!res.ok) {
+      pushToast({ level: "error", text: "确认提交失败" });
+      return;
+    }
+    const targetNo = pendingRun.targetNo;
+    setPendingRun(null);
+    await reloadList();
+    setCurrentNo(targetNo);
+    pushToast({ level: "info", text: "正文已生成并提交" });
+  }, [bookId, pendingRun, pushToast, reloadList]);
+
+  const cancelPendingRun = useCallback(async () => {
+    if (!pendingRun) return;
+    await fetch(`/api/books/${encodeURIComponent(bookId)}/agent/runs/${encodeURIComponent(pendingRun.runId)}/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    }).catch(() => undefined);
+    setPendingRun(null);
+  }, [bookId, pendingRun]);
+
+  const writeNext = useCallback(async () => {
     const next = chapters.length ? Math.max(...chapters.map(c => c.chapterNo)) + 1 : 1;
-    await runDraft(next, "next");
+    await runDraft(next, "write");
   }, [chapters, runDraft]);
 
   const rewriteCurrent = useCallback(async () => {
     if (currentNo == null) return;
     await runDraft(currentNo, "rewrite");
   }, [currentNo, runDraft]);
-
-  const finalizeChapter = useCallback(async () => {
-    if (currentNo == null) return;
-    const userIntent = window.prompt("本章意图(用于审计上下文,可留空)") ?? "";
-    setFinalizing(true);
-    try {
-      const res = await fetch(`/api/books/${encodeURIComponent(bookId)}/chapters/${currentNo}/finalize`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userIntent }),
-      });
-      if (!res.ok || !res.body) { pushToast({ level: "error", text: "确认失败" }); return; }
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      while (true) {
-        const { done } = await reader.read();
-        if (done) break;
-      }
-      setHasAudit(true);
-      pushToast({ level: "info", text: "本章已确认:审计+状态记录完成" });
-    } finally {
-      setFinalizing(false);
-    }
-  }, [bookId, currentNo, pushToast]);
 
   const deleteCurrentAndAfter = useCallback(async () => {
     if (currentNo == null) return;
@@ -257,8 +315,8 @@ export function EditorPane(props: { bookId: string }) {
         <span style={{ flex: 1 }} />
         <button
           className="ios-btn-small"
-          data-testid="btn-write-draft"
-          onClick={() => void writeDraft()}
+          data-testid="btn-write-next"
+          onClick={() => void writeNext()}
           disabled={writingDraft}
           style={{ fontWeight: 600 }}
         >
@@ -274,20 +332,6 @@ export function EditorPane(props: { bookId: string }) {
           >
             {writingDraft ? "写作中..." : `重新写第${currentNo}章`}
           </button>
-        )}
-        {currentNo != null && !hasAudit && (
-          <button
-            className="ios-btn-small"
-            data-testid="btn-finalize"
-            onClick={() => void finalizeChapter()}
-            disabled={finalizing}
-            style={{ fontWeight: 600, color: "#007aff" }}
-          >
-            {finalizing ? "确认中..." : "确认本章"}
-          </button>
-        )}
-        {currentNo != null && hasAudit && (
-          <span style={{ fontSize: 11, color: "#34c759", alignSelf: "center" }}>已确认</span>
         )}
         {currentNo != null && (
           <>
@@ -326,6 +370,31 @@ export function EditorPane(props: { bookId: string }) {
         )}
       </div>
 
+      {pendingRun && (
+        <div
+          data-testid="editor-pending-run"
+          style={{
+            margin: "8px 12px",
+            padding: "8px 10px",
+            border: "1px solid #ffd591",
+            borderRadius: 6,
+            background: "#fffbe6",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 13,
+          }}
+        >
+          <span style={{ flex: 1 }}>写作流程已暂停，等待确认提交。</span>
+          <button data-testid="editor-approve-run" className="ios-btn-small" onClick={() => void approvePendingRun()}>
+            同意提交
+          </button>
+          <button data-testid="editor-cancel-run" className="ios-btn-small" onClick={() => void cancelPendingRun()}>
+            取消
+          </button>
+        </div>
+      )}
+
       {/* 主体 */}
       {currentNo == null ? (
         <div className="pane-center" data-testid="editor-empty">
@@ -334,7 +403,7 @@ export function EditorPane(props: { bookId: string }) {
             <p className="muted" style={{ lineHeight: 1.8 }}>
               还没有章节。<br />
               点上方 <strong>+</strong> 手动新建,<br />
-              或在左侧对话框输入 <code>/write</code> 让 AI 写第一章。
+              或在左侧对话框输入 输入自然语言请求让 AI 开始第一章，例如“请帮我写第一章并保持前文语气一致”。
             </p>
           </div>
         </div>
@@ -369,7 +438,8 @@ export function EditorPane(props: { bookId: string }) {
               instruction={revise.instruction}
               onAccepted={(newContent) => {
                 setRevise(null);
-                setCurrent({ ...current, content: newContent });
+                if (!editor || revise.from <= 0 || revise.to <= revise.from) return;
+                editor.chain().focus().setTextSelection({ from: revise.from, to: revise.to }).insertContent(newContent).run();
               }}
               onDismiss={() => setRevise(null)}
             />
@@ -381,3 +451,5 @@ export function EditorPane(props: { bookId: string }) {
     </div>
   );
 }
+
+
