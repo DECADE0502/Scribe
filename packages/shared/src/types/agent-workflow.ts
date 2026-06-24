@@ -127,6 +127,60 @@ export const AcceptanceReportSchema = z.object({
 });
 export type AcceptanceReport = z.infer<typeof AcceptanceReportSchema>;
 
+// —— Agent Workflow 统一管线(2026-06-24) ——
+
+export const AgentPhaseSchema = z.enum([
+  "thinking",
+  "executing",
+  "validating",
+  "waiting_user",
+  "repairing",
+  "completed",
+]);
+export type AgentPhase = z.infer<typeof AgentPhaseSchema>;
+
+export const ValidationVerdictSchema = z.enum([
+  "pass",
+  "repairable",
+  "needs_user",
+  "fail",
+]);
+export type ValidationVerdict = z.infer<typeof ValidationVerdictSchema>;
+
+export const ValidationIssueSchema = z.object({
+  severity: z.enum(["info", "warning", "critical"]),
+  area: z.enum([
+    "user_request", "chapter", "character", "outline",
+    "worldbook", "timeline", "foreshadowing", "record", "system",
+  ]),
+  message: z.string(),
+  evidence: z.string().optional(),
+  suggestedAction: z.enum(["repair", "reroll", "ask_user", "ignore", "stop"]),
+});
+export type ValidationIssue = z.infer<typeof ValidationIssueSchema>;
+
+export const ValidationReportSchema = z.object({
+  verdict: ValidationVerdictSchema,
+  issues: z.array(ValidationIssueSchema),
+  commitAllowed: z.boolean(),
+});
+export type ValidationReport = z.infer<typeof ValidationReportSchema>;
+
+export const AgentRunRequestSchema = z.object({
+  message: z.string(),
+  source: z.enum(["chat", "editor", "auto", "onboard", "revision", "asset_audit"]),
+  executionMode: ExecutionModeSchema.optional(),
+  target: z.object({
+    chapterNo: z.number().int().positive().optional(),
+    chapterCount: z.number().int().min(1).max(50).optional(),
+    revisionRange: z.object({
+      chapterNo: z.number().int().positive(),
+      selectedText: z.string().optional(),
+    }).optional(),
+  }).optional(),
+});
+export type AgentRunRequest = z.infer<typeof AgentRunRequestSchema>;
+
 const riskRank: Record<RiskLevel, number> = {
   read: 0,
   draft: 1,

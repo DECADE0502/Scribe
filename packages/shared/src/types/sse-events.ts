@@ -65,7 +65,12 @@ export const SseEventSchema = z.discriminatedUnion("type", [
     message: z.string(),
   }),
   z.object({ type: z.literal("acceptance_report"), report: AcceptanceReportSchema }),
-  z.object({ type: z.literal("done") }),
+  // —— Agent Workflow 统一管线(2026-06-24) ——
+  z.object({ type: z.literal("agent_phase"), phase: z.enum(["thinking","executing","validating","waiting_user","repairing","completed"]) }),
+  z.object({ type: z.literal("main_output"), reply: z.string(), draft: z.string().optional() }),
+  z.object({ type: z.literal("validation_report"), verdict: z.enum(["pass","repairable","needs_user","fail"]), issues: z.array(z.unknown()), commitAllowed: z.boolean() }),
+  z.object({ type: z.literal("repair_plan"), steps: z.array(z.unknown()), summary: z.string() }),
+  z.object({ type: z.literal("done"), committed: z.boolean().optional(), needsUserDecision: z.boolean().optional(), runId: z.string().optional() }),
   z.object({ type: z.literal("error"), errorClass: z.string(), message: z.string() }),
 ]);
 export type SseEvent = z.infer<typeof SseEventSchema>;
