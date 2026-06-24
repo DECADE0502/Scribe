@@ -15,6 +15,7 @@ import { exportRoutes } from "./routes/export.js";
 import { worldbookRoutes } from "./routes/worldbook.js";
 import { importRoutes } from "./routes/imports.js";
 import { presetRoutes } from "./routes/presets.js";
+import { agentRoutes } from "./routes/agent.js";
 import type { AppPaths } from "../config/paths.js";
 import type { ModelManager } from "../ai/model-manager.js";
 import { loadConfig, type StyleReference } from "../config/load.js";
@@ -125,6 +126,7 @@ export function createApp(deps: AppDeps = {}) {
     app.route("/", worldbookRoutes({ registry: deps.bookRegistry, getModel, writeModelInfo }));
     app.route("/", importRoutes({ registry: deps.bookRegistry }));
     app.route("/", presetRoutes({ registry: deps.bookRegistry }));
+    app.route("/", agentRoutes({ registry: deps.bookRegistry, getModel, getAuditModel }));
     app.route("/", autoRoutes({
       registry: deps.bookRegistry,
       getModel,

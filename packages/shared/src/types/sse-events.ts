@@ -48,15 +48,18 @@ export const SseEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("workflow_mode"), mode: ExecutionModeSchema }),
   z.object({
     type: z.literal("execution_plan"),
-    taskId: z.string(),
-    policy: ExecutionPolicySchema,
-    steps: z.array(ExecutionStepSchema),
+    taskId: z.string().optional(),
+    policy: ExecutionPolicySchema.optional(),
+    steps: z.array(ExecutionStepSchema.or(z.unknown())),
     intentContract: IntentContractSchema.optional(),
+    summary: z.string().optional(),
   }),
   z.object({
     type: z.literal("execution_step"),
-    taskId: z.string(),
-    step: ExecutionStepSchema,
+    taskId: z.string().optional(),
+    step: ExecutionStepSchema.optional(),
+    stepId: z.string().optional(),
+    status: z.string().optional(),
   }),
   z.object({
     type: z.literal("confirmation_required"),
