@@ -1,20 +1,14 @@
 import { Hono } from "hono";
-import type { LanguageModel } from "ai";
-import type { ModelInfo } from "@scribe/shared";
 import type { BookRegistry } from "../book-registry.js";
-import type { StyleReference } from "../../config/load.js";
 
 export interface ConversationDeps {
-  getModel?: () => LanguageModel | undefined;
-  getAuditModel?: () => LanguageModel | undefined;
   registry?: BookRegistry;
-  writeModelInfo?: ModelInfo;
-  auditModelInfo?: ModelInfo;
-  onChapterCommitted?: (bookId: string) => void;
-  getMasterPrompt?: () => string;
-  getStyleReferences?: () => StyleReference[];
 }
 
+/**
+ * 只剩对话历史读取。写入走 /agent/run(agent.ts 里持久化 user/assistant 消息),
+ * 旧的 POST /conversation 聊天入口已随 4-agent 管线一起删除。
+ */
 export function conversationRoutes(deps: ConversationDeps = {}) {
   const app = new Hono();
 
@@ -25,15 +19,6 @@ export function conversationRoutes(deps: ConversationDeps = {}) {
     const handle = deps.registry.open(bookId);
     const rows = handle.conversationsRepo.listLatest(limit).reverse();
     return c.json({ messages: rows });
-  });
-
-  app.post("/api/books/:bookId/conversation", async (c) => {
-    const bookId = c.req.param("bookId");
-    return c.json({
-      error: "legacy_conversation_post_removed",
-      message: "Use /api/books/:bookId/agent/run with source:\"chat\".",
-      bookId,
-    }, 410);
   });
 
   return app;

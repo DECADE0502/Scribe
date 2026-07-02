@@ -112,17 +112,6 @@ export function bookRoutes(deps: BookRoutesDeps) {
     return c.json({ ok: true });
   });
 
-  app.post("/api/books/:bookId/onboard", async (c) => {
-    const bookId = c.req.param("bookId");
-    const book = deps.registry.booksRepo.get(bookId);
-    if (!book) return c.json({ error: "book_not_found" }, 404);
-    return c.json({
-      error: "legacy_onboard_route_removed",
-      message: "Use /api/books/:bookId/agent/run with source:\"onboard\".",
-      bookId,
-    }, 410);
-  });
-
   app.get("/api/books/:bookId/onboard-status", async (c) => {
     const bookId = c.req.param("bookId");
     const book = deps.registry.booksRepo.get(bookId);

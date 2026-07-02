@@ -17,23 +17,23 @@ async function readSse(res: Response): Promise<string[]> {
 describe("streamSseResponse", () => {
   it("emits event headers and JSON data separated by blank lines", async () => {
     async function* gen(): AsyncIterable<SseEvent> {
-      yield { type: "agent_progress", phase: "thinking", label: "理解意图", status: "running" };
-      yield { type: "done" };
+      yield { type: "text_delta", delta: "第一段正文" };
+      yield { type: "done", committed: true };
     }
 
     const res = streamSseResponse(gen());
     expect(res.headers.get("Content-Type")).toContain("text/event-stream");
     const all = (await readSse(res)).join("");
-    expect(all).toContain("event: agent_progress");
-    expect(all).toContain('"label":"理解意图"');
+    expect(all).toContain("event: text_delta");
+    expect(all).toContain('"delta":"第一段正文"');
     expect(all).toContain("event: done");
     expect(all.endsWith("\n\n")).toBe(true);
   });
 
   it("stops after done and does not emit later events", async () => {
     async function* gen(): AsyncIterable<SseEvent> {
-      yield { type: "done" };
-      yield { type: "agent_progress", phase: "completed", label: "不应出现", status: "done" };
+      yield { type: "done", committed: false };
+      yield { type: "text_delta", delta: "不应出现" };
     }
 
     const all = (await readSse(streamSseResponse(gen()))).join("");
@@ -42,7 +42,7 @@ describe("streamSseResponse", () => {
 
   it("emits error when the generator throws", async () => {
     async function* gen(): AsyncIterable<SseEvent> {
-      yield { type: "agent_progress", phase: "thinking", label: "前半段", status: "running" };
+      yield { type: "text_delta", delta: "前半段" };
       throw new Error("oops");
     }
 

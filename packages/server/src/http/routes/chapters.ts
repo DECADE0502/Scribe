@@ -19,18 +19,6 @@ export interface ChapterRoutesDeps {
 
 export function chapterRoutes(deps: ChapterRoutesDeps = {}) {
   const app = new Hono();
-  app.post("/api/books/:bookId/chapters/:no/write", async (c) => c.json({
-    error: "legacy_write_route_removed",
-    message: "Use /api/books/:bookId/agent/run with source:\"editor\".",
-  }, 410));
-  app.post("/api/books/:bookId/chapters/:no/write-draft", async (c) => c.json({
-    error: "legacy_write_draft_route_removed",
-    message: "Use /api/books/:bookId/agent/run with source:\"editor\".",
-  }, 410));
-  app.post("/api/books/:bookId/chapters/:no/finalize", async (c) => c.json({
-    error: "legacy_finalize_route_removed",
-    message: "Use /api/books/:bookId/agent/run with source:\"editor\".",
-  }, 410));
 
   app.get("/api/books/:bookId/chapters/:no", async (c) => {
     const bookId = c.req.param("bookId");

@@ -5,9 +5,7 @@ import { log } from "../logger.js";
 import { conversationRoutes } from "./routes/conversation.js";
 import { chapterRoutes, type ChapterRoutesDeps } from "./routes/chapters.js";
 import { bookRoutes, type BookRoutesDeps } from "./routes/books.js";
-import { reviseRoutes } from "./routes/revise.js";
 import { sidebarRoutes } from "./routes/sidebar.js";
-import { autoRoutes } from "./routes/auto.js";
 import { versionRoutes } from "./routes/versions.js";
 import { usageRoutes } from "./routes/usage.js";
 import { snapshotRoutes } from "./routes/snapshots.js";
@@ -108,20 +106,10 @@ export function createApp(deps: AppDeps = {}) {
     });
   }
 
-  app.route("/", conversationRoutes({
-    getModel,
-    getAuditModel,
-    registry: deps.bookRegistry,
-    writeModelInfo,
-    auditModelInfo,
-    onChapterCommitted: deps.onChapterCommitted,
-    getMasterPrompt,
-    getStyleReferences,
-  }));
+  app.route("/", conversationRoutes({ registry: deps.bookRegistry }));
   app.route("/", chapterRoutes({ registry: deps.bookRegistry, onChapterCommitted: deps.onChapterCommitted, getMasterPrompt, getStyleReferences, getAuditModel, writeModelInfo, auditModelInfo, getDeps: getChapterDeps }));
   if (deps.bookRegistry) {
     app.route("/", bookRoutes({ registry: deps.bookRegistry, getModel, writeModelInfo, getMasterPrompt, getStyleReferences }));
-    app.route("/", reviseRoutes({ registry: deps.bookRegistry, getModel, writeModelInfo }));
     app.route("/", sidebarRoutes({ registry: deps.bookRegistry }));
     app.route("/", worldbookRoutes({ registry: deps.bookRegistry, getModel, writeModelInfo }));
     app.route("/", importRoutes({ registry: deps.bookRegistry }));
@@ -133,17 +121,6 @@ export function createApp(deps: AppDeps = {}) {
       writeModelInfo,
       auditModelInfo,
       onChapterCommitted: deps.onChapterCommitted,
-    }));
-    app.route("/", autoRoutes({
-      registry: deps.bookRegistry,
-      getModel,
-      getAuditModel,
-      budgetLimitUsd: deps.budgetLimitUsd,
-      writeModelInfo,
-      auditModelInfo,
-      onChapterCommitted: deps.onChapterCommitted,
-      getMasterPrompt,
-      getStyleReferences,
     }));
     app.route("/", versionRoutes({ registry: deps.bookRegistry }));
     app.route("/", usageRoutes({

@@ -91,16 +91,5 @@ export function worldbookRoutes(deps: WorldbookRoutesDeps) {
     });
   });
 
-  app.post("/api/books/:bookId/worldbook/chat", async (c) => {
-    const handle = openHandle(c.req.param("bookId"));
-    if (!handle) return c.json({ error: "book_not_found" }, 404);
-    const bookId = c.req.param("bookId");
-    return c.json({
-      error: "legacy_worldbook_chat_removed",
-      message: "Use /api/books/:bookId/agent/run with a worldbook target.",
-      bookId,
-    }, 410);
-  });
-
   return app;
 }
