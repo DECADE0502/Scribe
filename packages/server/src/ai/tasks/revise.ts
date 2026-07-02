@@ -6,6 +6,7 @@ export interface ReviseParsed {
   mergedContent: string;
   newSegment: string;
   originalSegment: string;
+  title: string;
 }
 
 interface ReviseDeps {
@@ -24,11 +25,39 @@ function makeTask(deps: ReviseDeps = {}): TaskDef<ReviseParsed> & { withDeps: (d
       if (!range?.chapterNo || !range.selectedText) throw new Error("bad_revision_range");
       const file = ctx.handle.chapterFiles.read(range.chapterNo);
       if (!file) throw new Error(`chapter_missing:${range.chapterNo}`);
-      const idx = file.content.indexOf(range.selectedText);
+
+      // 优先按 start/end 精确定位:同一段落在章内重复出现时(如"她笑了。"这种短句),
+      // 单纯 indexOf 会命中第一处,与用户在 UI 里实际选中的位置错位。
+      // start/end 命中即用;若坐标越界 / 内容不吻合(如用户选中后章节又被改过),
+      // fall through 到 indexOf 兜底,而不是直接 selection_missing。
+      let idx = -1;
+      if (typeof range.start === "number" && typeof range.end === "number") {
+        if (file.content.slice(range.start, range.end) === range.selectedText) {
+          idx = range.start;
+        }
+      }
+      if (idx < 0) {
+        idx = file.content.indexOf(range.selectedText);
+      }
       if (idx < 0) throw new Error("selection_missing");
+
       const newSegment = streamedText.trim();
+      // 空输出 = 用户选段被静默删除,是数据破坏而非"改写"。宁可失败让上层重试。
+      if (!newSegment) throw new Error("empty_revision");
+
       const mergedContent = file.content.slice(0, idx) + newSegment + file.content.slice(idx + range.selectedText.length);
-      return { chapterNo: range.chapterNo, mergedContent, newSegment, originalSegment: range.selectedText };
+      // 读原章标题(chapterFiles.read 返回 ChapterRecord.title),
+      // 避免 apply() 硬编码 `第 N 章` 覆盖用户已改过的标题。
+      // 冷启动/首版章节 title 可能为空字符串,退回默认命名。
+      const title = file.title && file.title.length > 0 ? file.title : `第 ${range.chapterNo} 章`;
+
+      return {
+        chapterNo: range.chapterNo,
+        mergedContent,
+        newSegment,
+        originalSegment: range.selectedText,
+        title,
+      };
     },
     apply(ctx, parsed) {
       const { handle } = ctx;
@@ -43,7 +72,7 @@ function makeTask(deps: ReviseDeps = {}): TaskDef<ReviseParsed> & { withDeps: (d
       try {
         handle.chapterFiles.save({
           chapterNo: parsed.chapterNo, content: parsed.mergedContent,
-          title: `第 ${parsed.chapterNo} 章`, versionNo: versionNo!,
+          title: parsed.title, versionNo: versionNo!,
         });
       } catch (e) {
         try { handle.chaptersRepo.deleteVersion(parsed.chapterNo, versionNo!); } catch { /* rollback best-effort */ }
