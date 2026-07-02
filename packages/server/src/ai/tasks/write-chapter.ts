@@ -49,6 +49,19 @@ function normalizeCharacterRole(
   return role === "minor" ? "supporting" : role;
 }
 
+/**
+ * 抽取模型产出的伏笔状态词("planted"/"hinted"/"resolved")与领域模型的
+ * ForeshadowingStatusSchema("active"/"paid"/"dropped")不是同一套值域。
+ * foreshadowingRepo.create() 写入时不做 zod 校验(裸 INSERT),但下次
+ * list() 读取时会用 ForeshadowingSchema.parse() 校验 status,不归一化的话
+ * 首次写入 "planted" 就会让后续所有伏笔读取炸掉。
+ */
+function normalizeForeshadowingStatus(
+  status: Extracted["foreshadowing"][number]["status"],
+): "active" | "paid" | "dropped" {
+  return status === "resolved" ? "paid" : "active";
+}
+
 function makeTask(deps: WriteChapterDeps = {}): TaskDef<WriteChapterParsed> & { withDeps: (d: WriteChapterDeps) => TaskDef<WriteChapterParsed> } {
   const streamProse = deps.streamProse ?? defaultStreamProse;
   const extractStructured = deps.extractStructured ?? defaultExtractStructured;
@@ -99,7 +112,7 @@ function makeTask(deps: WriteChapterDeps = {}): TaskDef<WriteChapterParsed> & { 
             description: f.description || null,
             plantedChapter: f.plantedChapter,
             paidChapter: null,
-            status: f.status,
+            status: normalizeForeshadowingStatus(f.status),
             relatedCharacters: f.relatedCharacters,
           } as any);
         }
