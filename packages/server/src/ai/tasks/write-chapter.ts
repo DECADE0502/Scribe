@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { streamLlm, generateLlmText } from "../llm-call.js";
 import { buildChapterWriteMessages } from "../context-builder/book-context.js";
+import { prependDeepestPrompt } from "../prompts/deepest-prompt.js";
 import type { TaskContext, TaskDef, TaskStreamEvent } from "./types.js";
 
 const MIN_DRAFT_CHARS = 500;
@@ -13,11 +14,13 @@ const ExtractSchema = z.object({
   })).default([]),
   foreshadowing: z.array(z.object({
     label: z.string(), description: z.string().default(""),
-    plantedChapter: z.number().int(), status: z.enum(["planted", "hinted", "resolved"]).default("planted"),
+    // 章号在 apply() 里一律 clamp 到本章,LLM 给不给都无所谓 —— optional 免得漏字段被 zod 误杀
+    plantedChapter: z.number().int().optional(),
+    status: z.enum(["planted", "hinted", "resolved"]).default("planted"),
     relatedCharacters: z.array(z.string()).default([]),
   })).default([]),
   timeline: z.array(z.object({
-    chapterNo: z.number().int(),
+    chapterNo: z.number().int().optional(),
     storyTime: z.string(),
     event: z.string(),
     participants: z.array(z.string()).default([]),
@@ -116,6 +119,7 @@ function makeTask(deps: WriteChapterDeps = {}): TaskDef<WriteChapterParsed> & { 
         const existingChars = handle.charactersRepo.list();
         for (const c of parsed.characters) {
           const cleanName = normalizeText(c.name ?? "");
+          if (!cleanName) continue; // 空名是抽取噪音,不落库
           const existing = existingChars.find((x) => normalizeText(x.name) === cleanName);
           if (existing) {
             handle.charactersRepo.update(existing.id, {
@@ -140,6 +144,7 @@ function makeTask(deps: WriteChapterDeps = {}): TaskDef<WriteChapterParsed> & { 
         const existingForeshadowing = handle.foreshadowingRepo.list();
         for (const f of parsed.foreshadowing) {
           const cleanLabel = normalizeText(f.label ?? "");
+          if (!cleanLabel) continue; // 空标签会让 dedup 把不相干条目并成一条,直接丢弃
           const cleanDesc = normalizeText(f.description ?? "");
           const status = normalizeForeshadowingStatus(f.status);
           const relatedCharacters = (f.relatedCharacters ?? []).map(normalizeText);
@@ -167,6 +172,8 @@ function makeTask(deps: WriteChapterDeps = {}): TaskDef<WriteChapterParsed> & { 
         for (const t of parsed.timeline) {
           const cleanStoryTime = normalizeText(t.storyTime ?? "");
           const cleanEvent = normalizeText(t.event ?? "");
+          if (!cleanEvent) continue; // 空事件同理
+
           const cleanParticipants = (t.participants ?? []).map(normalizeText);
           const dup = existingTimeline.find(
             (x) => normalizeText(x.storyTime) === cleanStoryTime && normalizeText(x.event) === cleanEvent,
@@ -204,9 +211,13 @@ async function* defaultStreamProse(ctx: TaskContext): AsyncIterable<string> {
   const chapterNo = ctx.request.target?.chapterNo;
   if (!chapterNo) throw new Error("bad_chapter_no");
   const { messages } = buildChapterWriteMessages(
-    ctx.handle, chapterNo, ctx.request.message, undefined, [],
+    ctx.handle, chapterNo, ctx.request.message, undefined, ctx.styleReferences ?? [],
   );
-  for await (const ev of streamLlm({ model: ctx.writeModel, messages, abortSignal: ctx.abortSignal })) {
+  for await (const ev of streamLlm({
+    model: ctx.writeModel,
+    messages: prependDeepestPrompt(messages, ctx.deepestPrompt),
+    abortSignal: ctx.abortSignal,
+  })) {
     if (ev.type === "text_delta") yield ev.delta;
     else if (ev.type === "usage") {
       ctx.onUsage?.({
@@ -216,6 +227,10 @@ async function* defaultStreamProse(ctx: TaskContext): AsyncIterable<string> {
         reasoningTokens: ev.reasoningTokens,
         modelRole: "write",
       });
+    } else if (ev.type === "error") {
+      // streamLlm 不抛错、只 yield error 事件 —— 不在这里转成 throw 的话,
+      // 供应商中途失败会让截断正文被当成完整章节提交。
+      throw new Error(ev.message);
     }
   }
 }
@@ -225,15 +240,16 @@ async function defaultExtractStructured(ctx: TaskContext, prose: string): Promis
   const prompt = [
     "You are extracting structured state changes from a novel chapter.",
     "Return ONLY a valid JSON object matching this schema exactly (no markdown):",
-    "{ characters:[{name,role,baseData,currentState}], foreshadowing:[{label,description,plantedChapter,status,relatedCharacters}], timeline:[{chapterNo,storyTime,event,participants}] }",
-    `Current chapterNo: ${chapterNo}. Only extract items actually mentioned in the prose. Empty arrays if none.`,
+    "{ characters:[{name,role,baseData,currentState}], foreshadowing:[{label,description,status,relatedCharacters}], timeline:[{storyTime,event,participants}] }",
+    `Current chapter is No.${chapterNo}; chapter numbers are recorded server-side, do not output them.`,
+    "Only extract items actually mentioned in the prose. Empty arrays if none.",
   ].join("\n");
   const { text, usage } = await generateLlmText({
     model: ctx.auditModel,
-    messages: [
+    messages: prependDeepestPrompt([
       { role: "system", content: prompt },
       { role: "user", content: prose },
-    ],
+    ], ctx.deepestPrompt),
     abortSignal: ctx.abortSignal,
   });
   ctx.onUsage?.({ ...usage, modelRole: "audit" });

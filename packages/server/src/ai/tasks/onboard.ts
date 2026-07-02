@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { streamLlm, generateLlmText } from "../llm-call.js";
+import { prependDeepestPrompt } from "../prompts/deepest-prompt.js";
 import type { TaskContext, TaskDef, TaskStreamEvent } from "./types.js";
 
 const ExtractSchema = z.object({
@@ -160,7 +161,11 @@ async function* defaultStreamReply(ctx: TaskContext): AsyncIterable<string> {
     },
     { role: "user" as const, content: ctx.request.message },
   ];
-  for await (const ev of streamLlm({ model: ctx.writeModel, messages, abortSignal: ctx.abortSignal })) {
+  for await (const ev of streamLlm({
+    model: ctx.writeModel,
+    messages: prependDeepestPrompt(messages, ctx.deepestPrompt),
+    abortSignal: ctx.abortSignal,
+  })) {
     if (ev.type === "text_delta") yield ev.delta;
     else if (ev.type === "usage") {
       ctx.onUsage?.({
@@ -170,6 +175,9 @@ async function* defaultStreamReply(ctx: TaskContext): AsyncIterable<string> {
         reasoningTokens: ev.reasoningTokens,
         modelRole: "write",
       });
+    } else if (ev.type === "error") {
+      // streamLlm 只 yield error 不抛;转 throw 让 dispatch 走 stream_failed。
+      throw new Error(ev.message);
     }
   }
 }
@@ -183,10 +191,10 @@ async function defaultExtractStructured(ctx: TaskContext, reply: string): Promis
   ].join("\n");
   const { text, usage } = await generateLlmText({
     model: ctx.auditModel,
-    messages: [
+    messages: prependDeepestPrompt([
       { role: "system", content: prompt },
       { role: "user", content: `用户原文:${ctx.request.message}\n\n助手回复:${reply}` },
-    ],
+    ], ctx.deepestPrompt),
     abortSignal: ctx.abortSignal,
   });
   ctx.onUsage?.({ ...usage, modelRole: "audit" });

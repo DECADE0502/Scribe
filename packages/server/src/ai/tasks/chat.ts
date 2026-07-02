@@ -1,4 +1,5 @@
 import { streamLlm } from "../llm-call.js";
+import { prependDeepestPrompt } from "../prompts/deepest-prompt.js";
 import type { TaskContext, TaskDef, TaskStreamEvent } from "./types.js";
 
 export interface ChatParsed { reply: string; }
@@ -41,7 +42,11 @@ async function* defaultStreamReply(ctx: TaskContext): AsyncIterable<string> {
     },
     { role: "user" as const, content: ctx.request.message },
   ];
-  for await (const ev of streamLlm({ model: ctx.writeModel, messages, abortSignal: ctx.abortSignal })) {
+  for await (const ev of streamLlm({
+    model: ctx.writeModel,
+    messages: prependDeepestPrompt(messages, ctx.deepestPrompt),
+    abortSignal: ctx.abortSignal,
+  })) {
     if (ev.type === "text_delta") yield ev.delta;
     else if (ev.type === "usage") {
       ctx.onUsage?.({
@@ -51,6 +56,9 @@ async function* defaultStreamReply(ctx: TaskContext): AsyncIterable<string> {
         reasoningTokens: ev.reasoningTokens,
         modelRole: "write",
       });
+    } else if (ev.type === "error") {
+      // streamLlm 只 yield error 不抛;转 throw 让 dispatch 走 stream_failed。
+      throw new Error(ev.message);
     }
   }
 }

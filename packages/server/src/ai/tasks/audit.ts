@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { generateLlmText } from "../llm-call.js";
+import { prependDeepestPrompt } from "../prompts/deepest-prompt.js";
 import type { TaskContext, TaskDef, TaskStreamEvent } from "./types.js";
 
 /**
@@ -122,10 +123,10 @@ async function defaultRunAudit(ctx: TaskContext): Promise<AuditResultInput> {
   ].join("\n");
   const { text, usage } = await generateLlmText({
     model: ctx.auditModel,
-    messages: [
+    messages: prependDeepestPrompt([
       { role: "system", content: prompt },
       { role: "user", content: parts.join("\n\n") },
-    ],
+    ], ctx.deepestPrompt),
     abortSignal: ctx.abortSignal,
   });
   ctx.onUsage?.({ ...usage, modelRole: "audit" });

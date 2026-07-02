@@ -8,6 +8,8 @@ import { resolveTask as defaultResolveTask } from "../../ai/tasks/registry.js";
 import type { TaskDef, TaskUsage } from "../../ai/tasks/types.js";
 import { computeUsageCost } from "../../ai/usage-tracker.js";
 import { createConversationMessageService } from "../../ai/conversation-message-service.js";
+import { resolveDeepestPrompt } from "../../ai/prompts/deepest-prompt.js";
+import type { StyleReference } from "../../config/load.js";
 
 export interface AgentRoutesDeps {
   registry: BookRegistry;
@@ -16,6 +18,10 @@ export interface AgentRoutesDeps {
   writeModelInfo?: ModelInfo;
   auditModelInfo?: ModelInfo;
   onChapterCommitted?: (bookId: string) => void;
+  /** 全局最深处提示词(书级 book_meta.master_prompt 覆盖它) */
+  getMasterPrompt?: () => string;
+  /** 全局文风参考列表 */
+  getStyleReferences?: () => StyleReference[];
   /** 测试注入:跳过真实 source→task 映射,直接指定任务实现 */
   resolveTask?: (request: AgentRunRequest) => TaskDef<any>;
 }
@@ -71,6 +77,14 @@ export function agentRoutes(deps: AgentRoutesDeps) {
       deps.registry.booksRepo.addCost(bookId, cost);
     };
 
+    // 最深处提示词:书级覆盖(book_meta.master_prompt,显式开关 "0" 关闭)> 全局配置。
+    // 解析一次,由各 task 的默认 LLM 调用统一 prepend。
+    const deepestPrompt = resolveDeepestPrompt({
+      perBook: handle.bookMetaRepo.get("master_prompt"),
+      perBookEnabled: handle.bookMetaRepo.get("master_prompt_enabled") !== "0",
+      global: deps.getMasterPrompt?.(),
+    });
+
     const inner = dispatchTask(task, {
       handle,
       request,
@@ -78,6 +92,8 @@ export function agentRoutes(deps: AgentRoutesDeps) {
       auditModel,
       abortSignal: c.req.raw.signal,
       onUsage,
+      deepestPrompt,
+      styleReferences: deps.getStyleReferences?.() ?? [],
     });
 
     async function* persisting() {

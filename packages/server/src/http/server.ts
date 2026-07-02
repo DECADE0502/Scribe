@@ -121,6 +121,8 @@ export function createApp(deps: AppDeps = {}) {
       writeModelInfo,
       auditModelInfo,
       onChapterCommitted: deps.onChapterCommitted,
+      getMasterPrompt,
+      getStyleReferences,
     }));
     app.route("/", versionRoutes({ registry: deps.bookRegistry }));
     app.route("/", usageRoutes({

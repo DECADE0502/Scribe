@@ -58,10 +58,11 @@ function makeStubModel() {
 const PROSE = "我推开门，冷风扑面而来。远处的山脊在暮色里起伏，像一头沉睡的兽。".repeat(20);
 
 /** 写作用 stub:流式吐 ≥500 字正文(write-chapter 任务的 MIN_DRAFT_CHARS 门槛)。 */
-function makeWritingModel() {
+function makeWritingModel(capture?: { prompts: unknown[] }) {
   return {
     ...makeStubModel(),
-    async doStream() {
+    async doStream(options: unknown) {
+      capture?.prompts.push(options);
       return {
         stream: new ReadableStream({
           start(ctrl) {
@@ -202,10 +203,12 @@ describe("conversation and agent routes", () => {
   });
 
   it("writes a chapter end-to-end: streamed prose commits, state extracted, conversation keeps a short note", async () => {
+    const capture = { prompts: [] as unknown[] };
     const app = createApp({
       bookRegistry: registry,
-      getModel: () => makeWritingModel() as never,
+      getModel: () => makeWritingModel(capture) as never,
       getAuditModel: () => makeExtractionModel() as never,
+      getMasterPrompt: () => "永远保持第一人称视角。",
     });
     const bookId = await createBook(app);
 
@@ -233,6 +236,10 @@ describe("conversation and agent routes", () => {
       chapterNo: 1,
       content: expect.stringContaining("我推开门"),
     });
+
+    // 最深处提示词(全局 master prompt)必须到达写作模型的消息里
+    expect(capture.prompts.length).toBeGreaterThan(0);
+    expect(JSON.stringify(capture.prompts[0])).toContain("永远保持第一人称视角。");
 
     // 抽取结果落库:角色/伏笔/时间线
     const handle = registry.open(bookId);

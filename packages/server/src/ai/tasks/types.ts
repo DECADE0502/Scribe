@@ -1,6 +1,7 @@
 import type { LanguageModel } from "ai";
 import type { BookHandle } from "../../http/book-registry.js";
 import type { AgentRunRequest } from "@scribe/shared";
+import type { StyleReference } from "../../config/load.js";
 
 /** 单次 LLM 调用的 token 用量。task 在每次调用完成后经 ctx.onUsage 上报,由路由计费落库。 */
 export interface TaskUsage {
@@ -24,6 +25,13 @@ export interface TaskContext {
    * streamLlm / generateLlmText 调用后调它。
    */
   onUsage?: (usage: TaskUsage) => void;
+  /**
+   * 最深处提示词(spec 核心功能:书级覆盖 > 全局,路由已解析好)。
+   * 所有默认 LLM 调用都必须用 prependDeepestPrompt 把它拼到消息最前端。
+   */
+  deepestPrompt?: string;
+  /** 全局文风参考列表;write-chapter 传给 buildChapterWriteMessages 做风格注入。 */
+  styleReferences?: StyleReference[];
 }
 
 export type TaskStreamEvent = { type: "text_delta"; delta: string };

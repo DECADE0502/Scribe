@@ -122,4 +122,21 @@ describe("writeChapterTask", () => {
     }) ?? writeChapterTask;
     await expect(task.parse(ctx, "太短。")).rejects.toThrow(/draft_too_short/);
   });
+
+  it("apply:空名角色/空标签伏笔/空事件时间线全部跳过(抽取噪音不落库)", () => {
+    const rig = mockHandle();
+    const ctx = { handle: rig.handle, request: { source: "editor", target: { chapterNo: 5 } } } as any;
+
+    writeChapterTask.apply(ctx, {
+      chapterNo: 5, title: "第 5 章", content: "x".repeat(500),
+      characters: [{ name: "   ", role: "supporting", baseData: {}, currentState: {} }],
+      foreshadowing: [{ label: "", description: "有描述但没标签", status: "planted", relatedCharacters: [] }],
+      timeline: [{ storyTime: "夜", event: "  ", participants: [] }],
+    } as any);
+
+    expect(rig.chars).toEqual([]);
+    expect(rig.foreshadowing).toEqual([]);
+    expect(rig.timeline).toEqual([]);
+    expect(rig.versions).toHaveLength(1); // 章节本身照常落库
+  });
 });
