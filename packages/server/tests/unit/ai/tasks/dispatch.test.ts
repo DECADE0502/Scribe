@@ -48,4 +48,16 @@ describe("dispatchTask", () => {
     for await (const ev of dispatchTask(task, baseCtx)) events.push(ev);
     expect(events.at(-1)).toMatchObject({ type: "error", errorClass: "apply_failed", message: "db fail" });
   });
+
+  it("stream 抛非 Error 值(字符串)→ 仍产出 error,不炸", async () => {
+    const task: TaskDef = {
+      name: "t",
+      stream: async function* () { throw "just a string"; },
+      parse: async () => ({}),
+      apply: () => {},
+    };
+    const events = [];
+    for await (const ev of dispatchTask(task, {} as TaskContext)) events.push(ev);
+    expect(events.at(-1)).toMatchObject({ type: "error", errorClass: "stream_failed", message: "just a string" });
+  });
 });

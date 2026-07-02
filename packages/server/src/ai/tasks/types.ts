@@ -10,9 +10,7 @@ export interface TaskContext {
   abortSignal?: AbortSignal;
 }
 
-export type TaskStreamEvent =
-  | { type: "text_delta"; delta: string }
-  | { type: "progress"; detail: string };
+export type TaskStreamEvent = { type: "text_delta"; delta: string };
 
 export interface TaskDef<TParsed = unknown> {
   name: string;

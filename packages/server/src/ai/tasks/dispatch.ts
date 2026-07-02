@@ -14,7 +14,7 @@ export async function* dispatchTask(
       }
     }
   } catch (err) {
-    yield { type: "error", errorClass: "stream_failed", message: (err as Error).message };
+    yield { type: "error", errorClass: "stream_failed", message: err instanceof Error ? err.message : String(err) };
     return;
   }
 
@@ -22,7 +22,7 @@ export async function* dispatchTask(
   try {
     parsed = await task.parse(ctx, text);
   } catch (err) {
-    yield { type: "error", errorClass: "parse_failed", message: (err as Error).message };
+    yield { type: "error", errorClass: "parse_failed", message: err instanceof Error ? err.message : String(err) };
     return;
   }
 
@@ -30,6 +30,6 @@ export async function* dispatchTask(
     task.apply(ctx, parsed);
     yield { type: "done", committed: true };
   } catch (err) {
-    yield { type: "error", errorClass: "apply_failed", message: (err as Error).message };
+    yield { type: "error", errorClass: "apply_failed", message: err instanceof Error ? err.message : String(err) };
   }
 }
