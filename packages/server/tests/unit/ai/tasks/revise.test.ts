@@ -107,4 +107,53 @@ describe("reviseTask", () => {
     const parsed = await task.parse(ctx, "她哭了。");
     expect(parsed.mergedContent).toBe("开头。她哭了。结尾。");
   });
+
+  it("apply 保留自定义章节标题(而非硬编码默认名)", async () => {
+    const versions: any[] = [];
+    const files: any[] = [];
+    const handle = {
+      workspaceDb: { transaction: (fn: () => void) => () => fn() },
+      chaptersRepo: {
+        saveVersion: (v: any) => { const r = { ...v, versionNo: versions.length + 1 }; versions.push(r); return r; },
+        deleteVersion: () => {},
+      },
+      chapterFiles: {
+        read: () => ({ content: "开头。要改的段落。结尾。", title: "尘封的往事" }),
+        save: (f: any) => files.push(f),
+      },
+    } as any;
+    const ctx = {
+      handle, writeModel: {} as any, auditModel: {} as any,
+      request: {
+        message: "改", source: "revision",
+        target: { revisionRange: { chapterNo: 3, selectedText: "要改的段落。" } },
+      },
+    } as any;
+    const task = reviseTask.withDeps?.({ streamRevised: async function* () { yield "新段落。"; } }) ?? reviseTask;
+
+    const deltas: string[] = [];
+    for await (const ev of task.stream(ctx)) if (ev.type === "text_delta") deltas.push(ev.delta);
+    const parsed = await task.parse(ctx, deltas.join(""));
+    task.apply(ctx, parsed);
+
+    expect(parsed.title).toBe("尘封的往事");
+    expect(files[0]).toMatchObject({ title: "尘封的往事" });
+    // 确认没被回退成默认名:
+    expect(files[0].title).not.toBe("第 3 章");
+  });
+
+  it("parse:file.title 为空字符串时,回退到默认命名", async () => {
+    const handle = {
+      chapterFiles: { read: () => ({ content: "开头。要改的段落。结尾。", title: "" }) },
+      chaptersRepo: { saveVersion: () => ({ versionNo: 1 }), deleteVersion: () => {} },
+      workspaceDb: { transaction: (fn: () => void) => () => fn() },
+    } as any;
+    const ctx = {
+      handle,
+      request: { message: "改", source: "revision", target: { revisionRange: { chapterNo: 7, selectedText: "要改的段落。" } } },
+    } as any;
+    const task = reviseTask.withDeps?.({ streamRevised: async function* () { yield "新段落。"; } }) ?? reviseTask;
+    const parsed = await task.parse(ctx, "新段落。");
+    expect(parsed.title).toBe("第 7 章");
+  });
 });
