@@ -20,7 +20,11 @@ function mockHandle() {
       },
       chapterFiles: { save: (f: any) => files.push(f), list: () => [], read: () => undefined },
       charactersRepo: { list: () => chars, create: (c: any) => chars.push({ ...c, id: `c${chars.length}` }), update: (id: string, patch: any) => { const i = chars.findIndex(x => x.id === id); Object.assign(chars[i], patch); } },
-      foreshadowingRepo: { list: () => foreshadowing, create: (f: any) => foreshadowing.push({ ...f, id: `f${foreshadowing.length}` }) },
+      foreshadowingRepo: {
+        list: () => foreshadowing,
+        create: (f: any) => foreshadowing.push({ ...f, id: `f${foreshadowing.length}` }),
+        update: (id: string, patch: any) => { const i = foreshadowing.findIndex(x => x.id === id); if (i >= 0) Object.assign(foreshadowing[i], patch); },
+      },
       timelineRepo: { listAll: () => timeline, create: (e: any) => timeline.push({ ...e, id: `t${timeline.length}` }) },
       outlineRepo: { listAll: () => [], findChapterNode: () => undefined },
       genreSectionsRepo: { listSections: () => [], listItems: () => [], addItem: () => {} },
@@ -97,6 +101,16 @@ describe("writeChapterTask", () => {
     } as any)).toThrow(/disk full/);
 
     expect(rig.versions).toHaveLength(0);   // 已删掉
+  });
+
+  it("parse:extractStructured 抛错时,错误向上传递(dispatch 会捕获)", async () => {
+    const { handle } = mockHandle();
+    const ctx = { handle, request: { source: "editor", target: { chapterNo: 5 } } } as any;
+    const task = writeChapterTask.withDeps?.({
+      streamProse: async function* () { yield "长长的正文。".repeat(100); },
+      extractStructured: async () => { throw new Error("model quota exceeded"); },
+    }) ?? writeChapterTask;
+    await expect(task.parse(ctx, "长长的正文。".repeat(100))).rejects.toThrow(/model quota exceeded/);
   });
 
   it("parse:内容不足 500 字抛 draft_too_short", async () => {

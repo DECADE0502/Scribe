@@ -39,6 +39,15 @@ interface WriteChapterDeps {
 }
 
 /**
+ * 名称/标签归一化:去首尾空白 + 内部空白折叠为单空格。
+ * 与 state-tools.ts 里的同名 helper 保持语义一致(那边是模块私有,不导出,
+ * 这里 inline 一份以避免耦合 tools 层)。dedup 匹配和落库前清理都用它。
+ */
+function normalizeText(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+/**
  * "minor" 不是 Character.role 的合法值(CharacterSchema 只接受
  * protagonist/antagonist/supporting/null)。抽取模型可能产出 "minor",
  * 这里落库前把它归一化,避免下次读取角色列表时 zod parse 炸掉。
@@ -100,23 +109,76 @@ function makeTask(deps: WriteChapterDeps = {}): TaskDef<WriteChapterParsed> & { 
           chapterNo: parsed.chapterNo, source: "ai_write", contentMd: parsed.content,
         });
         savedVersion = saved.versionNo;
+
+        // 角色:list() hoist 到循环外;name 用 normalizeText 匹配已有条目。
+        // role 一经创建不再由后续章节抽取覆盖(避免主角→配角类漂移)。
+        const existingChars = handle.charactersRepo.list();
         for (const c of parsed.characters) {
-          const existing = handle.charactersRepo.list().find((x: any) => x.name === c.name);
-          const role = normalizeCharacterRole(c.role);
-          if (existing) handle.charactersRepo.update(existing.id, { currentState: c.currentState, baseData: c.baseData });
-          else handle.charactersRepo.create({ name: c.name, role, baseData: c.baseData, currentState: c.currentState });
+          const cleanName = normalizeText(c.name ?? "");
+          const existing = existingChars.find((x) => normalizeText(x.name) === cleanName);
+          if (existing) {
+            handle.charactersRepo.update(existing.id, {
+              currentState: c.currentState,
+              baseData: c.baseData,
+            });
+          } else {
+            handle.charactersRepo.create({
+              name: cleanName,
+              role: normalizeCharacterRole(c.role) ?? null,
+              baseData: c.baseData,
+              currentState: c.currentState,
+            });
+          }
         }
+
+        // 伏笔:label 用 normalizeText dedup,已存在则合并 relatedCharacters + 刷新 status/desc;
+        // plantedChapter 一律 clamp 到本章号(抗 LLM 章号漂移)。
+        // parsed 上游经 ExtractSchema.parse 补过默认值,但 apply() 允许调用方
+        // 传裸对象(dispatch.ts 的 unknown 通道 / 测试直接构造),对 string 字段
+        // 做 nullish 兜底,避免个别字段缺失时炸掉整个 apply。
+        const existingForeshadowing = handle.foreshadowingRepo.list();
         for (const f of parsed.foreshadowing) {
-          handle.foreshadowingRepo.create({
-            label: f.label,
-            description: f.description || null,
-            plantedChapter: f.plantedChapter,
-            paidChapter: null,
-            status: normalizeForeshadowingStatus(f.status),
-            relatedCharacters: f.relatedCharacters,
-          } as any);
+          const cleanLabel = normalizeText(f.label ?? "");
+          const cleanDesc = normalizeText(f.description ?? "");
+          const status = normalizeForeshadowingStatus(f.status);
+          const relatedCharacters = (f.relatedCharacters ?? []).map(normalizeText);
+          const existing = existingForeshadowing.find((x) => normalizeText(x.label) === cleanLabel);
+          if (existing) {
+            handle.foreshadowingRepo.update(existing.id, {
+              description: cleanDesc || existing.description,
+              status,
+              relatedCharacters: [...new Set([...existing.relatedCharacters, ...relatedCharacters])],
+            });
+          } else {
+            handle.foreshadowingRepo.create({
+              label: cleanLabel,
+              description: cleanDesc || null,
+              plantedChapter: parsed.chapterNo,
+              paidChapter: null,
+              status,
+              relatedCharacters,
+            });
+          }
         }
-        for (const t of parsed.timeline) handle.timelineRepo.create(t as any);
+
+        // 时间线:(storyTime, event) dedup;chapterNo 一律 clamp 到本章号。
+        const existingTimeline = handle.timelineRepo.listAll();
+        for (const t of parsed.timeline) {
+          const cleanStoryTime = normalizeText(t.storyTime ?? "");
+          const cleanEvent = normalizeText(t.event ?? "");
+          const cleanParticipants = (t.participants ?? []).map(normalizeText);
+          const dup = existingTimeline.find(
+            (x) => normalizeText(x.storyTime) === cleanStoryTime && normalizeText(x.event) === cleanEvent,
+          );
+          if (!dup) {
+            handle.timelineRepo.create({
+              chapterNo: parsed.chapterNo,
+              storyTime: cleanStoryTime,
+              event: cleanEvent,
+              participants: cleanParticipants,
+            });
+          }
+        }
       });
       runDb();
 
