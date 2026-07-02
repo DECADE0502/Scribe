@@ -1,0 +1,168 @@
+import { describe, expect, it, vi } from "vitest";
+import { Hono } from "hono";
+import { agentRoutes } from "../../src/http/routes/agent.js";
+
+function makeHandle(savedVersions: any[]) {
+  return {
+    bookId: "b1",
+    workspaceDb: { transaction: (fn: () => void) => () => fn() },
+    chaptersRepo: {
+      saveVersion: (v: any) => {
+        const r = { ...v, versionNo: savedVersions.length + 1 };
+        savedVersions.push(r);
+        return r;
+      },
+      deleteVersion: () => {},
+      listSummaries: () => [],
+      saveSummary: () => {},
+      saveAudit: () => {},
+    },
+    chapterFiles: { save: () => {}, list: () => [], read: () => undefined },
+    charactersRepo: { list: () => [], create: () => {}, update: () => {} },
+    foreshadowingRepo: { list: () => [], create: () => {} },
+    timelineRepo: { listAll: () => [], create: () => {} },
+    outlineRepo: { listAll: () => [], findChapterNode: () => undefined },
+    genreSectionsRepo: { listSections: () => [], listItems: () => [], addItem: () => {} },
+    worldbookRepo: { list: () => [] },
+    promptPresetsRepo: { listPresets: () => [], listBlocks: () => [] },
+    readerIssuesRepo: { listOpen: () => [], create: () => {} },
+    bookMetaRepo: { get: () => undefined, set: () => {} },
+    conversationsRepo: { append: () => {}, listLatest: () => [], listSince: () => [], countAll: () => 0 },
+    tokenUsageRepo: { record: () => {} },
+  } as any;
+}
+
+function makeRegistry(handle: any, book: any | null = { id: "b1", title: "T", premise: "P" }) {
+  return {
+    booksRepo: { get: () => book ?? undefined },
+    open: () => handle,
+    closeBook: () => {},
+    acquire: () => handle,
+    release: () => {},
+    isMutating: () => false,
+  } as any;
+}
+
+function makeStubModel() {
+  return {} as any;
+}
+
+describe("POST /api/books/:bookId/agent/run", () => {
+  it("write_chapter 场景:发 text_delta 序列 + done committed=true", async () => {
+    const savedVersions: any[] = [];
+    const handle = makeHandle(savedVersions);
+    const registry = makeRegistry(handle);
+
+    const app = new Hono();
+    app.route("/", agentRoutes({
+      registry,
+      getModel: () => makeStubModel(),
+      getAuditModel: () => makeStubModel(),
+      resolveTask: () => ({
+        name: "write-chapter",
+        stream: async function* () {
+          yield { type: "text_delta" as const, delta: "我推开门。".repeat(60) };
+        },
+        parse: async () => ({
+          chapterNo: 5,
+          title: "第 5 章",
+          content: "我推开门。".repeat(60),
+          characters: [],
+          foreshadowing: [],
+          timeline: [],
+        }),
+        apply: (ctx: any, p: any) => {
+          ctx.handle.chaptersRepo.saveVersion({ chapterNo: p.chapterNo, source: "ai_write", contentMd: p.content });
+        },
+      }),
+    }));
+
+    const res = await app.request("/api/books/b1/agent/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "写第 5 章", source: "editor", target: { chapterNo: 5 } }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain(`"type":"text_delta"`);
+    expect(body).toContain(`"type":"done"`);
+    expect(body).toContain(`"committed":true`);
+    expect(savedVersions).toHaveLength(1);
+  });
+
+  it("stream 抛错 → 发 error,不 apply", async () => {
+    const savedVersions: any[] = [];
+    const handle = makeHandle(savedVersions);
+    const registry = makeRegistry(handle);
+    const applySpy = vi.fn();
+
+    const app = new Hono();
+    app.route("/", agentRoutes({
+      registry,
+      getModel: () => makeStubModel(),
+      getAuditModel: () => makeStubModel(),
+      resolveTask: () => ({
+        name: "x",
+        stream: async function* () {
+          throw new Error("bad model");
+        },
+        parse: async () => ({}),
+        apply: applySpy,
+      }),
+    }));
+
+    const res = await app.request("/api/books/b1/agent/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "x", source: "chat" }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).toContain(`"errorClass":"stream_failed"`);
+    expect(applySpy).not.toHaveBeenCalled();
+  });
+
+  it("请求体不合法 → 400 bad_request", async () => {
+    const savedVersions: any[] = [];
+    const handle = makeHandle(savedVersions);
+    const registry = makeRegistry(handle);
+
+    const app = new Hono();
+    app.route("/", agentRoutes({
+      registry,
+      getModel: () => makeStubModel(),
+      getAuditModel: () => makeStubModel(),
+    }));
+
+    const res = await app.request("/api/books/b1/agent/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error: string };
+    expect(body.error).toBe("bad_request");
+  });
+
+  it("book 不存在 → 404", async () => {
+    const savedVersions: any[] = [];
+    const handle = makeHandle(savedVersions);
+    const registry = makeRegistry(handle, null);
+
+    const app = new Hono();
+    app.route("/", agentRoutes({
+      registry,
+      getModel: () => makeStubModel(),
+      getAuditModel: () => makeStubModel(),
+    }));
+
+    const res = await app.request("/api/books/b1/agent/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "x", source: "chat" }),
+    });
+    expect(res.status).toBe(404);
+    const body = await res.json() as { error: string };
+    expect(body.error).toBe("book_not_found");
+  });
+});
