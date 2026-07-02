@@ -9,6 +9,7 @@ describe("dispatchTask", () => {
     const apply = vi.fn();
     const task: TaskDef<{ text: string }> = {
       name: "t",
+      mutates: true,
       stream: async function* () { yield { type: "text_delta", delta: "a" }; yield { type: "text_delta", delta: "b" }; },
       parse: async (_ctx, text) => ({ text }),
       apply,
@@ -23,10 +24,24 @@ describe("dispatchTask", () => {
     expect(events.at(-1)).toEqual({ type: "done", committed: true });
   });
 
+  it("mutates=false 的任务(纯对话)→ done committed=false", async () => {
+    const task: TaskDef = {
+      name: "chat-like",
+      mutates: false,
+      stream: async function* () { yield { type: "text_delta", delta: "你好" }; },
+      parse: async (_ctx, text) => ({ reply: text }),
+      apply: () => {},
+    };
+    const events = [];
+    for await (const ev of dispatchTask(task, baseCtx)) events.push(ev);
+    expect(events.at(-1)).toEqual({ type: "done", committed: false });
+  });
+
   it("stream 抛错 → 发 error stream_failed,不 parse 不 apply", async () => {
     const apply = vi.fn();
     const task: TaskDef = {
       name: "t",
+      mutates: true,
       stream: async function* () { throw new Error("boom"); },
       parse: async () => { throw new Error("must not call parse"); },
       apply,
@@ -40,6 +55,7 @@ describe("dispatchTask", () => {
   it("apply 抛错 → 发 error apply_failed", async () => {
     const task: TaskDef = {
       name: "t",
+      mutates: true,
       stream: async function* () { yield { type: "text_delta", delta: "x" }; },
       parse: async (_ctx, text) => ({ text }),
       apply: () => { throw new Error("db fail"); },
@@ -52,6 +68,7 @@ describe("dispatchTask", () => {
   it("stream 抛非 Error 值(字符串)→ 仍产出 error,不炸", async () => {
     const task: TaskDef = {
       name: "t",
+      mutates: true,
       stream: async function* () { throw "just a string"; },
       parse: async () => ({}),
       apply: () => {},

@@ -55,6 +55,8 @@ function makeTask(deps: AuditDeps = {}): TaskDef<AuditParsed> & { withDeps: (d: 
 
   const task: TaskDef<AuditParsed> & { withDeps: (d: AuditDeps) => TaskDef<AuditParsed> } = {
     name: "audit",
+    // 审查会写 reader_issues 表,是真实落库。
+    mutates: true,
     async *stream(ctx): AsyncIterable<TaskStreamEvent> {
       const raw = await runAudit(ctx);
       const parsed = AuditResultSchema.parse(raw);
@@ -118,7 +120,7 @@ async function defaultRunAudit(ctx: TaskContext): Promise<AuditResultInput> {
     "severity ∈ warning | critical (仅这两种,不要写 info)。chapterNo 必须 ≥ 1 的整数,无法定位到具体章节时填 1。",
     "只报告确凿的问题;不确定的不要写。",
   ].join("\n");
-  const { text } = await generateLlmText({
+  const { text, usage } = await generateLlmText({
     model: ctx.auditModel,
     messages: [
       { role: "system", content: prompt },
@@ -126,6 +128,7 @@ async function defaultRunAudit(ctx: TaskContext): Promise<AuditResultInput> {
     ],
     abortSignal: ctx.abortSignal,
   });
+  ctx.onUsage?.({ ...usage, modelRole: "audit" });
   const trimmed = text.trim().replace(/^```json\s*|\s*```$/g, "");
   const parsed = AuditResultSchema.safeParse(JSON.parse(trimmed));
   if (!parsed.success) throw new Error(`audit_parse_failed: ${parsed.error.message}`);

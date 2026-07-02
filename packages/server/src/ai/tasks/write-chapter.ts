@@ -77,6 +77,7 @@ function makeTask(deps: WriteChapterDeps = {}): TaskDef<WriteChapterParsed> & { 
 
   const task: TaskDef<WriteChapterParsed> & { withDeps: (d: WriteChapterDeps) => TaskDef<WriteChapterParsed> } = {
     name: "write-chapter",
+    mutates: true,
 
     async *stream(ctx: TaskContext): AsyncIterable<TaskStreamEvent> {
       for await (const chunk of streamProse(ctx)) {
@@ -207,6 +208,15 @@ async function* defaultStreamProse(ctx: TaskContext): AsyncIterable<string> {
   );
   for await (const ev of streamLlm({ model: ctx.writeModel, messages, abortSignal: ctx.abortSignal })) {
     if (ev.type === "text_delta") yield ev.delta;
+    else if (ev.type === "usage") {
+      ctx.onUsage?.({
+        promptTokens: ev.promptTokens,
+        completionTokens: ev.completionTokens,
+        cachedTokens: ev.cachedTokens,
+        reasoningTokens: ev.reasoningTokens,
+        modelRole: "write",
+      });
+    }
   }
 }
 
@@ -218,7 +228,7 @@ async function defaultExtractStructured(ctx: TaskContext, prose: string): Promis
     "{ characters:[{name,role,baseData,currentState}], foreshadowing:[{label,description,plantedChapter,status,relatedCharacters}], timeline:[{chapterNo,storyTime,event,participants}] }",
     `Current chapterNo: ${chapterNo}. Only extract items actually mentioned in the prose. Empty arrays if none.`,
   ].join("\n");
-  const { text } = await generateLlmText({
+  const { text, usage } = await generateLlmText({
     model: ctx.auditModel,
     messages: [
       { role: "system", content: prompt },
@@ -226,6 +236,7 @@ async function defaultExtractStructured(ctx: TaskContext, prose: string): Promis
     ],
     abortSignal: ctx.abortSignal,
   });
+  ctx.onUsage?.({ ...usage, modelRole: "audit" });
   const trimmed = text.trim().replace(/^```json\s*|\s*```$/g, "");
   const parsed = ExtractSchema.safeParse(JSON.parse(trimmed));
   if (!parsed.success) throw new Error(`extract_parse_failed: ${parsed.error.message}`);

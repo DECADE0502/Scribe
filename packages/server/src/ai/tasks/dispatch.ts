@@ -28,7 +28,7 @@ export async function* dispatchTask(
 
   try {
     task.apply(ctx, parsed);
-    yield { type: "done", committed: true };
+    yield { type: "done", committed: task.mutates };
   } catch (err) {
     yield { type: "error", errorClass: "apply_failed", message: err instanceof Error ? err.message : String(err) };
   }

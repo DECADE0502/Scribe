@@ -17,6 +17,7 @@ function makeTask(deps: ReviseDeps = {}): TaskDef<ReviseParsed> & { withDeps: (d
   const streamRevised = deps.streamRevised ?? defaultStreamRevised;
   const task: TaskDef<ReviseParsed> & { withDeps: (d: ReviseDeps) => TaskDef<ReviseParsed> } = {
     name: "revise",
+    mutates: true,
     async *stream(ctx): AsyncIterable<TaskStreamEvent> {
       for await (const chunk of streamRevised(ctx)) if (chunk) yield { type: "text_delta", delta: chunk };
     },
@@ -108,6 +109,15 @@ async function* defaultStreamRevised(ctx: TaskContext): AsyncIterable<string> {
   ];
   for await (const ev of streamLlm({ model: ctx.writeModel, messages, abortSignal: ctx.abortSignal })) {
     if (ev.type === "text_delta") yield ev.delta;
+    else if (ev.type === "usage") {
+      ctx.onUsage?.({
+        promptTokens: ev.promptTokens,
+        completionTokens: ev.completionTokens,
+        cachedTokens: ev.cachedTokens,
+        reasoningTokens: ev.reasoningTokens,
+        modelRole: "write",
+      });
+    }
   }
 }
 

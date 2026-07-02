@@ -11,6 +11,8 @@ function makeTask(deps: ChatDeps = {}): TaskDef<ChatParsed> & { withDeps: (d: Ch
   const streamReply = deps.streamReply ?? defaultStreamReply;
   const task: TaskDef<ChatParsed> & { withDeps: (d: ChatDeps) => TaskDef<ChatParsed> } = {
     name: "chat",
+    // 纯对话不写库:done.committed=false,前端不弹"已提交",不触发快照调度。
+    mutates: false,
     async *stream(ctx): AsyncIterable<TaskStreamEvent> {
       for await (const chunk of streamReply(ctx)) if (chunk) yield { type: "text_delta", delta: chunk };
     },
@@ -41,6 +43,15 @@ async function* defaultStreamReply(ctx: TaskContext): AsyncIterable<string> {
   ];
   for await (const ev of streamLlm({ model: ctx.writeModel, messages, abortSignal: ctx.abortSignal })) {
     if (ev.type === "text_delta") yield ev.delta;
+    else if (ev.type === "usage") {
+      ctx.onUsage?.({
+        promptTokens: ev.promptTokens,
+        completionTokens: ev.completionTokens,
+        cachedTokens: ev.cachedTokens,
+        reasoningTokens: ev.reasoningTokens,
+        modelRole: "write",
+      });
+    }
   }
 }
 

@@ -59,6 +59,7 @@ function makeTask(deps: OnboardDeps = {}): TaskDef<OnboardParsed> & { withDeps: 
 
   const task: TaskDef<OnboardParsed> & { withDeps: (d: OnboardDeps) => TaskDef<OnboardParsed> } = {
     name: "onboard",
+    mutates: true,
     async *stream(ctx): AsyncIterable<TaskStreamEvent> {
       for await (const chunk of streamReply(ctx)) if (chunk) yield { type: "text_delta", delta: chunk };
     },
@@ -161,6 +162,15 @@ async function* defaultStreamReply(ctx: TaskContext): AsyncIterable<string> {
   ];
   for await (const ev of streamLlm({ model: ctx.writeModel, messages, abortSignal: ctx.abortSignal })) {
     if (ev.type === "text_delta") yield ev.delta;
+    else if (ev.type === "usage") {
+      ctx.onUsage?.({
+        promptTokens: ev.promptTokens,
+        completionTokens: ev.completionTokens,
+        cachedTokens: ev.cachedTokens,
+        reasoningTokens: ev.reasoningTokens,
+        modelRole: "write",
+      });
+    }
   }
 }
 
@@ -171,7 +181,7 @@ async function defaultExtractStructured(ctx: TaskContext, reply: string): Promis
     "{ title, premise, characters:[{name,role,baseData,currentState}], outline:[{title,level,summary,parentId}], worldbook:[{title,content,keys}] }",
     "Only extract concrete items mentioned. Prefer volume-level outline nodes. Empty arrays are fine.",
   ].join("\n");
-  const { text } = await generateLlmText({
+  const { text, usage } = await generateLlmText({
     model: ctx.auditModel,
     messages: [
       { role: "system", content: prompt },
@@ -179,6 +189,7 @@ async function defaultExtractStructured(ctx: TaskContext, reply: string): Promis
     ],
     abortSignal: ctx.abortSignal,
   });
+  ctx.onUsage?.({ ...usage, modelRole: "audit" });
   const trimmed = text.trim().replace(/^```json\s*|\s*```$/g, "");
   const parsed = ExtractSchema.safeParse(JSON.parse(trimmed));
   if (!parsed.success) throw new Error(`onboard_extract_failed: ${parsed.error.message}`);
