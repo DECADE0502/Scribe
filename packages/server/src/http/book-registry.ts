@@ -179,7 +179,7 @@ export async function* holdBook(
   if (registry.isMutating(bookId)) {
     yield {
       type: "error",
-      errorClass: "mutation_in_progress",
+      errorClass: "conflict",
       message: "这本书正在执行删除/导入/恢复快照等操作,请稍后再试。",
     };
     return;

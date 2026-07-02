@@ -20,4 +20,9 @@ describe("SseEventSchema", () => {
       { type: "agent_progress", phase: "thinking", label: "x", status: "pending" },
     ]) expect(SseEventSchema.safeParse(ev).success).toBe(false);
   });
+
+  it("拒绝未知 errorClass 值", () => {
+    const ev = { type: "error", errorClass: "totally_made_up", message: "x" };
+    expect(SseEventSchema.safeParse(ev).success).toBe(false);
+  });
 });

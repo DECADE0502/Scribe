@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TaskTypeSchema } from "./token-usage.js";
 
 export const SseEventSchema = z.discriminatedUnion("type", [
   z.object({
@@ -7,7 +8,7 @@ export const SseEventSchema = z.discriminatedUnion("type", [
     completionTokens: z.number(),
     cachedTokens: z.number().optional(),
     reasoningTokens: z.number().optional(),
-    taskType: z.enum(["write", "audit", "chat", "extract", "revise", "onboard", "other"]).optional(),
+    taskType: TaskTypeSchema.optional(),
     modelRole: z.enum(["write", "audit"]).optional(),
     chapterNo: z.number().nullable().optional(),
   }),
@@ -19,7 +20,7 @@ export const SseEventSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("error"),
-    errorClass: z.enum(["stream_failed", "parse_failed", "apply_failed", "bad_request", "provider_error"]),
+    errorClass: z.enum(["stream_failed", "parse_failed", "apply_failed", "bad_request", "provider_error", "conflict"]),
     message: z.string(),
   }),
 ]);

@@ -3,10 +3,9 @@ export const TaskTypeSchema = z.enum([
   "write",
   "audit",
   "chat",
-  "intent",
-  "segment_revise",
-  "plan_chapter",
-  "new_book",
+  "extract",
+  "revise",
+  "onboard",
   "other",
 ]);
 export const TokenUsageRecordSchema = z.object({

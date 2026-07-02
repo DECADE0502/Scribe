@@ -10,18 +10,6 @@ export type ExecutionMode = z.infer<typeof ExecutionModeSchema>;
 export const DEFAULT_EXECUTION_MODE: ExecutionMode = "low_risk_auto";
 export const ExecutionModeWithDefaultSchema = ExecutionModeSchema.default(DEFAULT_EXECUTION_MODE);
 
-export const RiskLevelSchema = z.enum(["read", "draft", "write", "bulk_write", "destructive"]);
-export type RiskLevel = z.infer<typeof RiskLevelSchema>;
-
-export const WorkflowTaskTypeSchema = z.enum([
-  "write",
-  "revise",
-  "tool_update",
-  "memory_update",
-  "diagnose",
-]);
-export type WorkflowTaskType = z.infer<typeof WorkflowTaskTypeSchema>;
-
 export const AgentRunTargetSchema = z.object({
   chapterNo: z.number().int().positive().optional(),
   chapterCount: z.number().int().min(1).max(50).optional(),

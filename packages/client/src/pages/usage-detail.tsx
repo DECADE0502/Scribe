@@ -10,8 +10,8 @@ interface UsageSummary {
 }
 
 const TASK_LABELS: Record<string, string> = {
-  write: "写作", audit: "审查", chat: "对话", intent: "意图识别",
-  segment_revise: "段落改写", plan_chapter: "章节规划", new_book: "新建书", other: "其它",
+  write: "写作", audit: "审查", chat: "对话",
+  extract: "抽取", revise: "改写", onboard: "新书搭建", other: "其它",
 };
 
 export function UsageDetailPage() {
