@@ -202,13 +202,12 @@ describe("worldbook routes", () => {
     );
   });
 
-  it("removes legacy worldbook chat as an executable AI route", async () => {
+  it("legacy worldbook chat endpoint is gone entirely (404, no stub left)", async () => {
     const res = await app.request(`/api/books/${bookId}/worldbook/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: "Refine the tide city setting." }),
     });
 
-    expect(res.status).toBe(410);
-    expect(await res.json()).toMatchObject({ error: "legacy_worldbook_chat_removed" });
+    expect(res.status).toBe(404);
   });});

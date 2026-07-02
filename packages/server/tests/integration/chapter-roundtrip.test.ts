@@ -153,44 +153,14 @@ describe("章节写入 round-trip(HTTP 端到端)", () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("legacy chapter write route is removed", async () => {
+  it("legacy chapter AI routes are gone entirely (404, no stub left)", async () => {
     const app = createApp({ bookRegistry: registry });
-    const res = await app.request("/api/books/b1/chapters/1/write", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userIntent: "x" }),
-    });
-
-    expect(res.status).toBe(410);
-    expect(await res.json()).toMatchObject({ error: "legacy_write_route_removed" });
-  });
-
-  it("legacy chapter draft/finalize routes are removed", async () => {
-    const app = createApp({ bookRegistry: registry });
-    const draft = await app.request("/api/books/b1/chapters/1/write-draft", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userIntent: "x" }),
-    });
-    const finalize = await app.request("/api/books/b1/chapters/1/finalize", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userIntent: "x" }),
-    });
-
-    expect(draft.status).toBe(410);
-    expect(finalize.status).toBe(410);
-    expect(await draft.json()).toMatchObject({ error: "legacy_write_draft_route_removed" });
-    expect(await finalize.json()).toMatchObject({ error: "legacy_finalize_route_removed" });
-  });
-
-  it("invalid legacy chapter write route chapter number returns 410 before legacy execution", async () => {
-    const app = createApp({ bookRegistry: registry });
-    const res = await app.request("/api/books/b1/chapters/abc/write", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userIntent: "x" }),
-    });
-
-    expect(res.status).toBe(410);
+    for (const suffix of ["write", "write-draft", "finalize"]) {
+      const res = await app.request(`/api/books/b1/chapters/1/${suffix}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userIntent: "x" }),
+      });
+      expect(res.status).toBe(404);
+    }
   });});

@@ -47,6 +47,7 @@ function makeStubModel() {
       return {
         stream: new ReadableStream({
           start(ctrl) {
+            ctrl.enqueue({ type: "text-delta", textDelta: "好的，我们继续。" });
             ctrl.enqueue({ type: "finish", finishReason: "stop", usage: { promptTokens: 10, completionTokens: 5 } });
             ctrl.close();
           },
@@ -115,7 +116,7 @@ describe("unified auto agent entry", () => {
     });
   }
 
-  it("runs auto requests through /agent/run without legacy auto_status events", async () => {
+  it("runs auto requests through /agent/run with the 4-event stream", async () => {
     const app = makeApp();
     const id = await createBook(app);
 
@@ -126,17 +127,18 @@ describe("unified auto agent entry", () => {
         message: "连续写 3 章",
         source: "auto",
         target: { chapterCount: 3, defaultChapterLength: "short" },
-        executionMode: "low_risk_auto",
       }),
     });
 
     expect(res.status).toBe(200);
     const text = await readSseText(res);
-    expect(text).toContain("event: agent_phase");
-    expect(text).toContain("event: main_output");
-    expect(text).toContain("event: agent_progress");
-    expect(text).toContain("event: validation_report");
+    expect(text).toContain("event: text_delta");
     expect(text).toContain("event: done");
+    // 4-agent 时代的事件全部消失
+    expect(text).not.toContain("event: agent_phase");
+    expect(text).not.toContain("event: main_output");
+    expect(text).not.toContain("event: agent_progress");
+    expect(text).not.toContain("event: validation_report");
     expect(text).not.toContain("event: auto_status");
     expect(text).not.toContain("event: execution_plan");
     expect(text).not.toContain("event: tool_call_start");
@@ -185,62 +187,19 @@ describe("unified auto agent entry", () => {
     expect(body.messages.map((m) => m.content).join("\n")).not.toContain("hidden draft");
   });
 
-  it("removes legacy /auto as an executable AI route", async () => {
+  it("legacy /auto endpoints are gone entirely (404, no stub left)", async () => {
     const app = makeApp();
     const id = await createBook(app);
 
-    const res = await app.request(`/api/books/${id}/auto`, {
+    const auto = await app.request(`/api/books/${id}/auto`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ n: 2 }),
     });
+    expect(auto.status).toBe(404);
 
-    expect(res.status).toBe(410);
-    expect(await res.json()).toMatchObject({ error: "legacy_auto_route_removed" });
-  });
-
-  it("does not validate legacy /auto request shape because the route is removed", async () => {
-    const app = makeApp();
-    const id = await createBook(app);
-
-    const res = await app.request(`/api/books/${id}/auto`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ n: 0 }),
-    });
-
-    expect(res.status).toBe(410);
-  });
-
-  it("returns 404 for unknown legacy /auto book and never reaches model checks", async () => {
-    const app = makeApp();
-    const missingBook = await app.request("/api/books/ghost/auto", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ n: 1 }),
-    });
-    expect(missingBook.status).toBe(404);
-
-    const appNoModel = createApp({ bookRegistry: registry });
-    const id = await createBook(appNoModel);
-    const missingModel = await appNoModel.request(`/api/books/${id}/auto`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ n: 1 }),
-    });
-    expect(missingModel.status).toBe(410);
-  });
-
-  it("legacy /auto/cancel no longer owns cancellation state", async () => {
-    const app = makeApp();
-    const id = await createBook(app);
-
-    const res = await app.request(`/api/books/${id}/auto/cancel`, { method: "POST" });
-    const body = await res.json() as { cancelled: boolean; reason: string };
-
-    expect(res.status).toBe(200);
-    expect(body.cancelled).toBe(false);
-    expect(body.reason).toContain("legacy_auto_cancel_removed");
+    const cancel = await app.request(`/api/books/${id}/auto/cancel`, { method: "POST" });
+    expect(cancel.status).toBe(404);
   });
 });
 

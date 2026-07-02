@@ -341,7 +341,7 @@ describe("writer-facing user journeys", () => {
     expect(registry.open(bookId).chapterFiles.read(2)).toBeUndefined();
   });
 
-  it("keeps legacy AI draft/finalize routes removed", async () => {
+  it("keeps legacy AI draft/finalize routes deleted (404, no stub left)", async () => {
     const draft = await app.request(`/api/books/${bookId}/chapters/1/write-draft`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -353,8 +353,8 @@ describe("writer-facing user journeys", () => {
       body: JSON.stringify({ userIntent: "确认第一章" }),
     });
 
-    expect(draft.status).toBe(410);
-    expect(finalize.status).toBe(410);
+    expect(draft.status).toBe(404);
+    expect(finalize.status).toBe(404);
   });
   it("supports conversation, worldbook editing, imports, settings, usage, and common error paths", async () => {
     const chatApp = createApp({
@@ -362,7 +362,7 @@ describe("writer-facing user journeys", () => {
       appPaths: paths,
       configJsonPath: paths.configJson,
       secretsEnvPath: paths.secretsEnv,
-      getModel: () => makeStreamingModel([JSON.stringify({ intent: "query_only", reply: "收到，我会整理雨街设定。" })]),
+      getModel: () => makeStreamingModel(["收到，我会整理雨街设定。"]),
     });
 
     const conversation = await chatApp.request(`/api/books/${bookId}/agent/run`, {
@@ -372,9 +372,9 @@ describe("writer-facing user journeys", () => {
     });
     expect(conversation.status).toBe(200);
     const conversationText = await new Response(conversation.body).text();
-    expect(conversationText).toContain("event: main_output");
+    expect(conversationText).toContain("event: text_delta");
     expect(conversationText).toContain("收到，我会整理雨街设定。");
-    expect(conversationText).not.toContain("event: text_delta");
+    expect(conversationText).not.toContain("event: main_output");
 
     const worldbook = await chatApp.request(`/api/books/${bookId}/worldbook`, {
       method: "POST",

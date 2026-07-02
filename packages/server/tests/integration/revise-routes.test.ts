@@ -73,41 +73,83 @@ async function setupBookWithChapter(app: ReturnType<typeof createApp>): Promise<
   return id;
 }
 
-describe("legacy revision routes", () => {
-  it("removes revise-segment as an executable AI route", async () => {
-    const app = createApp({ bookRegistry: registry, getModel: () => makeStubModel(["x"]) as never });
+describe("revision through /agent/run", () => {
+  it("legacy revise endpoints are gone entirely (404, no stub left)", async () => {
+    const app = createApp({ bookRegistry: registry });
     const id = await setupBookWithChapter(app);
-    const res = await app.request(`/api/books/${id}/chapters/1/revise-segment`, {
+
+    const revise = await app.request(`/api/books/${id}/chapters/1/revise-segment`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ segmentText: "text", instruction: "rewrite" }),
     });
+    expect(revise.status).toBe(404);
 
-    expect(res.status).toBe(410);
-    expect(await res.json()).toMatchObject({ error: "legacy_revise_segment_removed" });
-  });
-
-  it("removes apply-revision as a direct persistence route", async () => {
-    const app = createApp({ bookRegistry: registry });
-    const id = await setupBookWithChapter(app);
-    const res = await app.request(`/api/books/${id}/chapters/1/apply-revision`, {
+    const apply = await app.request(`/api/books/${id}/chapters/1/apply-revision`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ segmentText: "text", newSegment: "new" }),
     });
-
-    expect(res.status).toBe(410);
-    expect(await res.json()).toMatchObject({ error: "legacy_apply_revision_removed" });
+    expect(apply.status).toBe(404);
   });
 
-  it("keeps invalid chapter numbers as request validation errors", async () => {
-    const app = createApp({ bookRegistry: registry });
-    const res = await app.request("/api/books/b1/chapters/abc/revise-segment", {
+  it("revises the selected segment end-to-end: merge happens server-side and commits", async () => {
+    const app = createApp({
+      bookRegistry: registry,
+      getModel: () => makeStubModel(["这一段", "改得紧张多了。"]) as never,
+      getAuditModel: () => makeStubModel(["unused"]) as never,
+    });
+    const id = await setupBookWithChapter(app);
+
+    const res = await app.request(`/api/books/${id}/agent/run`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ segmentText: "text" }),
+      body: JSON.stringify({
+        message: "改得更紧张",
+        source: "revision",
+        target: { revisionRange: { chapterNo: 1, selectedText: "这一段写得平淡。" } },
+      }),
     });
+    expect(res.status).toBe(200);
+    const text = await new Response(res.body).text();
+    expect(text).toContain("event: text_delta");
+    expect(text).toContain('"committed":true');
 
-    expect(res.status).toBe(400);
+    // 服务端已把新段落拼回整章:选段被替换,其余原文保留(章节文件末尾带换行)
+    const chapter = await app.request(`/api/books/${id}/chapters/1`);
+    const body = await chapter.json() as { content: string; title: string };
+    expect(body.content.trim()).toBe("开头。这一段改得紧张多了。结尾。");
+    // 用户自定义标题不被改写覆盖
+    expect(body.title).toBe("第一章");
+
+    // 版本历史多了一条 segment_revise
+    const handle = registry.open(id);
+    const versions = handle.chaptersRepo.listVersions(1);
+    expect(versions.some((v) => v.source === "segment_revise")).toBe(true);
+  });
+
+  it("selection not found in the chapter → error event, chapter unchanged", async () => {
+    const app = createApp({
+      bookRegistry: registry,
+      getModel: () => makeStubModel(["新段落。"]) as never,
+    });
+    const id = await setupBookWithChapter(app);
+
+    const res = await app.request(`/api/books/${id}/agent/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: "改",
+        source: "revision",
+        target: { revisionRange: { chapterNo: 1, selectedText: "根本不存在的文本" } },
+      }),
+    });
+    const text = await new Response(res.body).text();
+    expect(text).toContain("event: error");
+    expect(text).toContain("selection_missing");
+
+    const chapter = await app.request(`/api/books/${id}/chapters/1`);
+    const body = await chapter.json() as { content: string };
+    expect(body.content.trim()).toBe("开头。这一段写得平淡。结尾。");
   });
 });

@@ -25,6 +25,7 @@ function makePaths(root: string) {
   };
 }
 
+/** 聊天用 stub:流式吐一小段中文回复。 */
 function makeStubModel() {
   return {
     specificationVersion: "v1" as const,
@@ -32,7 +33,7 @@ function makeStubModel() {
     modelId: "stub-model",
     async doGenerate() {
       return {
-        text: JSON.stringify({ intent: "query_only", reply: "ok" }),
+        text: "ok",
         finishReason: "stop",
         usage: { promptTokens: 10, completionTokens: 5 },
         rawCall: { rawPrompt: null, rawSettings: {} },
@@ -42,6 +43,8 @@ function makeStubModel() {
       return {
         stream: new ReadableStream({
           start(ctrl) {
+            ctrl.enqueue({ type: "text-delta", textDelta: "好的，" });
+            ctrl.enqueue({ type: "text-delta", textDelta: "我们继续。" });
             ctrl.enqueue({ type: "finish", finishReason: "stop", usage: { promptTokens: 10, completionTokens: 5 } });
             ctrl.close();
           },
@@ -52,20 +55,40 @@ function makeStubModel() {
   };
 }
 
+const PROSE = "我推开门，冷风扑面而来。远处的山脊在暮色里起伏，像一头沉睡的兽。".repeat(20);
+
+/** 写作用 stub:流式吐 ≥500 字正文(write-chapter 任务的 MIN_DRAFT_CHARS 门槛)。 */
 function makeWritingModel() {
+  return {
+    ...makeStubModel(),
+    async doStream() {
+      return {
+        stream: new ReadableStream({
+          start(ctrl) {
+            ctrl.enqueue({ type: "text-delta", textDelta: PROSE });
+            ctrl.enqueue({ type: "finish", finishReason: "stop", usage: { promptTokens: 100, completionTokens: 800 } });
+            ctrl.close();
+          },
+        }),
+        rawCall: { rawPrompt: null, rawSettings: {} },
+      };
+    },
+  };
+}
+
+/** 抽取用 stub:generateLlmText 返回结构化 JSON(角色/伏笔/时间线)。 */
+function makeExtractionModel() {
   return {
     ...makeStubModel(),
     async doGenerate() {
       return {
         text: JSON.stringify({
-          intent: "write_chapter",
-          reply: "prepared",
-          draft: "This approved chapter body is long enough to pass validation. ".repeat(4),
-          targetChapterNo: 1,
-          chapterTitle: "Chapter 1",
+          characters: [{ name: "林尘", role: "protagonist", baseData: {}, currentState: { location: "山脊" } }],
+          foreshadowing: [{ label: "沉睡的兽", description: "山脊的隐喻", plantedChapter: 1, status: "planted", relatedCharacters: ["林尘"] }],
+          timeline: [{ chapterNo: 1, storyTime: "暮色", event: "推门远眺", participants: ["林尘"] }],
         }),
         finishReason: "stop",
-        usage: { promptTokens: 10, completionTokens: 5 },
+        usage: { promptTokens: 50, completionTokens: 100 },
         rawCall: { rawPrompt: null, rawSettings: {} },
       };
     },
@@ -99,7 +122,7 @@ afterEach(() => {
 });
 
 describe("conversation and agent routes", () => {
-  it("rejects legacy conversation POST execution", async () => {
+  it("legacy conversation POST is gone entirely (404, no stub left)", async () => {
     const app = createApp({
       bookRegistry: registry,
       getModel: () => makeStubModel() as never,
@@ -113,11 +136,10 @@ describe("conversation and agent routes", () => {
       body: JSON.stringify({ message: "hello" }),
     });
 
-    expect(res.status).toBe(410);
-    await expect(res.json()).resolves.toMatchObject({ error: "legacy_conversation_post_removed" });
+    expect(res.status).toBe(404);
   });
 
-  it("streams unified agent workflow events through agent/run", async () => {
+  it("streams chat through agent/run with the 4-event schema and persists the real reply", async () => {
     const app = createApp({
       bookRegistry: registry,
       getModel: () => makeStubModel() as never,
@@ -134,14 +156,23 @@ describe("conversation and agent routes", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("text/event-stream");
     const text = await readSseText(res);
-    expect(text).toContain("event: agent_phase");
-    expect(text).toContain("event: agent_progress");
-    expect(text).toContain("event: main_output");
-    expect(text).toContain("event: validation_report");
+    expect(text).toContain("event: text_delta");
     expect(text).toContain("event: done");
-    expect(text).not.toContain("event: text_delta");
+    // chat 无副作用:committed 必须如实为 false
+    expect(text).toContain('"committed":false');
+    expect(text).not.toContain("event: agent_phase");
+    expect(text).not.toContain("event: agent_progress");
+    expect(text).not.toContain("event: main_output");
+    expect(text).not.toContain("event: validation_report");
     expect(text).not.toContain("event: tool_call_start");
-    expect(text).not.toContain("event: execution_plan");
+
+    // 助手真实回复入库(不再是固定占位串)
+    const history = await app.request(`/api/books/${bookId}/conversation`);
+    const body = await history.json() as { messages: Array<{ role: string; content: string }> };
+    expect(body.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: "user", content: "hello" }),
+      expect.objectContaining({ role: "assistant", content: "好的，我们继续。" }),
+    ]));
   });
 
   it("returns 503 from agent/run when no model is configured", async () => {
@@ -170,11 +201,11 @@ describe("conversation and agent routes", () => {
     expect(res.status).toBe(400);
   });
 
-  it("approves a paused low-risk write run without rerunning the prompt", async () => {
+  it("writes a chapter end-to-end: streamed prose commits, state extracted, conversation keeps a short note", async () => {
     const app = createApp({
       bookRegistry: registry,
       getModel: () => makeWritingModel() as never,
-      getAuditModel: () => makeWritingModel() as never,
+      getAuditModel: () => makeExtractionModel() as never,
     });
     const bookId = await createBook(app);
 
@@ -183,28 +214,43 @@ describe("conversation and agent routes", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: "write chapter 1",
-        source: "chat",
-        executionMode: "low_risk_auto",
+        source: "editor",
         target: { chapterNo: 1 },
       }),
     });
     expect(runRes.status).toBe(200);
     const text = await readSseText(runRes);
-    const runId = /"runId":"([^"]+)"/.exec(text)?.[1];
-    expect(runId).toBeTruthy();
-    expect(text).toContain("\"needsUserDecision\":true");
+    expect(text).toContain("event: text_delta");
+    expect(text).toContain('"committed":true');
+    // staging/approve 概念不存在
+    expect(text).not.toContain("needsUserDecision");
+    expect(text).not.toContain("runId");
 
-    const approve = await app.request(`/api/books/${bookId}/agent/runs/${runId}/approve`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-    });
-    expect(approve.status).toBe(200);
-
+    // 章节已直接落库
     const chapter = await app.request(`/api/books/${bookId}/chapters/1`);
     expect(chapter.status).toBe(200);
     await expect(chapter.json()).resolves.toMatchObject({
       chapterNo: 1,
-      content: expect.stringContaining("approved chapter body"),
+      content: expect.stringContaining("我推开门"),
     });
+
+    // 抽取结果落库:角色/伏笔/时间线
+    const handle = registry.open(bookId);
+    expect(handle.charactersRepo.list().map((c) => c.name)).toContain("林尘");
+    expect(handle.foreshadowingRepo.list().map((f) => f.label)).toContain("沉睡的兽");
+    expect(handle.timelineRepo.listAll().map((t) => t.event)).toContain("推门远眺");
+
+    // token 用量被记录(写作 + 抽取两笔)
+    expect(handle.tokenUsageRepo.listRecent(10).length).toBeGreaterThanOrEqual(2);
+
+    // 对话表只留简短进度说明,不重复整章正文
+    const history = await app.request(`/api/books/${bookId}/conversation`);
+    const body = await history.json() as { messages: Array<{ role: string; content: string }> };
+    const assistant = body.messages.filter((m) => m.role === "assistant");
+    expect(assistant.length).toBeGreaterThan(0);
+    for (const m of assistant) {
+      expect(m.content).not.toContain("我推开门，冷风扑面而来");
+      expect(m.content.length).toBeLessThan(200);
+    }
   });
 });

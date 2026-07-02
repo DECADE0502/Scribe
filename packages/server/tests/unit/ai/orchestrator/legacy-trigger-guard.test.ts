@@ -31,12 +31,7 @@ describe("legacy trigger tool guard", () => {
     expect(existsSync(resolve(process.cwd(), "src/ai/orchestrator/intent.ts"))).toBe(false);
   });
 
-  it("legacy auto mode state machine is not available as a production orchestrator", () => {
-    const routeSource = read("src/http/routes/auto.ts");
-
-    expect(routeSource).toContain("legacy_auto_route_removed");
-    expect(routeSource).not.toContain("runAgentWorkflow");
-    expect(routeSource).not.toContain("runAutoMode");
-    expect(routeSource).not.toContain("auto_status");
+  it("legacy auto mode route file stays deleted (auto requests go through /agent/run)", () => {
+    expect(existsSync(resolve(process.cwd(), "src/http/routes/auto.ts"))).toBe(false);
   });
 });

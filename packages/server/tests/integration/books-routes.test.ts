@@ -209,7 +209,7 @@ describe("POST /api/books/:bookId/onboard/skip", () => {
 });
 
 describe("POST /api/books/:bookId/onboard", () => {
-  it("removed legacy onboard route returns 410 for existing books", async () => {
+  it("legacy onboard POST is gone entirely (404, onboarding goes through /agent/run)", async () => {
     const create = await app.request("/api/books", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -221,8 +221,7 @@ describe("POST /api/books/:bookId/onboard", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: "hello" }),
     });
-    expect(res.status).toBe(410);
-    expect(await res.json()).toMatchObject({ error: "legacy_onboard_route_removed" });
+    expect(res.status).toBe(404);
   });
 
   it("returns 404 when the book does not exist", async () => {
