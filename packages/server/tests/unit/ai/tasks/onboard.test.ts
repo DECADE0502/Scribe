@@ -98,6 +98,25 @@ describe("onboardTask", () => {
     expect(newOnes[1].sortOrder).toBeGreaterThan(newOnes[0].sortOrder);
   });
 
+  it("apply:同名大纲节点不重复创建(多轮 onboard 提到同一卷名)", () => {
+    const r = rig();
+    r.outline.push({ id: "o0", title: "第一卷:出走", level: "volume", sortOrder: 0 });
+    const ctx = { handle: r.handle, request: { message: "x", source: "onboard" } } as any;
+    onboardTask.apply(ctx, {
+      reply: "x", title: "", premise: "",
+      characters: [],
+      outline: [
+        { title: "第一卷:出走", level: "volume", summary: "重复提及", parentId: null },
+        { title: "第一卷:出走 ", level: "volume", summary: "带尾空格也算重复", parentId: null },
+        { title: "第二卷:归途", level: "volume", summary: "", parentId: null },
+      ],
+      worldbook: [],
+    } as any);
+    // 只有"第二卷:归途"是新节点
+    expect(r.outline).toHaveLength(2);
+    expect(r.outline[1].title).toBe("第二卷:归途");
+  });
+
   it("apply:parsed.title/premise 为空时不覆盖已有 meta", () => {
     const r = rig();
     const setCalls: any[] = [];

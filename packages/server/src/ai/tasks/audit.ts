@@ -105,6 +105,10 @@ async function defaultRunAudit(ctx: TaskContext): Promise<AuditResultInput> {
   if (wants("characters")) parts.push(`# Characters\n${JSON.stringify(ctx.handle.charactersRepo.list(), null, 2)}`);
   if (wants("outline")) parts.push(`# Outline\n${JSON.stringify(ctx.handle.outlineRepo.listAll(), null, 2)}`);
   if (wants("worldbook")) parts.push(`# Worldbook\n${JSON.stringify(ctx.handle.worldbookRepo.list(), null, 2)}`);
+  // 前端"元素/设定/伏笔"审查范围会带 foreshadowing / timeline —— 漏了这两个的话,
+  // 选中它们等于给 LLM 送空内容。
+  if (wants("foreshadowing")) parts.push(`# Foreshadowing\n${JSON.stringify(ctx.handle.foreshadowingRepo.list(), null, 2)}`);
+  if (wants("timeline")) parts.push(`# Timeline\n${JSON.stringify(ctx.handle.timelineRepo.listAll(), null, 2)}`);
   if (wants("chapters")) {
     // 与 chat.ts 一致:ChapterSummary 用 oneLiner + paragraph(schema 里没有 `summary` 字段),
     // 取最近 5 条上下文喂 LLM。
@@ -113,6 +117,11 @@ async function defaultRunAudit(ctx: TaskContext): Promise<AuditResultInput> {
       `# Recent chapters\n${summaries.map((s: any) => `- 第${s.chapterNo}章:${s.oneLiner ?? s.paragraph ?? ""}`).join("\n")}`,
     );
   }
+  if (parts.length === 0) {
+    // 范围值不认识(schema 外的值)时不要拿空内容去问 LLM —— 那只会产出幻觉 issue。
+    return { issues: [], summary: "审查范围为空,没有可检查的资产。" };
+  }
+
   const prompt = [
     "你是小说资产审查员。找出所选资产内的:角色前后矛盾、大纲断层、世界书内部冲突、伏笔未回收(如果范围包含)。",
     "输出严格 JSON,无 markdown:",

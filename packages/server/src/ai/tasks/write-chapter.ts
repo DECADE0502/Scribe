@@ -25,6 +25,17 @@ const ExtractSchema = z.object({
     event: z.string(),
     participants: z.array(z.string()).default([]),
   })).default([]),
+  // 章节小总结:context-builder 的中程记忆(4-10 章前)靠 chapter_summaries 表,
+  // 旧管线由 record-state 生成;新管线并入本次抽取调用,不额外花一次请求。
+  summary: z.object({
+    oneLiner: z.string().default(""),
+    paragraph: z.string().default(""),
+    keyEvents: z.array(z.object({
+      event: z.string(),
+      characters: z.array(z.string()).default([]),
+      foreshadowingRefs: z.array(z.string()).default([]),
+    })).default([]),
+  }).default({}),
 });
 type Extracted = z.infer<typeof ExtractSchema>;
 /** 抽取步骤的输入形状:字段可省略,由 ExtractSchema 在 parse() 里补默认值。 */
@@ -168,6 +179,25 @@ function makeTask(deps: WriteChapterDeps = {}): TaskDef<WriteChapterParsed> & { 
         }
 
         // 时间线:(storyTime, event) dedup;chapterNo 一律 clamp 到本章号。
+        // 章节小总结:中程记忆的数据源,抽取给了就落库(INSERT OR REPLACE 幂等)。
+        const summary = parsed.summary;
+        if (summary && ((summary.oneLiner ?? "").trim() || (summary.paragraph ?? "").trim())) {
+          handle.chaptersRepo.saveSummary({
+            chapterNo: parsed.chapterNo,
+            oneLiner: normalizeText(summary.oneLiner ?? ""),
+            paragraph: (summary.paragraph ?? "").trim(),
+            keyEvents: (summary.keyEvents ?? [])
+              .filter((k) => normalizeText(k.event ?? ""))
+              .map((k) => ({
+                event: normalizeText(k.event),
+                characters: (k.characters ?? []).map(normalizeText),
+                foreshadowingRefs: (k.foreshadowingRefs ?? []).map(normalizeText),
+              })),
+            generatedAt: Date.now(),
+            reasoningContent: null,
+          });
+        }
+
         const existingTimeline = handle.timelineRepo.listAll();
         for (const t of parsed.timeline) {
           const cleanStoryTime = normalizeText(t.storyTime ?? "");
@@ -240,8 +270,9 @@ async function defaultExtractStructured(ctx: TaskContext, prose: string): Promis
   const prompt = [
     "You are extracting structured state changes from a novel chapter.",
     "Return ONLY a valid JSON object matching this schema exactly (no markdown):",
-    "{ characters:[{name,role,baseData,currentState}], foreshadowing:[{label,description,status,relatedCharacters}], timeline:[{storyTime,event,participants}] }",
+    "{ characters:[{name,role,baseData,currentState}], foreshadowing:[{label,description,status,relatedCharacters}], timeline:[{storyTime,event,participants}], summary:{oneLiner,paragraph,keyEvents:[{event,characters,foreshadowingRefs}]} }",
     `Current chapter is No.${chapterNo}; chapter numbers are recorded server-side, do not output them.`,
+    "summary.oneLiner: ≤30 字一句话梗概;summary.paragraph: 100-200 字段落梗概;keyEvents: 2-5 个关键事件。",
     "Only extract items actually mentioned in the prose. Empty arrays if none.",
   ].join("\n");
   const { text, usage } = await generateLlmText({

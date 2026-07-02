@@ -106,12 +106,19 @@ function makeTask(deps: OnboardDeps = {}): TaskDef<OnboardParsed> & { withDeps: 
         const baseSortOrder = existingOutline.length
           ? Math.max(...existingOutline.map((n: any) => n.sortOrder ?? 0)) + 1
           : 0;
+        // 多轮 onboard 对话会反复提到同一卷名,按归一化标题 dedup,避免重复建节点。
+        const existingOutlineTitles = new Set(
+          existingOutline.map((n: any) => normalizeText(n.title ?? "")),
+        );
         const outlineList = parsed.outline ?? [];
         outlineList.forEach((o, idx) => {
+          const cleanTitle = normalizeText(o.title ?? "");
+          if (!cleanTitle || existingOutlineTitles.has(cleanTitle)) return;
+          existingOutlineTitles.add(cleanTitle);
           handle.outlineRepo.create({
             parentId: o.parentId ?? null,
             level: o.level ?? "volume",
-            title: normalizeText(o.title ?? ""),
+            title: cleanTitle,
             summary: o.summary ?? "",
             status: "planned",
             sortOrder: baseSortOrder + idx,

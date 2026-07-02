@@ -8,15 +8,16 @@ function mockHandle() {
   const timeline: any[] = [];
   const foreshadowing: any[] = [];
   const files: any[] = [];
+  const summaries: any[] = [];
   return {
-    versions, chars, timeline, foreshadowing, files,
+    versions, chars, timeline, foreshadowing, files, summaries,
     handle: {
       bookId: "b1",
       workspaceDb: { transaction: (fn: () => void) => () => fn() },
       chaptersRepo: {
         saveVersion: (v: any) => { const rec = { ...v, versionNo: versions.length + 1 }; versions.push(rec); return rec; },
         deleteVersion: (no: number, ver: number) => { const i = versions.findIndex(v => v.chapterNo === no && v.versionNo === ver); if (i >= 0) versions.splice(i, 1); },
-        listSummaries: () => [], saveSummary: () => {}, saveAudit: () => {},
+        listSummaries: () => [], saveSummary: (s: any) => summaries.push(s), saveAudit: () => {},
       },
       chapterFiles: { save: (f: any) => files.push(f), list: () => [], read: () => undefined },
       charactersRepo: { list: () => chars, create: (c: any) => chars.push({ ...c, id: `c${chars.length}` }), update: (id: string, patch: any) => { const i = chars.findIndex(x => x.id === id); Object.assign(chars[i], patch); } },
@@ -121,6 +122,44 @@ describe("writeChapterTask", () => {
       extractStructured: async () => ({ characters: [], foreshadowing: [], timeline: [] }),
     }) ?? writeChapterTask;
     await expect(task.parse(ctx, "太短。")).rejects.toThrow(/draft_too_short/);
+  });
+
+  it("apply:抽取带 summary 时写入 chapter_summaries(中程记忆数据源)", () => {
+    const rig = mockHandle();
+    const ctx = { handle: rig.handle, request: { source: "editor", target: { chapterNo: 5 } } } as any;
+
+    writeChapterTask.apply(ctx, {
+      chapterNo: 5, title: "第 5 章", content: "x".repeat(500),
+      characters: [], foreshadowing: [], timeline: [],
+      summary: {
+        oneLiner: "林尘登山得剑",
+        paragraph: "林尘在暮色中登上山脊,于崖壁裂缝里发现一柄黑剑,决意带回村中查证来历。",
+        keyEvents: [
+          { event: "登山", characters: ["林尘"], foreshadowingRefs: [] },
+          { event: "  ", characters: [], foreshadowingRefs: [] },   // 空事件应被过滤
+        ],
+      },
+    } as any);
+
+    expect(rig.summaries).toHaveLength(1);
+    expect(rig.summaries[0]).toMatchObject({
+      chapterNo: 5,
+      oneLiner: "林尘登山得剑",
+      reasoningContent: null,
+    });
+    expect(rig.summaries[0].keyEvents).toHaveLength(1);
+    expect(rig.summaries[0].generatedAt).toBeGreaterThan(0);
+  });
+
+  it("apply:summary 为空时不写 chapter_summaries", () => {
+    const rig = mockHandle();
+    const ctx = { handle: rig.handle, request: { source: "editor", target: { chapterNo: 5 } } } as any;
+    writeChapterTask.apply(ctx, {
+      chapterNo: 5, title: "第 5 章", content: "x".repeat(500),
+      characters: [], foreshadowing: [], timeline: [],
+      summary: { oneLiner: "", paragraph: "", keyEvents: [] },
+    } as any);
+    expect(rig.summaries).toEqual([]);
   });
 
   it("apply:空名角色/空标签伏笔/空事件时间线全部跳过(抽取噪音不落库)", () => {
