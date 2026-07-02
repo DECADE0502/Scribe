@@ -1,13 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ExecutionMode, ExecutionPolicy } from "@scribe/shared";
 import { t } from "../../i18n/zh-CN.js";
 import { useConversationStore, type ChatMessage } from "../../stores/conversation.js";
 import { startSseStream, type SseStreamHandle, type StartStreamOptions } from "../../api/streaming.js";
 import { Message } from "./message.js";
 import { StreamingMessage } from "./streaming-message.js";
 import { SlashSuggestions } from "./slash-suggestions.js";
-import { ExecutionModeSelector } from "./execution-mode-selector.js";
-import { ExecutionConfirmationCard } from "./execution-confirmation-card.js";
 
 export type StreamFn = (opts: StartStreamOptions) => SseStreamHandle;
 
@@ -18,21 +15,11 @@ export interface ConversationPaneProps {
 }
 
 interface SendOptions {
-  executionModeOverride?: ExecutionMode;
   appendUser?: boolean;
   displayContent?: string;
   source?: "chat" | "onboard" | "asset_audit";
   target?: Record<string, unknown>;
 }
-
-const PHASE_LABELS: Record<string, string> = {
-  thinking: "理解需求",
-  executing: "执行变更",
-  validating: "验收变更",
-  waiting_user: "等待确认",
-  repairing: "修复问题",
-  completed: "完成",
-};
 
 const ASSET_AUDIT_OPTIONS = [
   { id: "all", label: "全部资产", assets: ["all"] },
@@ -48,8 +35,8 @@ function buildAssetAuditRequest(label: string): string {
   return [
     `主动审查全书资产。范围：${label}。`,
     "必须读取已有相关资产，不要只审查当前章节。",
-    "检查重复、缺漏、冲突、OOC、时间线错误、伏笔未闭环、设定和正文不一致、工具写入失败或未落库等问题。",
-    "能通过低风险资料修正解决的，按当前执行模式走完整工作流修复；涉及高风险或不确定改动先说明并等待确认。",
+    "检查重复、缺漏、冲突、OOC、时间线错误、伏笔未闭环、设定和正文不一致等问题。",
+    "只报告确凿的问题,结果会写入读者问题面板。",
   ].join("\n");
 }
 let streamSeq = 0;
@@ -61,22 +48,15 @@ export function ConversationPane(props: ConversationPaneProps) {
     messages,
     streaming,
     error,
-    executionMode,
-    pendingConfirmation,
     appendUserMessage,
     appendSystemMessage,
     beginStream,
     appendDelta,
-    startWorkflow,
-    updateWorkflowStage,
     finishStream,
     setError,
     clearError,
     triggerChapterRefresh,
     triggerLibraryRefresh,
-    setPendingConfirmation,
-    upsertExecutionStep,
-    setAcceptanceReport,
     hydrate,
     reset,
   } = useConversationStore();
@@ -84,8 +64,6 @@ export function ConversationPane(props: ConversationPaneProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [lastSent, setLastSent] = useState<string | null>(null);
   const [onboardComplete, setOnboardComplete] = useState<boolean | null>(null);
-  const mutatingRunRef = useRef(false);
-  const hasVisibleReplyRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -120,22 +98,9 @@ export function ConversationPane(props: ConversationPaneProps) {
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, streaming?.text, streaming?.workflowStages.length]);
+  }, [messages, streaming?.text]);
 
   useEffect(() => () => handleRef.current?.cancel(), []);
-
-  const markPhase = useCallback((phase: string) => {
-    const id = `phase-${phase}`;
-    const label = PHASE_LABELS[phase] ?? phase;
-    const current = useConversationStore.getState().streaming?.workflowStages ?? [];
-    const next = current.map(stage => stage.status === "active" ? { ...stage, status: "done" as const } : stage);
-    const existing = next.findIndex(stage => stage.id === id);
-    if (existing >= 0) {
-      startWorkflow(next.map(stage => stage.id === id ? { ...stage, label, status: "active" as const } : stage));
-    } else {
-      startWorkflow([...next, { id, label, status: "active" }]);
-    }
-  }, [startWorkflow]);
 
   const send = useCallback((text: string, options: SendOptions = {}) => {
     const content = text.trim();
@@ -143,14 +108,11 @@ export function ConversationPane(props: ConversationPaneProps) {
     clearError();
     setLastSent(content);
     if (options.appendUser !== false) appendUserMessage(options.displayContent ?? content);
-    mutatingRunRef.current = false;
-    hasVisibleReplyRef.current = false;
 
     const url = endpoint(props.bookId);
     const body = {
       message: content,
       source: options.source ?? "chat",
-      executionMode: options.executionModeOverride ?? executionMode,
       ...(options.target ? { target: options.target } : {}),
     };
 
@@ -160,45 +122,11 @@ export function ConversationPane(props: ConversationPaneProps) {
       body,
       onEvent: (ev) => {
         switch (ev.type) {
-          case "agent_phase":
-            markPhase(String(ev.phase ?? ""));
-            break;
-          case "main_output": {
-            const reply = String(ev.reply ?? "");
-            if (reply) {
-              hasVisibleReplyRef.current = true;
-              appendDelta(reply);
-            }
+          case "text_delta": {
+            const delta = String(ev.delta ?? "");
+            if (delta) appendDelta(delta);
             break;
           }
-          case "agent_progress": {
-            const id = `${String(ev.phase ?? "unknown")}-${String(ev.label ?? "progress")}`;
-            const rawStatus = String(ev.status ?? "pending");
-            if (ev.phase === "executing" && rawStatus === "running") mutatingRunRef.current = true;
-            const existing = useConversationStore.getState().streaming?.workflowStages ?? [];
-            startWorkflow([
-              ...existing.filter(stage => stage.id !== id),
-              {
-                id,
-                label: [ev.label, ev.detail].filter(Boolean).join(": "),
-                status: rawStatus === "running" ? "active" : rawStatus === "done" ? "done" : rawStatus === "error" ? "error" : "pending",
-              },
-            ]);
-            break;
-          }
-          case "validation_report":
-            setAcceptanceReport({
-              taskId: "agent-run",
-              verdict: String(ev.verdict ?? "fail") as never,
-              userCriteria: [],
-              processCriteria: [],
-              domainCriteria: [],
-              recommendedActions: [],
-            });
-            break;
-          case "repair_plan":
-            appendSystemMessage(String(ev.summary ?? "正在修复验收发现的问题"));
-            break;
           case "done":
             finishStream();
             handleRef.current = null;
@@ -206,13 +134,6 @@ export function ConversationPane(props: ConversationPaneProps) {
               appendSystemMessage("变更已提交。");
               triggerChapterRefresh();
               triggerLibraryRefresh();
-            } else if (ev.needsUserDecision === true) {
-              appendSystemMessage("流程已暂停，等待确认或修复。");
-              setPendingConfirmation({
-                taskId: String(ev.runId ?? "agent-run"),
-                message: "流程已暂停，等待确认或修复。",
-                policy: buildDoneDecisionPolicy(executionMode),
-              });
             }
             break;
           case "error":
@@ -231,20 +152,15 @@ export function ConversationPane(props: ConversationPaneProps) {
     endpoint,
     streamFn,
     streaming,
-    executionMode,
     appendUserMessage,
     appendSystemMessage,
     beginStream,
     appendDelta,
-    markPhase,
-    startWorkflow,
     finishStream,
     setError,
     clearError,
     triggerChapterRefresh,
     triggerLibraryRefresh,
-    setPendingConfirmation,
-    setAcceptanceReport,
   ]);
 
   const cancel = useCallback(() => {
@@ -252,29 +168,6 @@ export function ConversationPane(props: ConversationPaneProps) {
     handleRef.current = null;
     finishStream();
   }, [finishStream]);
-
-  const approveRun = useCallback(async (runId: string) => {
-    clearError();
-    const res = await fetch(`/api/books/${encodeURIComponent(props.bookId)}/agent/runs/${encodeURIComponent(runId)}/approve`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({})) as { error?: string };
-      setError(body.error ?? "确认提交失败", "commit_failed");
-      return;
-    }
-    appendSystemMessage("变更已提交。");
-    triggerChapterRefresh();
-    triggerLibraryRefresh();
-  }, [props.bookId, appendSystemMessage, clearError, setError, triggerChapterRefresh, triggerLibraryRefresh]);
-
-  const cancelRun = useCallback(async (runId: string) => {
-    await fetch(`/api/books/${encodeURIComponent(props.bookId)}/agent/runs/${encodeURIComponent(runId)}/cancel`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-    }).catch(() => undefined);
-  }, [props.bookId]);
 
   const retry = useCallback(() => {
     clearError();
@@ -330,44 +223,9 @@ export function ConversationPane(props: ConversationPaneProps) {
           <button data-testid="btn-retry" onClick={retry}>{t.common.retry}</button>
         </div>
       )}
-      {pendingConfirmation && (
-        <ExecutionConfirmationCard
-          taskId={pendingConfirmation.taskId}
-          message={pendingConfirmation.message}
-          policy={pendingConfirmation.policy}
-          onApprove={() => {
-            const runId = pendingConfirmation.taskId;
-            setPendingConfirmation(null);
-            void approveRun(runId);
-          }}
-          onReroll={() => {
-            const runId = pendingConfirmation.taskId;
-            setPendingConfirmation(null);
-            void cancelRun(runId);
-            if (lastSent) send(lastSent, { appendUser: false });
-          }}
-          onCancel={() => {
-            const runId = pendingConfirmation.taskId;
-            setPendingConfirmation(null);
-            void cancelRun(runId);
-          }}
-        />
-      )}
       <Composer onSend={send} onCancel={cancel} streaming={!!streaming} />
     </div>
   );
-}
-
-function buildDoneDecisionPolicy(configuredMode: ExecutionMode): ExecutionPolicy {
-  return {
-    taskId: "agent-run",
-    configuredMode,
-    effectiveMode: "confirm",
-    highestRisk: "write",
-    requiresConfirmation: true,
-    reason: "workflow returned needsUserDecision",
-    userChoices: ["approve", "edit_plan", "reroll", "cancel"],
-  };
 }
 
 function Composer(props: { onSend: (text: string, options?: SendOptions) => void; onCancel: () => void; streaming: boolean }) {
@@ -393,13 +251,13 @@ function Composer(props: { onSend: (text: string, options?: SendOptions) => void
     props.onSend(buildAssetAuditRequest(option.label), {
       source: "asset_audit",
       displayContent: `已触发主动审查：${option.label}`,
-      target: { auditScope: { assets: option.assets, mode: "report_and_fix" } },
+      target: { auditScope: { assets: option.assets, mode: "report_only" } },
     });
   };
 
   return (
     <div style={{ borderTop: "1px solid #e5e5e5", padding: 12, position: "relative" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "flex-start", alignItems: "center", marginBottom: 6, gap: 8 }}>
         <div style={{ position: "relative" }}>
           <button
             type="button"
@@ -450,7 +308,6 @@ function Composer(props: { onSend: (text: string, options?: SendOptions) => void
             </div>
           )}
         </div>
-        <ExecutionModeSelector />
       </div>
       <SlashSuggestions input={value} visible={slashOpen} onPick={pickSlash} onClose={() => setSlashOpen(false)} />
       <textarea
@@ -494,5 +351,3 @@ function Composer(props: { onSend: (text: string, options?: SendOptions) => void
     </div>
   );
 }
-
-

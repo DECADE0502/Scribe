@@ -83,71 +83,55 @@ describe("RevisePreview", () => {
     instruction: "make it colder",
   };
 
-  it("sends revision through the unified agent endpoint with structured target", async () => {
+  it("streams the new segment as text_delta into the preview", async () => {
     const m = makeManualStream();
-    render(<RevisePreview {...baseProps} onAccepted={vi.fn()} onDismiss={vi.fn()} streamFn={m.streamFn} />);
+    render(<RevisePreview {...baseProps} onApplied={vi.fn()} onDismiss={vi.fn()} streamFn={m.streamFn} />);
 
-    m.push({ type: "main_output", draft: "new segment", reply: "candidate ready" });
-    m.push({ type: "validation_report", verdict: "pass", commitAllowed: false, issues: [] });
-    m.push({ type: "done", committed: false, needsUserDecision: true, runId: "r1" });
+    m.push({ type: "text_delta", delta: "new " });
+    m.push({ type: "text_delta", delta: "segment" });
 
-    await waitFor(() => expect(screen.getByTestId("revise-accept")).toBeEnabled());
     expect(screen.getByTestId("revise-text")).toHaveTextContent("new segment");
+    // 流未结束前没有"刷新显示"按钮
+    expect(screen.queryByTestId("revise-accept")).not.toBeInTheDocument();
   });
 
-  it("does not treat visible reply or legacy text_delta as the revision candidate", async () => {
+  it("done committed=true shows the refresh button and clicking calls onApplied", async () => {
     const m = makeManualStream();
-    render(<RevisePreview {...baseProps} onAccepted={vi.fn()} onDismiss={vi.fn()} streamFn={m.streamFn} />);
+    const onApplied = vi.fn();
+    render(<RevisePreview {...baseProps} onApplied={onApplied} onDismiss={vi.fn()} streamFn={m.streamFn} />);
 
-    m.push({ type: "text_delta", delta: "legacy candidate" });
-    m.push({ type: "main_output", reply: "I prepared a candidate" });
-    m.push({ type: "done", committed: false, needsUserDecision: true, runId: "r1" });
+    m.push({ type: "text_delta", delta: "new paragraph" });
+    m.push({ type: "done", committed: true });
 
-    expect(screen.getByTestId("revise-text")).not.toHaveTextContent("legacy candidate");
-    expect(screen.getByTestId("revise-text")).not.toHaveTextContent("I prepared a candidate");
-    expect(screen.getByTestId("revise-accept")).toBeDisabled();
-  });
-
-  it("keeps accept disabled when validation fails or the run is not waiting for a decision", async () => {
-    const m = makeManualStream();
-    render(<RevisePreview {...baseProps} onAccepted={vi.fn()} onDismiss={vi.fn()} streamFn={m.streamFn} />);
-
-    m.push({ type: "main_output", draft: "new segment" });
-    m.push({ type: "validation_report", verdict: "fail", commitAllowed: false, issues: [] });
-    m.push({ type: "done", committed: false, needsUserDecision: false, runId: "r1" });
-
-    await waitFor(() => expect(screen.getByTestId("revise-accept")).toBeDisabled());
-  });
-
-  it("accept returns the approved candidate without calling legacy apply-revision", async () => {
-    const m = makeManualStream();
-    const onDismiss = vi.fn();
-    const onAccepted = vi.fn();
-    render(<RevisePreview {...baseProps} onAccepted={onAccepted} onDismiss={onDismiss} streamFn={m.streamFn} />);
-
-    m.push({ type: "main_output", draft: "new paragraph" });
-    m.push({ type: "validation_report", verdict: "pass", commitAllowed: false, issues: [] });
-    m.push({ type: "done", committed: false, needsUserDecision: true, runId: "r1" });
-
-    await waitFor(() => expect(screen.getByTestId("revise-accept")).toBeEnabled());
+    await waitFor(() => expect(screen.getByTestId("revise-accept")).toBeInTheDocument());
     fireEvent.click(screen.getByTestId("revise-accept"));
-    expect(onAccepted).toHaveBeenCalledWith("new paragraph");
-    expect(onDismiss).toHaveBeenCalled();
+    expect(onApplied).toHaveBeenCalled();
+  });
+
+  it("done committed=false does not offer refresh (nothing was applied)", async () => {
+    const m = makeManualStream();
+    render(<RevisePreview {...baseProps} onApplied={vi.fn()} onDismiss={vi.fn()} streamFn={m.streamFn} />);
+
+    m.push({ type: "text_delta", delta: "candidate" });
+    m.push({ type: "done", committed: false });
+
+    expect(screen.queryByTestId("revise-accept")).not.toBeInTheDocument();
   });
 
   it("cancel cancels the stream and dismisses the preview", () => {
     const m = makeManualStream();
     const onDismiss = vi.fn();
-    render(<RevisePreview {...baseProps} onAccepted={vi.fn()} onDismiss={onDismiss} streamFn={m.streamFn} />);
+    render(<RevisePreview {...baseProps} onApplied={vi.fn()} onDismiss={onDismiss} streamFn={m.streamFn} />);
     fireEvent.click(screen.getByTestId("revise-dismiss"));
     expect(m.cancelSpy).toHaveBeenCalled();
     expect(onDismiss).toHaveBeenCalled();
   });
 
-  it("shows errors from the agent stream", async () => {
+  it("shows errors from the agent stream and no refresh button", async () => {
     const m = makeManualStream();
-    render(<RevisePreview {...baseProps} onAccepted={vi.fn()} onDismiss={vi.fn()} streamFn={m.streamFn} />);
-    m.push({ type: "error", errorClass: "segment_not_found", message: "selected segment does not match" });
+    render(<RevisePreview {...baseProps} onApplied={vi.fn()} onDismiss={vi.fn()} streamFn={m.streamFn} />);
+    m.push({ type: "error", errorClass: "parse_failed", message: "selected segment does not match" });
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("does not match"));
+    expect(screen.queryByTestId("revise-accept")).not.toBeInTheDocument();
   });
 });

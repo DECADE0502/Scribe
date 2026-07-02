@@ -153,18 +153,8 @@ describe("auto writing agent run", () => {
     });
     expect(stream.lastBody()).not.toHaveProperty("target");
 
-    stream.push({ type: "agent_phase", phase: "executing" });
-    stream.push({
-      type: "agent_progress",
-      phase: "executing",
-      label: "执行变更",
-      status: "running",
-      detail: "chapterNo=1, chapterNo=2, chapterNo=3",
-    });
-
-    expect(screen.getByTestId("workflow-progress")).toHaveTextContent("chapterNo=1");
-    expect(screen.getByTestId("workflow-progress")).toHaveTextContent("chapterNo=2");
-    expect(screen.getByTestId("workflow-progress")).toHaveTextContent("chapterNo=3");
+    stream.push({ type: "text_delta", delta: "第一章正文开始……" });
+    expect(screen.getByTestId("streaming-message")).toHaveTextContent("第一章正文开始");
   });
 
   it("cancel aborts the current agent stream without calling legacy /auto/cancel", async () => {
@@ -176,7 +166,7 @@ describe("auto writing agent run", () => {
     const input = screen.getByTestId("composer-input");
     fireEvent.change(input, { target: { value: "连续写 2 章" } });
     fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
-    stream.push({ type: "agent_phase", phase: "executing" });
+    stream.push({ type: "text_delta", delta: "写作中……" });
     fireEvent.click(screen.getByTestId("btn-cancel-stream"));
 
     expect(stream.cancelSpy).toHaveBeenCalled();

@@ -45,83 +45,18 @@ async function renderPane(streamFn: StreamFn) {
   await waitFor(() => expect(fetch).toHaveBeenCalled());
 }
 
-describe("ConversationPane agent workflow", () => {
-  it("stores execution workflow mode", () => {
-    expect(useConversationStore.getState().executionMode).toBe("low_risk_auto");
-
-    act(() => useConversationStore.getState().setExecutionMode("plan_only"));
-
-    expect(useConversationStore.getState().executionMode).toBe("plan_only");
-  });
-
-  it("sends execution mode with conversation requests", async () => {
+describe("ConversationPane agent requests", () => {
+  it("chat request body carries message + source, no legacy executionMode", async () => {
     const m = makeManualStream();
     await renderPane(m.streamFn);
 
-    act(() => useConversationStore.getState().setExecutionMode("plan_only"));
-    sendMessage("直接把前三章都写了");
+    sendMessage("聊聊主角设定");
 
-    await waitFor(() => expect(m.lastBody()).toMatchObject({ executionMode: "plan_only" }));
-  });
-
-  it("uses agent_progress events as visible workflow progress", async () => {
-    const m = makeManualStream();
-    await renderPane(m.streamFn);
-    sendMessage("write next chapter");
-
-    m.push({
-      type: "agent_progress",
-      runId: "run-1",
-      phase: "executing",
-      label: "执行变更",
-      status: "running",
-      detail: "chapterNo=1",
-    });
-
-    expect(screen.getByTestId("workflow-progress")).toHaveTextContent("执行变更");
-    expect(screen.getByTestId("workflow-progress")).toHaveTextContent("chapterNo=1");
-  });
-  it("shows validation report while streaming", async () => {
-    const m = makeManualStream();
-    await renderPane(m.streamFn);
-    sendMessage("write next chapter");
-
-    m.push({ type: "agent_progress", phase: "executing", label: "执行变更", status: "running" });
-    m.push({ type: "validation_report", verdict: "pass", issues: [], commitAllowed: true });
-
-    expect(screen.getByTestId("validation-report")).toHaveTextContent("pass");
-  });
-
-  it("approves a confirmation by committing the paused run instead of rerunning the request", async () => {
-    const m = makeManualStream();
-    const fetchMock = vi.mocked(fetch);
-    await renderPane(m.streamFn);
-
-    sendMessage("write next chapter");
-    m.push({
-      type: "confirmation_required",
-      taskId: "task-1",
-      message: "low_risk_auto requires confirmation for write actions",
-      policy: {
-        taskId: "task-1",
-        configuredMode: "low_risk_auto",
-        effectiveMode: "confirm",
-        highestRisk: "write",
-        requiresConfirmation: true,
-        reason: "low_risk_auto requires confirmation for write actions",
-        userChoices: ["approve", "edit_plan", "reroll", "cancel"],
-      },
-    });
-    m.push({ type: "done", committed: false, needsUserDecision: true, runId: "r1" });
-
-    await waitFor(() => expect(screen.getByTestId("execution-confirmation-card")).toBeInTheDocument());
-    fireEvent.click(screen.getByTestId("execution-approve"));
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
-      "/api/books/b1/agent/runs/r1/approve",
-      expect.objectContaining({ method: "POST" }),
-    ));
-    expect(m.bodies()).toHaveLength(1);
+    await waitFor(() => expect(m.lastBody()).toMatchObject({
+      message: "聊聊主角设定",
+      source: "chat",
+    }));
+    expect(m.lastBody() as Record<string, unknown>).not.toHaveProperty("executionMode");
   });
 
   it("starts a full asset audit request from the active audit menu without exposing the raw prompt", async () => {
@@ -134,7 +69,7 @@ describe("ConversationPane agent workflow", () => {
 
     await waitFor(() => expect(m.lastBody()).toMatchObject({
       source: "asset_audit",
-      target: { auditScope: { assets: ["all"], mode: "report_and_fix" } },
+      target: { auditScope: { assets: ["all"], mode: "report_only" } },
     }));
     const body = m.lastBody() as { message?: string };
     expect(body.message).toContain("主动审查全书资产");
@@ -142,8 +77,19 @@ describe("ConversationPane agent workflow", () => {
     expect(screen.getByText("已触发主动审查：全部资产")).toBeInTheDocument();
     expect(screen.queryByText(/必须读取已有相关资产/)).not.toBeInTheDocument();
   });
+
+  it("audit reply streams as text and issues land after done committed=true", async () => {
+    const m = makeManualStream();
+    await renderPane(m.streamFn);
+
+    fireEvent.click(screen.getByTestId("btn-asset-audit"));
+    fireEvent.click(screen.getByTestId("asset-audit-option-characters"));
+
+    m.push({ type: "text_delta", delta: "发现 2 处角色状态不一致" });
+    expect(screen.getByTestId("streaming-message")).toHaveTextContent("发现 2 处");
+
+    m.push({ type: "done", committed: true });
+    await waitFor(() => expect(screen.queryByTestId("streaming-message")).not.toBeInTheDocument());
+    expect(screen.getByText("变更已提交。")).toBeInTheDocument();
+  });
 });
-
-
-
-

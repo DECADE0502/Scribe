@@ -9,21 +9,24 @@ export interface RevisePreviewProps {
   chapterNo: number;
   segmentText: string;
   instruction: string;
-  onAccepted: (newContent: string) => void;
+  /** 服务端已完成段落替换并落库,通知父组件重载章节内容。 */
+  onApplied: () => void;
   onDismiss: () => void;
   streamFn?: StreamFn;
-  fetchFn?: typeof fetch;
 }
 
-type Phase = "streaming" | "ready" | "error";
+type Phase = "streaming" | "applied" | "failed";
 
+/**
+ * 局部改写预览:新段落流式展示;done.committed=true 表示服务端已把
+ * 合并后的整章落库(revise 任务在 apply 里完成替换),前端点"刷新显示"
+ * 让编辑器重载,不再由前端拼接/回写。中途取消会 abort 请求,服务端
+ * 的 LLM 调用随 abortSignal 终止,不会落库。
+ */
 export function RevisePreview(props: RevisePreviewProps) {
   const streamFn = props.streamFn ?? startSseStream;
   const [candidate, setCandidate] = useState("");
-  const [statusText, setStatusText] = useState("");
   const [phase, setPhase] = useState<Phase>("streaming");
-  const [validationPass, setValidationPass] = useState(false);
-  const [needsDecision, setNeedsDecision] = useState(false);
   const [error, setErrorMsg] = useState<string | null>(null);
   const handleRef = useRef<SseStreamHandle | null>(null);
   const startedRef = useRef(false);
@@ -44,29 +47,20 @@ export function RevisePreview(props: RevisePreviewProps) {
         },
       },
       onEvent: (ev) => {
-        if (ev.type === "main_output") {
-          const draft = String(ev.draft ?? "");
-          const reply = String(ev.reply ?? "");
-          if (draft) setCandidate(draft);
-          if (reply) setStatusText(reply);
-        } else if (ev.type === "validation_report") {
-          const verdict = String(ev.verdict ?? "");
-          setValidationPass(verdict === "pass");
-          setStatusText(`验收:${verdict}`);
+        if (ev.type === "text_delta") {
+          const delta = String(ev.delta ?? "");
+          if (delta) setCandidate(prev => prev + delta);
         } else if (ev.type === "done") {
-          setNeedsDecision(ev.needsUserDecision === true);
-          setPhase("ready");
+          setPhase(ev.committed === true ? "applied" : "failed");
         } else if (ev.type === "error") {
           setErrorMsg(String(ev.message ?? t.errors.unknown));
-          setPhase("error");
+          setPhase("failed");
         }
       },
     });
     return () => { handleRef.current?.cancel(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const canAccept = phase === "ready" && Boolean(candidate.trim()) && validationPass && needsDecision;
 
   return (
     <div
@@ -80,13 +74,9 @@ export function RevisePreview(props: RevisePreviewProps) {
       }}
     >
       <div style={{ fontSize: 12, color: "#557", marginBottom: 6 }}>
-        {t.editor.revise}{phase === "streaming" ? "(生成中...)" : ""}
+        {t.editor.revise}
+        {phase === "streaming" ? "(生成中...)" : phase === "applied" ? "(已提交,章节已更新)" : ""}
       </div>
-      {statusText && (
-        <div data-testid="revise-status" style={{ color: "#667", fontSize: 12, marginBottom: 6 }}>
-          {statusText}
-        </div>
-      )}
       <div data-testid="revise-text" style={{ whiteSpace: "pre-wrap", marginBottom: 8 }}>
         {candidate || <span style={{ color: "#999" }}>{t.conversation.aiThinking}</span>}
       </div>
@@ -95,18 +85,17 @@ export function RevisePreview(props: RevisePreviewProps) {
       )}
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <button data-testid="revise-dismiss" onClick={() => { handleRef.current?.cancel(); props.onDismiss(); }}>
-          {t.common.cancel}
+          {phase === "applied" ? t.common.close ?? "关闭" : t.common.cancel}
         </button>
-        <button
-          data-testid="revise-accept"
-          disabled={!canAccept}
-          onClick={() => {
-            props.onAccepted(candidate);
-            props.onDismiss();
-          }}
-        >
-          {t.audit.accept}
-        </button>
+        {phase === "applied" && (
+          <button
+            data-testid="revise-accept"
+            className="ios-btn-primary"
+            onClick={() => props.onApplied()}
+          >
+            刷新显示
+          </button>
+        )}
       </div>
     </div>
   );

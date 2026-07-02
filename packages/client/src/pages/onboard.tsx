@@ -8,31 +8,14 @@ interface Msg {
   content: string;
 }
 
-interface AgentStage {
-  id: string;
-  label: string;
-  status: "active" | "done" | "error";
-}
-
 const INTRO =
-  "我们用对话把这本书的底子搭起来吧。您可以直接说想写什么，题材、主角、大概的故事走向都行。小克会通过统一工作流整理设定，并把需要落库的变更交给执行与验收流程。";
-
-const PHASE_LABELS: Record<string, string> = {
-  thinking: "理解需求",
-  executing: "整理设定",
-  validating: "验收变更",
-  waiting_user: "等待确认",
-  repairing: "修复问题",
-  completed: "完成",
-};
+  "我们用对话把这本书的底子搭起来吧。您可以直接说想写什么，题材、主角、大概的故事走向都行。小克会边聊边整理设定,自动写进世界书、角色和大纲。";
 
 export function OnboardPage() {
   const { bookId = "" } = useParams();
   const navigate = useNavigate();
   const [messages, setMessages] = useState<Msg[]>([{ role: "system", content: INTRO }]);
   const [streamingText, setStreamingText] = useState("");
-  const [stages, setStages] = useState<AgentStage[]>([]);
-  const [validation, setValidation] = useState<string | null>(null);
   const [status, setStatus] = useState<{ ok: boolean; missing: string[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,21 +39,9 @@ export function OnboardPage() {
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [messages, streamingText, stages]);
+  }, [messages, streamingText]);
 
   useEffect(() => () => handleRef.current?.cancel(), []);
-
-  const markStage = useCallback((phase: string) => {
-    setStages((prev) => {
-      const label = PHASE_LABELS[phase] ?? phase;
-      const next = prev.map((item) => item.status === "active" ? { ...item, status: "done" as const } : item);
-      const existingIndex = next.findIndex((item) => item.id === phase);
-      if (existingIndex >= 0) {
-        return next.map((item) => item.id === phase ? { ...item, label, status: "active" as const } : item);
-      }
-      return [...next, { id: phase, label, status: "active" }];
-    });
-  }, []);
 
   const finishRun = useCallback((buf: string) => {
     if (buf.trim()) {
@@ -79,7 +50,6 @@ export function OnboardPage() {
     setStreamingText("");
     setBusy(false);
     handleRef.current = null;
-    setStages((prev) => prev.map((item) => item.status === "active" ? { ...item, status: "done" } : item));
     void refreshStatus();
   }, [refreshStatus]);
 
@@ -90,8 +60,6 @@ export function OnboardPage() {
     setError(null);
     setMessages((prev) => [...prev, { role: "user", content }]);
     setStreamingText("");
-    setStages([]);
-    setValidation(null);
     setBusy(true);
 
     let buf = "";
@@ -100,27 +68,17 @@ export function OnboardPage() {
       body: {
         message: content,
         source: "onboard",
-        executionMode: "trusted_auto",
       },
       onEvent: (ev) => {
         switch (ev.type) {
-          case "agent_phase":
-            markStage(String(ev.phase ?? ""));
-            break;
-          case "main_output": {
-            const reply = String(ev.reply ?? "");
-            if (reply) {
-              buf = reply;
-              setStreamingText(reply);
+          case "text_delta": {
+            const delta = String(ev.delta ?? "");
+            if (delta) {
+              buf += delta;
+              setStreamingText(buf);
             }
             break;
           }
-          case "validation_report":
-            setValidation(`验收:${String(ev.verdict ?? "unknown")}`);
-            break;
-          case "repair_plan":
-            setValidation(String(ev.summary ?? "正在修复验收发现的问题"));
-            break;
           case "done":
             finishRun(buf);
             break;
@@ -130,14 +88,13 @@ export function OnboardPage() {
             setError(String(ev.message ?? t.errors.unknown));
             setBusy(false);
             handleRef.current = null;
-            setStages((prev) => prev.map((item) => item.status === "active" ? { ...item, status: "error" } : item));
             break;
           default:
             break;
         }
       },
     });
-  }, [bookId, busy, finishRun, markStage]);
+  }, [bookId, busy, finishRun]);
 
   const skip = useCallback(async () => {
     await fetch(`/api/books/${encodeURIComponent(bookId)}/onboard/skip`, { method: "POST" }).catch(() => {});
@@ -202,36 +159,6 @@ export function OnboardPage() {
             </div>
           </div>
         ))}
-
-        {stages.length > 0 && (
-          <div data-testid="onboard-workflow" style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "4px 0 10px" }}>
-            {stages.map((stage) => (
-              <span
-                key={stage.id}
-                data-testid={`onboard-workflow-step-${stage.id}`}
-                style={{
-                  fontSize: 12,
-                  padding: "3px 9px",
-                  borderRadius: 12,
-                  background: stage.status === "done" ? "#e8f7ec" : stage.status === "error" ? "#fff2f0" : "#eef1ff",
-                  color: "#444",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 5,
-                }}
-              >
-                {stage.status === "done" ? "✓" : stage.status === "error" ? "×" : <span className="chip-spinner" aria-hidden />}
-                {stage.label}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {validation && (
-          <div data-testid="onboard-validation" style={{ fontSize: 12.5, color: "#445", margin: "4px 0 10px" }}>
-            {validation}
-          </div>
-        )}
 
         {streamingText && (
           <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 10 }}>

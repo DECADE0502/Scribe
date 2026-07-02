@@ -1,11 +1,9 @@
 import { useEffect, useState } from "react";
 import type { StreamingState } from "../../stores/conversation.js";
-import { useConversationStore } from "../../stores/conversation.js";
 import { t } from "../../i18n/zh-CN.js";
 
 export function StreamingMessage(props: { state: StreamingState }) {
   const { state } = props;
-  const acceptanceReport = useConversationStore(s => s.acceptanceReport);
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
@@ -29,11 +27,6 @@ export function StreamingMessage(props: { state: StreamingState }) {
         }}
       >
         {hasWorkflow && <WorkflowProgress stages={state.workflowStages} />}
-        {acceptanceReport && (
-          <div data-testid="validation-report" style={{ marginTop: 8, marginBottom: 8, fontSize: 12, color: "#445" }}>
-            验收:{acceptanceReport.verdict}
-          </div>
-        )}
         {state.text && (
           <>
             {state.text}

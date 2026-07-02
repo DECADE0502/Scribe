@@ -149,7 +149,7 @@ describe("EditorPane", () => {
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       const u = String(url);
       if (init?.method === "POST" && u.includes("/agent/run")) {
-        const payload = `event: done\ndata: ${JSON.stringify({ type: "done", committed: false, needsUserDecision: true, runId: "r1" })}\n\n`;
+        const payload = `event: done\ndata: ${JSON.stringify({ type: "done", committed: false })}\n\n`;
         return {
           ok: true,
           body: new ReadableStream({
@@ -182,14 +182,17 @@ describe("EditorPane", () => {
     ))).toBe(false);
   });
 
-  it("shows an editor confirmation bar and commits the pending agent run", async () => {
+  it("committed=true reloads chapter list (no staging approve step)", async () => {
     vi.spyOn(window, "prompt").mockReturnValue("write next chapter");
     const calls: Array<[string, RequestInit | undefined]> = [];
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       calls.push([String(url), init]);
       const u = String(url);
       if (init?.method === "POST" && u.includes("/agent/run")) {
-        const payload = `event: done\ndata: ${JSON.stringify({ type: "done", committed: false, needsUserDecision: true, runId: "run-1" })}\n\n`;
+        const payload = [
+          `event: text_delta\ndata: ${JSON.stringify({ type: "text_delta", delta: "正文……" })}\n\n`,
+          `event: done\ndata: ${JSON.stringify({ type: "done", committed: true })}\n\n`,
+        ].join("");
         return {
           ok: true,
           body: new ReadableStream({
@@ -200,9 +203,6 @@ describe("EditorPane", () => {
           }),
         } as Response;
       }
-      if (init?.method === "POST" && u.includes("/agent/runs/run-1/approve")) {
-        return jsonResponse({ ok: true, committed: 1 });
-      }
       if (u.endsWith("/chapters")) return jsonResponse({ chapters: [ch1, ch2] });
       if (u.endsWith("/chapters/2")) return jsonResponse(ch2);
       if (u.endsWith("/chapters/1")) return jsonResponse(ch1);
@@ -211,17 +211,17 @@ describe("EditorPane", () => {
 
     render(<EditorPane bookId="b1" />);
     await waitFor(() => screen.getByTestId("chapter-tab-2"));
+    calls.length = 0;
 
     fireEvent.click(screen.getByTestId("btn-write-next"));
 
-    await waitFor(() => expect(screen.getByTestId("editor-pending-run")).toBeInTheDocument());
-    fireEvent.click(screen.getByTestId("editor-approve-run"));
-
+    // done.committed=true → 直接刷新章节列表;不存在 approve/cancel 二段提交端点
     await waitFor(() => {
       expect(calls.some(([url, init]) => (
-        init?.method === "POST" && url.includes("/agent/runs/run-1/approve")
+        init?.method !== "POST" && url.endsWith("/chapters")
       ))).toBe(true);
     });
+    expect(calls.some(([url]) => url.includes("/agent/runs/"))).toBe(false);
   });
 });
 

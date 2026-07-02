@@ -99,8 +99,8 @@ describe("OnboardPage", () => {
       json: async () => ({ ok: false, missing: ["题材"] }),
     } as Response);
     fetchMock.mockResolvedValueOnce(sseResponse([
-      'event: main_output\ndata: {"type":"main_output","reply":"收到"}\n\n',
-      'event: done\ndata: {"type":"done","committed":false,"needsUserDecision":false,"runId":"r1"}\n\n',
+      'event: text_delta\ndata: {"type":"text_delta","delta":"收到"}\n\n',
+      'event: done\ndata: {"type":"done","committed":true}\n\n',
     ]));
 
     renderOnboard();
@@ -116,7 +116,6 @@ describe("OnboardPage", () => {
       expect(JSON.parse(String((call?.[1] as RequestInit | undefined)?.body))).toMatchObject({
         message: "我想写一本城市奇幻",
         source: "onboard",
-        executionMode: "trusted_auto",
       });
     });
   });

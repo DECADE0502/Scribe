@@ -50,8 +50,8 @@ describe("ConversationPane", () => {
     const fetchMock = vi.fn((url: string) => {
       if (url.includes("/conversation")) {
         const messages = url.includes("/books/b1/")
-          ? [{ id: 1, role: "user", content: "鏃т功娑堟伅", createdAt: 1 }]
-          : [{ id: 2, role: "user", content: "鏂颁功娑堟伅", createdAt: 2 }];
+          ? [{ id: 1, role: "user", content: "旧书消息", createdAt: 1 }]
+          : [{ id: 2, role: "user", content: "新书消息", createdAt: 2 }];
         return Promise.resolve({ ok: true, json: async () => ({ messages }) } as Response);
       }
       return Promise.resolve({ ok: true, json: async () => ({ ok: true }) } as Response);
@@ -59,70 +59,45 @@ describe("ConversationPane", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const view = await renderPane(stream.streamFn, "b1");
-    await waitFor(() => expect(screen.getByText("鏃т功娑堟伅")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("旧书消息")).toBeInTheDocument());
 
     view.rerender(<ConversationPane bookId="b2" streamFn={stream.streamFn} />);
 
-    await waitFor(() => expect(screen.getByText("鏂颁功娑堟伅")).toBeInTheDocument());
-    expect(screen.queryByText("鏃т功娑堟伅")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("新书消息")).toBeInTheDocument());
+    expect(screen.queryByText("旧书消息")).not.toBeInTheDocument();
   });
 
-  it("sends chat through the unified agent endpoint and renders main_output", async () => {
+  it("sends chat through the unified agent endpoint and renders streamed deltas", async () => {
     const m = makeManualStream();
     await renderPane(m.streamFn);
 
-    sendMessage("浣犲ソ");
+    sendMessage("你好");
 
-    expect(screen.getByText("浣犲ソ")).toBeInTheDocument();
+    expect(screen.getByText("你好")).toBeInTheDocument();
     expect(screen.getByTestId("streaming-placeholder")).toBeInTheDocument();
 
-    m.push({ type: "main_output", reply: "鍦ㄧ殑" });
-    expect(screen.getByTestId("streaming-message")).toHaveTextContent("鍦ㄧ殑");
+    m.push({ type: "text_delta", delta: "在" });
+    m.push({ type: "text_delta", delta: "的" });
+    expect(screen.getByTestId("streaming-message")).toHaveTextContent("在的");
 
-    m.push({ type: "done", committed: false, needsUserDecision: false, runId: "r1" });
+    m.push({ type: "done", committed: false });
     await waitFor(() => expect(screen.queryByTestId("streaming-message")).not.toBeInTheDocument());
-    expect(screen.getByText("鍦ㄧ殑")).toBeInTheDocument();
+    expect(screen.getByText("在的")).toBeInTheDocument();
   });
 
-  it("shows agent phases and validation report for workflow runs", async () => {
-    const m = makeManualStream();
-    await renderPane(m.streamFn);
-    sendMessage("鏁寸悊瑙掕壊");
-
-    m.push({ type: "agent_phase", phase: "thinking" });
-    m.push({ type: "agent_progress", phase: "executing", label: "整理角色", status: "running", detail: "小佑" });
-    m.push({ type: "validation_report", verdict: "pass", issues: [], commitAllowed: true });
-
-    expect(screen.getByTestId("workflow-progress")).toHaveTextContent("整理角色");
-    expect(screen.getByTestId("validation-report")).toHaveTextContent("pass");
-  });
-
-  it("done committed=false does not refresh chapters for agent workflow runs", async () => {
-    const m = makeManualStream();
-    await renderPane(m.streamFn);
-    sendMessage("write next chapter");
-    const before = useConversationStore.getState().chapterRefreshTrigger;
-
-    m.push({ type: "agent_progress", phase: "executing", label: "执行变更", status: "running", detail: "chapter_version" });
-    m.push({ type: "done", committed: false, needsUserDecision: true, runId: "r1" });
-
-    await waitFor(() => expect(screen.queryByTestId("streaming-message")).not.toBeInTheDocument());
-    expect(useConversationStore.getState().chapterRefreshTrigger).toBe(before);
-  });
-
-  it("does not show mutation-failure copy for query-only runs", async () => {
+  it("done committed=false does not refresh chapters (pure chat)", async () => {
     const m = makeManualStream();
     await renderPane(m.streamFn);
     sendMessage("先聊聊第一人称");
+    const before = useConversationStore.getState().chapterRefreshTrigger;
 
-    m.push({ type: "agent_progress", phase: "executing", label: "无需变更", status: "done", detail: "本轮仅对话" });
-    m.push({ type: "main_output", reply: "可以，先保持第一人称。" });
-    m.push({ type: "done", committed: false, needsUserDecision: false, runId: "r1" });
+    m.push({ type: "text_delta", delta: "可以，先保持第一人称。" });
+    m.push({ type: "done", committed: false });
 
     await waitFor(() => expect(screen.queryByTestId("streaming-message")).not.toBeInTheDocument());
+    expect(useConversationStore.getState().chapterRefreshTrigger).toBe(before);
     expect(screen.getByText("可以，先保持第一人称。")).toBeInTheDocument();
-    expect(screen.queryByText("流程未提交变更。")).not.toBeInTheDocument();
-    expect(screen.queryByText("流程已暂停，等待确认或修复。")).not.toBeInTheDocument();
+    expect(screen.queryByText("变更已提交。")).not.toBeInTheDocument();
   });
 
   it("done committed=true refreshes chapters and library", async () => {
@@ -132,12 +107,13 @@ describe("ConversationPane", () => {
     const beforeChapter = useConversationStore.getState().chapterRefreshTrigger;
     const beforeLibrary = useConversationStore.getState().libraryRefreshTrigger;
 
-    m.push({ type: "agent_progress", phase: "executing", label: "执行变更", status: "running", detail: "chapter_version" });
-    m.push({ type: "done", committed: true, needsUserDecision: false, runId: "r1" });
+    m.push({ type: "text_delta", delta: "正文内容……" });
+    m.push({ type: "done", committed: true });
 
     await waitFor(() => expect(screen.queryByTestId("streaming-message")).not.toBeInTheDocument());
     expect(useConversationStore.getState().chapterRefreshTrigger).toBe(beforeChapter + 1);
     expect(useConversationStore.getState().libraryRefreshTrigger).toBe(beforeLibrary + 1);
+    expect(screen.getByText("变更已提交。")).toBeInTheDocument();
   });
 
   it("shows errors and retries the last message", async () => {
@@ -145,7 +121,7 @@ describe("ConversationPane", () => {
     await renderPane(m.streamFn);
     sendMessage("写一章");
 
-    m.push({ type: "error", errorClass: "rate_limit", message: "请求过于频繁，请稍后重试" });
+    m.push({ type: "error", errorClass: "provider_error", message: "请求过于频繁，请稍后重试" });
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("请求过于频繁"));
 
     fireEvent.click(screen.getByTestId("btn-retry"));
@@ -156,17 +132,17 @@ describe("ConversationPane", () => {
     const m = makeManualStream();
     await renderPane(m.streamFn);
     const input = screen.getByTestId("composer-input");
-    fireEvent.change(input, { target: { value: "娴嬭瘯娑堟伅" } });
+    fireEvent.change(input, { target: { value: "测试消息" } });
     fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
-    expect(screen.getByText("娴嬭瘯娑堟伅")).toBeInTheDocument();
+    expect(screen.getByText("测试消息")).toBeInTheDocument();
     expect(screen.getByTestId("streaming-placeholder")).toBeInTheDocument();
   });
 
   it("Escape cancels and preserves received assistant text", async () => {
     const m = makeManualStream();
     await renderPane(m.streamFn);
-    sendMessage("闀挎枃");
-    m.push({ type: "main_output", reply: "已写的部分" });
+    sendMessage("长文");
+    m.push({ type: "text_delta", delta: "已写的部分" });
 
     fireEvent.keyDown(screen.getByTestId("composer-input"), { key: "Escape" });
     expect(m.cancelSpy).toHaveBeenCalled();
@@ -194,7 +170,3 @@ describe("ConversationPane", () => {
     expect(screen.queryByText(/必须读取已有相关资产/)).not.toBeInTheDocument();
   });
 });
-
-
-
-
