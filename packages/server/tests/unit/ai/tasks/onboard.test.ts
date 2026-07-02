@@ -61,4 +61,52 @@ describe("onboardTask", () => {
     expect(r.outline).toEqual([]);
     expect(r.wb).toEqual([]);
   });
+
+  it("apply:重复 onboard 已存在角色/世界书不新建", () => {
+    const r = rig();
+    // 预置已有角色和世界书
+    r.chars.push({ id: "c0", name: "林尘", role: "protagonist" });
+    r.wb.push({ id: "w0", title: "废土", content: "旧内容", keys: ["废土"] });
+    const ctx = { handle: r.handle, request: { message: "x", source: "onboard" } } as any;
+    onboardTask.apply(ctx, {
+      reply: "x", title: "", premise: "",
+      characters: [{ name: "林尘", role: "protagonist", baseData: {}, currentState: {} }],
+      outline: [],
+      worldbook: [{ title: "废土", content: "新内容(不应覆盖)", keys: ["废土"] }],
+    } as any);
+    expect(r.chars).toHaveLength(1);   // 仍是 1 个
+    expect(r.wb).toHaveLength(1);      // 仍是 1 个
+    expect(r.wb[0].content).toBe("旧内容");   // 未被覆盖
+  });
+
+  it("apply:outline sortOrder 追加到已有节点之后", () => {
+    const r = rig();
+    r.outline.push({ id: "o0", title: "旧卷", level: "volume", sortOrder: 0 });
+    r.outline.push({ id: "o1", title: "旧弧", level: "arc", sortOrder: 1 });
+    const ctx = { handle: r.handle, request: { message: "x", source: "onboard" } } as any;
+    onboardTask.apply(ctx, {
+      reply: "x", title: "", premise: "",
+      characters: [],
+      outline: [
+        { title: "新卷 A", level: "volume", summary: "", parentId: null },
+        { title: "新卷 B", level: "volume", summary: "", parentId: null },
+      ],
+      worldbook: [],
+    } as any);
+    const newOnes = r.outline.slice(2);
+    expect(newOnes[0].sortOrder).toBeGreaterThanOrEqual(2);
+    expect(newOnes[1].sortOrder).toBeGreaterThan(newOnes[0].sortOrder);
+  });
+
+  it("apply:parsed.title/premise 为空时不覆盖已有 meta", () => {
+    const r = rig();
+    const setCalls: any[] = [];
+    r.handle.bookMetaRepo.set = (key: string, value: string) => setCalls.push({ key, value });
+    const ctx = { handle: r.handle, request: { message: "x", source: "onboard" } } as any;
+    onboardTask.apply(ctx, {
+      reply: "x", title: "", premise: "",
+      characters: [], outline: [], worldbook: [],
+    } as any);
+    expect(setCalls).toEqual([]);  // 一次 set 也没调
+  });
 });

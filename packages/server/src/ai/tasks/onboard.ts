@@ -97,7 +97,13 @@ function makeTask(deps: OnboardDeps = {}): TaskDef<OnboardParsed> & { withDeps: 
           }
         }
 
-        // 大纲：onboard 只产出首层节点（通常是卷级），直接按抽取顺序追加，sortOrder 用数组下标。
+        // 大纲：onboard 只产出首层节点（通常是卷级），按抽取顺序追加到已有节点之后。
+        // 若书里已有 outline 节点，直接用 idx 会撞车 / 排到已有节点前，
+        // 因此 sortOrder 从 (max(现有 sortOrder) + 1) 起算，退化时用 length 兜底。
+        const existingOutline = handle.outlineRepo.listAll();
+        const baseSortOrder = existingOutline.length
+          ? Math.max(...existingOutline.map((n: any) => n.sortOrder ?? 0)) + 1
+          : 0;
         const outlineList = parsed.outline ?? [];
         outlineList.forEach((o, idx) => {
           handle.outlineRepo.create({
@@ -106,7 +112,7 @@ function makeTask(deps: OnboardDeps = {}): TaskDef<OnboardParsed> & { withDeps: 
             title: normalizeText(o.title ?? ""),
             summary: o.summary ?? "",
             status: "planned",
-            sortOrder: idx,
+            sortOrder: baseSortOrder + idx,
             metadata: null,
           });
         });
