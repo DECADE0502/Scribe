@@ -62,8 +62,15 @@ function makeTask(deps: AuditDeps = {}): TaskDef<AuditParsed> & { withDeps: (d: 
       const raw = await runAudit(ctx);
       const parsed = AuditResultSchema.parse(raw);
       state.result = parsed;
-      // 把摘要作为流式文本吐给用户;dispatchTask 会累加到 streamedText 传入 parse()
-      if (parsed.summary) yield { type: "text_delta", delta: parsed.summary };
+      // 没有独立的"读者问题"UI 面板,聊天回复就是审查报告的唯一用户可见出口 ——
+      // 摘要 + 逐条问题都要流出去;issues 同时落 reader_issues 表反哺写作上下文。
+      const lines: string[] = [];
+      if (parsed.summary) lines.push(parsed.summary);
+      for (const issue of parsed.issues) {
+        const severity = issue.severity === "critical" ? "严重" : "警告";
+        lines.push(`- [${severity}] 第 ${issue.chapterNo} 章 · ${issue.type}:${issue.note}`);
+      }
+      if (lines.length) yield { type: "text_delta", delta: lines.join("\n") };
     },
     async parse(_ctx, _text) {
       const r = state.result;
